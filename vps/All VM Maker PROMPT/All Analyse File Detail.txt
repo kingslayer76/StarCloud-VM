@@ -1,0 +1,1537 @@
+# All Analyse File Detail — StarCloud ka poora analysis (bachche bhi samajh sake, aisi bhasha mein)
+
+> Tarikh: 2026-10-25 (Delhi time). Branch: `arena/f1ba8616-all-vm-panel`.
+> Ye file kya hai: `Analyse-File/` folder ke 9 zip packs, 2 logo files, aur `docs/` ke purane analysis ka ek hi jagah par poora, detail wala report.
+> Rule: `Analyse-File/` ki kisi bhi file ko is kaam mein change, delete ya move nahi kiya gaya. Sab kuch sirf padha gaya hai.
+
+---
+
+## 0. Ye file kaise padhein (step by step)
+
+1. **Part 1** (glossary aur project ka sach) pehle padhein. Isme har mushkil shabd ka full form aur simple matlab hai.
+2. **Part 2** mein HKVM (hamara base project) ko samjhein. StarCloud isi se bana hai.
+3. **Part 3** mein har zip pack ko ek-ek karke samjhein: wo kya hai, usme kya hai, kya lena hai, kya nahi lena.
+4. **Part 4** mein har feature ko ek-ek karke samjhein. Har feature ke liye ye cheezein likhi hain:
+   - **Kya hai**: feature ka saral matlab.
+   - **Kyun chahiye**: user ke liye fayda.
+   - **Kaise kaam karega**: step by step flow.
+   - **Source**: kis zip ya file se idea liya gaya hai.
+   - **HKVM mein status**: abhi hai ya nahi.
+   - **StarCloud mein kaise jodein**: kin files mein kaam hoga.
+   - **Risk**: kya dhyan rakhna hai.
+5. **Part 5** mein security, missing packs, abhi ki halat, aur next steps hain. Video banane ke liye ek simple script bhi hai.
+
+> Har jagah full form pehli baar likha gaya hai. Jo short form pehle explain nahi hua, wo galti hai — bataiye.
+
+---
+
+## 1. Glossary (shabdkosh) — sab mushkil shabd, full form ke saath
+
+### 1.1 Virtual machine aur server ki duniya
+
+| Short form | Full form | Simple matlab |
+|---|---|---|
+| VM | Virtual Machine | Ek computer ke andar software se bana doosra computer. Jaise ek bade ghar mein ek chhota ghar. |
+| VPS | Virtual Private Server | Ek bade server ko kai hisso mein baant kar, ek customer ko ek private hissa dena. |
+| VDS | Virtual Dedicated Server | VPS jaisa hi, lekin resources zyada aur "dedicated" (us customer ke liye pakke). |
+| KVM | Kernel-based Virtual Machine | Linux ka built-in feature jo CPU ki madad se VM ko tez chalata hai. |
+| `/dev/kvm` | Device file for KVM | Ye file hai to KVM chal sakta hai. Nahi hai to VM bahut dheere chalega ya chalega hi nahi. |
+| vmx | Intel VT-x (Virtualization Technology) | Intel CPU ka flag jo virtualization ki power deta hai. |
+| svm | AMD-V (AMD Virtualization) | AMD CPU ka flag, same kaam ke liye. |
+| Nested KVM | Nested Kernel-based Virtual Machine | VM ke andar bhi ek aur VM chalana. Jaise ghar ke andar ek chhota ghar. |
+| QEMU | Quick Emulator | VM chalane wala engine software. KVM ke saath milkar tez chalta hai. |
+| cloud-init | Cloud Initialization | VM pehli baar start hote hi apne aap user, password, network, SSH key set karne wala tool. |
+| qcow2 | QEMU Copy-On-Write version 2 | VM ki disk ki file ka format. Chhoti jagah leti hai aur snapshot support karti hai. |
+| ISO | ISO 9660 disc image | Installer ya CD/DVD ki copy wali file. |
+| ACPI | Advanced Configuration and Power Interface | VM ko shutdown, sleep jaise power commands samajhne ki sahulat. |
+| SMBIOS | System Management BIOS | VM ko fake hardware ki pehchaan (manufacturer, product name) dene wala setting. |
+| CPU model | — | VM ko dikhne wala CPU ka naam aur features (jaise EPYC, Skylake). |
+| vCPU | Virtual Central Processing Unit | VM ko diya gaya CPU core. |
+| RAM | Random Access Memory | Quick memory. MB (megabyte) aur GB (gigabyte) mein napi jati hai. |
+| TCG | Tiny Code Generator | QEMU ka software mode. KVM na ho to ye use hota hai, lekin ye bahut dheema hai. |
+| Snapshot | — | Disk ki us waqt ki saved state. Time machine jaisa. |
+| Backup | — | Poori copy, alag jagah par rakhi hui. |
+
+### 1.2 Network aur address
+
+| Short form | Full form | Simple matlab |
+|---|---|---|
+| IPv4 | Internet Protocol version 4 | Public address, jaise `203.0.113.10`. Ye kam hain aur mehenge bhi. |
+| IPv6 | Internet Protocol version 6 | Naya address system, bahut zyada addresses. |
+| NAT | Network Address Translation | Ek public address ke peeche bahut sare private devices. Ghar ke router jaisa. |
+| Port | — | Ek address ke andar ka darwaza number (jaise 22, 80, 443). |
+| Port forwarding | — | Public darwaze ko VM ke andar ke darwaze se jodna. Jaise `20001` → VM ka `22`. |
+| TCP | Transmission Control Protocol | Pakka, ek-ek packet ka hisaab rakhne wala network protocol. |
+| UDP | User Datagram Protocol | Tez lekin hisaab kam rakhne wala protocol. Games aur voice mein use hota hai. |
+| TLS | Transport Layer Security | Data ko encrypt (chhupa) karne ka system. |
+| HTTPS | Hypertext Transfer Protocol Secure | HTTP + TLS. Browser mein lock ka nishaan. |
+| HTTP | Hypertext Transfer Protocol | Website ki basic bhasha. |
+| SSH | Secure Shell | Remote terminal, default port 22. |
+| SFTP | SSH File Transfer Protocol | SSH ke upar file transfer. (Ye SSH se alag nahi, SSH ke andar hi hai.) |
+| DNS | Domain Name System | Naam (example.com) ko address (203.0.113.10) mein badalne wala system. |
+| Reverse proxy | — | Ek darwaan jo request ko sahi andar wali service tak bhejta hai. |
+| Let's Encrypt | — | Free HTTPS certificate dene wali service. Iske liye port 80 khula hona chahiye. |
+| Caddy | — | Web server aur reverse proxy jo HTTPS apne aap sambhalta hai. |
+| Pterodactyl | — | Game server hosting ka open-source panel. |
+| Wings | — | Pterodactyl ka agent (daemon) jo game containers chalata hai. |
+| VNC | Virtual Network Computing | Remote screen dekhne aur control karne ka system. |
+| noVNC | — | VNC ko browser mein chalane wala version. |
+| RDP | Remote Desktop Protocol | Windows ka remote screen system. **StarCloud se hata diya gaya hai.** |
+| XRDP | X Remote Desktop Protocol | Linux par RDP wala server. **User ne isko remove karne ko kaha (2026-10-25).** |
+| tmate | — | Terminal share karne ka tool. **Hata diya gaya hai.** |
+| sshx | — | Terminal ka temporary public web link dene wala tool. **Rakha gaya hai.** |
+
+### 1.3 Login, security aur code
+
+| Short form | Full form | Simple matlab |
+|---|---|---|
+| 2FA | Two-Factor Authentication | Password ke baad ek aur code maangna. |
+| TOTP | Time-based One-Time Password | Google Authenticator jaise app ka 6-digit code, jo har 30 second mein badalta hai. |
+| OAuth | Open Authorization | "Discord se login karo" jaisa system. Password website ko nahi dena padta. |
+| API | Application Programming Interface | Do programs ke beech baat karne ka rasta. |
+| API key | — | Program ke liye password jaisa key. |
+| JWT | JSON Web Token | Login ke baad diya gaya ek token (pass). |
+| CSRF | Cross-Site Request Forgery | Dusri website se tumhare login ka galat fayda uthane ka hamla. |
+| XSS | Cross-Site Scripting | Page mein galat script daal kar data chori karna. |
+| SQL | Structured Query Language | Database se baat karne ki bhasha. |
+| SQLite | — | Chhota database jo ek file mein rehta hai. |
+| MongoDB | — | Document-based database. vPanel isko use karta hai. |
+| JSON | JavaScript Object Notation | Data likhne ka simple format. |
+| CSV | Comma-Separated Values | Spreadsheet wali file (Excel mein khulti hai). |
+| SHA256 | Secure Hash Algorithm 256-bit | File ka fingerprint, jisse pata chalta hai file badli to nahi. |
+| CORS | Cross-Origin Resource Sharing | Browser ke "kaun si website kis se baat kar sakti hai" ke niyam. |
+| WebSocket | — | Browser aur server ke beech lagatar live connection. Live console ke liye use hota hai. |
+| Rate limit | — | Ek user kitni baar request bhej sakta hai, uski seema. Brute-force hamle rokne ke liye. |
+| Brute force | — | Password ko baar-baar try karke tootne ki koshish. |
+| Lockout | — | Galat password kai baar daalne par account kuch der ke liye band. |
+| Zod | — | JavaScript mein input check karne ki library. |
+| Escrow | — | Paisa ya cheez kisi teesre ke paas rakhna jab tak kaam pura na ho. (Abhi zaroori nahi.) |
+
+### 1.4 Discord, payment, email aur billing
+
+| Short form | Full form | Simple matlab |
+|---|---|---|
+| Discord bot | — | Discord server par chalne wala program (jaise auto-reply, ticket, role dena). |
+| discord.py | Discord Python library | Python mein Discord bot banane ki library. **User ne Python bot chuna (2026-10-25).** |
+| discord.js | Discord JavaScript library | JavaScript/Node.js mein Discord bot banane ki library. |
+| Discord webhook | — | Discord channel ka URL jis par panel seedha message bhej sake. Empty ho to kuch nahi bhejta. |
+| Ticket | — | Discord channel jo ek customer ke order ya support ke liye banta hai. |
+| UPI | Unified Payments Interface | India ka instant payment system. Ticket mein QR ya UPI ID dikhegi. |
+| Payment gateway | — | Online payment lene wali service (Razorpay jaisi). **StarCloud mein ye nahi hai.** |
+| Coupon | — | Discount code (percentage, fixed rupees, ya 100% free). |
+| Giveaway code | — | Ek-baar use hone wala free code jo contest ya promo mein baanta jaye. |
+| SMTP | Simple Mail Transfer Protocol | Email bhejne ka standard rasta. |
+| Brevo | — | Email service jiska free plan hai (roz 300 email). |
+| Email verification | — | Naya user email par link click karke pakka kare ki email uska hi hai. |
+| Expiry | — | VM ki last date. Uske baad VM suspend ho sakta hai. |
+| Suspend | — | VM ko band rakhna (data rehta hai, chalta nahi). |
+| Renew | — | Expiry date ko aage badhana (payment ke baad). |
+| Status page | — | Public page jo dikhata hai ki service chal rahi hai ya nahi, uptime history ke saath. |
+| Referral | — | Ek user dusre ko laye, to dono ko inaam mile. |
+| Flash sale | — | Kuch time ke liye special discount, countdown timer ke saath. |
+
+### 1.5 AI aur licenses
+
+| Short form | Full form | Simple matlab |
+|---|---|---|
+| AI | Artificial Intelligence | Machine jo sawal samajhkar jawab de ya kaam kare. |
+| LLM | Large Language Model | Bada text AI model (Gemini, GPT jaise). |
+| Gemini | — | Google ka AI model. |
+| Google AI Studio | — | Google ka portal jahan se Gemini ki API key milti hai. Free tier mein limits hoti hain. |
+| Provider failover | — | Ek AI provider fail ho to apne aap doosre par chala jana. |
+| Risk gate | — | Khatarnak kaam (delete, stop) se pehle rukna. |
+| Confirmation | — | "Pakka karna hai?" poochna aur user ke haan kehne par hi chalana. |
+| Checkpoint | — | Badlav se pehle ek saved copy, taaki wapas ja sake. |
+| GPL-3.0 | GNU General Public License version 3 | Strong open-source license. Code copy karne par aapka code bhi GPL banega. |
+| MIT | Massachusetts Institute of Technology License | Chhota, permissive open-source license. Copy karna aasaan. |
+| Decompile | — | Compiled (.pyc, .exe) code ko wapas padhne layak banana. Ye original source nahi hota, aur license ka risk hota hai. |
+| Telemetry | — | Software ka apne aap "ghar" par data bhejna (usage, errors). Disclose karna zaroori hai. |
+
+### 1.6 Project aur planning ke shabd
+
+| Short form | Full form | Simple matlab |
+|---|---|---|
+| MVP | Minimum Viable Product | Sabse chhota version jo kaam kare. **Ab hum MVP ka split nahi kar rahe.** |
+| P0 | Priority 0 | Sabse zaroori kaam. **Ab P0/P1 split nahi hai, sab ek saath build hoga.** |
+| P1 | Priority 1 | Doosre number ki zaroorat. **Ab ye split bhi nahi hai.** |
+| i18n | internationalization | Multi-language support. (i + 18 letters + n) Hamare case mein English aur Hindi. |
+| UI | User Interface | Screen jo user dekhta hai. |
+| UX | User Experience | Screen use karne mein kaisa lagta hai. |
+| CI | Continuous Integration | Code push hote hi apne aap test chalana. |
+| Batch | — | Features ka group. Batch 1 se Batch 6 tak. |
+| Glassmorphism | — | Kaanch jaisa translucent (paar dikhne wala) design, blur ke saath. |
+| Backdrop blur | — | Peeche ka background dhundhla karna. |
+| Installer | — | Program jo sab setup apne aap kar de. |
+| Monolith | — | Ek hi bahut badi file jisme sab kuch ho (app.js jaisi). Maintain karna mushkil hota hai. |
+
+---
+
+### 1.7 Aur shabd (Part 2 se Part 5 tak aate hain)
+
+| Short form | Full form | Simple matlab |
+|---|---|---|
+| SHA-256 | Secure Hash Algorithm 256-bit | File ka pakka fingerprint (checksum). File ek akshar bhi badli to fingerprint badal jata hai. |
+| CRUD | Create, Read, Update, Delete | Database ke 4 basic kaam: banana, dekhna, badalna, hatana. |
+| PNG | Portable Network Graphics | Ek image format (logo, banner). |
+| CSS | Cascading Style Sheets | Website ka rang, size, layout likhne wali language. |
+| HTML | HyperText Markup Language | Website ka dhancha (headings, buttons, text) likhne wali language. |
+| EJS | Embedded JavaScript templates | HTML ke andar JavaScript chalane wala template system (HKVM mein use). |
+| DB | Database | Data rakhne ki jagah. Yahan SQLite file hai. |
+| ID | Identifier | Pehchaan ka number ya naam (user ID, VM ID). |
+| OTP | One-Time Password | Ek baar chalne wala code. TOTP ek type hai. |
+| ENV | Environment (.env file) | Secrets rakhne wali file jo Git mein nahi jaati. |
+| WS | WebSocket | Browser aur server ke beech lagatar (live) connection. |
+| UUID | Universally Unique Identifier | Lambi random pehchaan jo kabhi do baar nahi aati. |
+| DM | Direct Message | Discord par seedha private message. |
+| CLI | Command Line Interface | Terminal mein text commands se kaam karna. |
+| DPAPI | Data Protection API (Windows) | Windows ka built-in key storage system (MYRAA mein). |
+| LVM | Logical Volume Manager | Linux ka disk storage system (storage pool ke liye). |
+| NFS | Network File System | Network par shared folder (storage ke liye). |
+| MMD / PMX | MikuMikuDance / Polygon Model eXchange | 3D character model ki file formats (MYRAA mein). |
+| bcrypt | Blowfish-based password hashing | Password ko ulta karke save karne ka tareeka. |
+| ssh2 | SSH library for Node.js | Node.js mein SSH connect karne ka code (HKVM use karta hai). |
+| Ctrl+K | Control key + K | Keyboard shortcut: command palette kholna. |
+| Hinglish | Hindi + English mix | Hindi words English letters mein likhna (jaise "kaise ho"). |
+| Nonce | Number used once | Ek baar ka random id, confirmation ke liye. |
+| Cron | Command Run On (time) | Time par apne aap chalne wala schedule. |
+| Wings | Pterodactyl ka daemon (agent) | Game containers chalane wala Pterodactyl ka hissa (Part 4 B4 dekhein). |
+
+## 2. Project ka sach — StarCloud kya hai
+
+### 2.1 Ek line mein
+**StarCloud** ek web panel hai jisse **admin** (aap) KVM par VPS aur VDS banata hai. Customer ko credentials (login details) **Discord** ke zariye milte hain. Order, ticket aur payment bhi Discord par hote hain.
+
+### 2.2 Kaam kaise hota hai (step by step)
+
+1. **Admin setup**: aap website par login karte hain (default `admin/admin`, jise pehli baar login ke baad badalna hai).
+2. **Settings**: aap website ke Settings page par Discord bot token dalte hain. Bot apne aap kaam shuru karta hai (ticket, UPI payment ticket, credentials).
+3. **Customer Discord par aata hai**: wo ticket kholta hai, plan chunta hai.
+4. **Payment**: Discord ticket mein UPI details dikhte hain. Customer payment karta hai, aur admin confirm karta hai. **Website par koi payment gateway nahi hai.**
+5. **VPS banana**: admin website par VPS/VDS create form bharta hai (naam, CPU, RAM, disk, password, nested KVM on/off).
+6. **Credentials**: VM ban jaane par bot Discord par customer ko credentials bhejta hai.
+7. **Customer use karta hai**: wo SSH (ya sshx link) se apne VPS ko chalata hai.
+8. **Webhook (optional)**: admin chahe to Discord webhook URL daale. Khali ho to kuch nahi jaata.
+
+### 2.3 Ye cheezein StarCloud mein NAHI hongi
+- Windows RDP, Windows templates.
+- tmate.
+- "Custom price per order" aur "Order record" (order table). Discord ticket hi record hai.
+- Website par UPI upload ya payment gateway.
+
+### 2.4 Website kiske liye hai
+- **Admin**: poori website. VPS banana, settings, coupons, audit log, maintenance.
+- **Customer**: website ka customer hissa **kam priority** par hai. Login ke baad apna VPS start/stop kar sakta hai (AI ke through bhi, confirmation ke saath).
+
+### 2.5 Deadline
+User ne pehle 21–22 October 2026 bataya tha, aur flexible bola tha. Aaj 2026-10-25 hai, yaani ye deadline nikal chuki hai. Ye bat user ke saath clearly honest hona zaroori hai.
+
+---
+
+## 3. Final decisions (tay hue faisle)
+
+| # | Tarikh | Faisla | Matlab (saral) |
+|---|---|---|---|
+| D-1 | 2026-10-17 | Saari features ek hi install mein | Koi part chhoda nahi jayega. P0/P1/MVP ka split nahi. |
+| D-2 | 2026-10-17 | Discord bot banega | Bot token website settings se. Ticket, UPI, credentials. |
+| D-3 | 2026-10-17 | RDP hataya | Windows RDP, Windows templates, Linux XRDP — sab scope se bahar. (XRDP ko 2026-10-25 par bhi remove karne ko kaha.) |
+| D-4 | 2026-10-17 | tmate hataya, sshx rahega | Terminal share ke liye sirf sshx. |
+| D-5 | 2026-10-17 | "Custom price per order" hataya | Billing mein custom price nahi. |
+| D-6 | 2026-10-17 | "Order record" hataya | Order table nahi. Discord ticket hi record. |
+| D-7 | 2026-10-17 | Coupons aur giveaway codes VM management mein | Billing se VM management section mein. |
+| D-8 | 2026-10-17 | Naam badle | HKVM → StarCloud. "hopingboyz" → KingSlayer. |
+| D-9 | 2026-10-17 | Single public IPv4 + har VM ka alag port | Ek hi public IPv4 sab VM ke liye, har VM ko port block. |
+| D-10 | 2026-10-17 | AI assistant website mein built-in | Source ideas: free-claude-code, ZORIN, MYRAA. |
+| D-11 | 2026-10-17 | Custom CPU model har create form mein | HKVM wala same style, same animation. |
+| D-12 | 2026-10-17 | Nested KVM | KVM host par default ON, toggle ke saath. KVM na ho to VPS create block. |
+| D-13 | 2026-10-17 | Installer KVM auto-detect karega | `/dev/kvm`, `vmx`/`svm` check. |
+| D-14 | 2026-10-17 | Default admin `admin/admin` accept | User ne kaha baad mein badlenge. |
+| D-15 | 2026-10-17 | VM ka password admin khud dalega | Template ka default password nahi. |
+| D-16 | 2026-10-18 | Webhook ek setting, khali default | Khali ho to kuch nahi bhejta. |
+| D-17 | 2026-10-18 | File manager ADD | VM ke andar files browse, upload, download, edit. |
+| D-18 | 2026-10-18 | IPv4 shared, port apne aap | Admin ko manually port nahi dalna. |
+| D-19 | 2026-10-18 | AI do tier mein | Owner/admin ka AI poore website ko control kare. Customer ka AI sirf support, aur sirf apna VPS start/stop (confirmation ke saath). |
+| D-20 | 2026-10-18 | AI provider Google AI Studio ka free Gemini key | Key sirf `.env` mein. Git mein kabhi nahi. |
+| D-21 | 2026-10-18 | Customer ke password aur secrets AI ko kabhi nahi | Free tier terms ke kaaran. |
+| D-22 | 2026-10-18 | `public-apis/public-apis` repo AI ka knowledge | Batch 6 mein ingest. |
+| D-23 | 2026-10-18 | "Pi S" drop | User ne kaha ab na pucha jaye. |
+| D-24 | 2026-10-25 | VM password minimum 8 characters | Confirm hua. |
+| D-25 | 2026-10-25 | Discord bot Python (discord.py) mein | Confirm hua. Node.js nahi. |
+| D-26 | 2026-10-25 | XRDP remove | Linux desktop remote bhi nahi. |
+
+**Kaam ke niyam (user ke standing rules)**:
+- Har jawab detail mein, step by step, reason ke saath.
+- Har short form pehli baar full form ke saath.
+- Analyse-File/ mein kuch change nahi.
+- Mpanel aur Nobita ko nahi dekhna (dropped).
+- Custom price per order aur order record nahi.
+- RDP aur tmate nahi, sshx haan.
+- Default admin `admin/admin` ka sirf ek line mein note.
+
+---
+
+## 4. Branch ki abhi ki halat (2026-10-25, sach-sach)
+
+Ye sabse zaroori hissa hai. Pichle session ka kaam is branch par **nahi** hai.
+
+| Cheez | Abhi ki halat | Kya karna hai |
+|---|---|---|
+| Naam badlna (HKVM → StarCloud) | ✅ Repo mein hai | Kuch nahi |
+| Batch 1 (KVM check, nested toggle, maintenance, emergency, audit) | ❌ Repo mein nahi (`services/` folder nahi hai) | Dobara build |
+| Discord login fix (email verified, password link page) | ❌ Bug abhi hai, `app.js` line ~742 par `discordUser.email` | Dobara fix |
+| Session secret hardcoded | ❌ `app.js` line ~326 par `'KingSlayer-secret-key-change-in-production'` | `SESSION_SECRET` se fix |
+| Logo | ❌ `public/images/logo.png` abhi bhi purana HKVM logo (753 KB, 1254x1254) | Naya StarCloud logo (512 px) dobara lagana |
+| Banner | ❌ `public/images/banner.png` nahi hai | Banner lagana |
+| Pichle commits (`5dfba23`, `9316bb3`, `b8a033b`, `5dcefe0`) | ❌ Is environment mein nahi hain | Naye sire se, is branch par |
+| Git push | Branch `active` hai. Remote tab hi kaam karega jab GitHub reachable ho | Push karke check |
+
+**Ye ek cheez clear rahe**: Batch 1 ka code ek baar ban chuka tha aur test bhi hua tha (HTTP level par), lekin ye is branch par wapas laana hoga. Nayi file mein ye sab "pending" hai.
+
+---
+
+*Part 1 khatam. Aage Part 2 (HKVM base), Part 3 (packs), Part 4 (features), Part 5 (security, gaps, script) hain.*
+
+---
+
+## 5. Part 2 — Base project: HKVM (`Analyse-File/(Nissalop22)hkvm-2.zip`)
+
+### 5.1 HKVM kya hai
+HKVM ek **Node.js web panel** hai jo **QEMU/KVM** VM ko browser se manage karta hai. StarCloud isi ka naya naam hai. Zip ke andar `Hkvm/` folder hai, aur `package.json` ke hisaab se naam `hkvm-panel-free`, version `2.0.0-free`, license **MIT** hai.
+
+### 5.2 Ye kaise bana hai (tech stack, saral bhasha mein)
+- **Express**: web server jo pages aur API deta hai.
+- **EJS**: HTML templates (views) jo data bharkar page banate hain.
+- **sqlite3**: database jo ek file (`data/hkvm.db`) mein rehta hai.
+- **express-session**: login session yaad rakhna.
+- **bcryptjs**: password ko hash (ulta, wapas na ho sakne wala code) mein save karna.
+- **passport + passport-discord**: "Discord se login".
+- **ssh2**: browser se VM ke terminal tak SSH connection.
+- **ws**: WebSocket, live serial console ke liye.
+- **axios**: dusri API ko call karne ke liye.
+- **uuid, cors, dotenv**: chhote helper tools.
+
+### 5.3 Folder structure (zip ke andar)
+- `app.js` (4,912 lines): poora backend. Ek hi file mein sab kuch (monolith). Ye bahut badi file hai, isliye bugs dhoondhna mushkil hai.
+- `licenses.js`: license ka **no-op stub** (kuch nahi karta). Matlab koi license server nahi, koi key nahi.
+- `views/`: admin, users, partials, `license_activation.ejs`.
+- `public/`: CSS aur images.
+- `data/`: database file. Zip mein `hkvm.db` hai (asli data, copy nahi karna).
+- `.env`: zip mein hai (secrets ho sakte hain, copy nahi karna).
+- `node_modules/`: 239 packages (zip ka size bada isi se hai).
+
+**Ye repo se match**: StarCloud repo ka `app.js` HKVM ke `app.js` se sirf naam badalne ke farq ke saath same hai (normalize karne par sirf 4 lines alag). Yani repo abhi base copy hai, koi naya feature nahi.
+
+### 5.4 HKVM mein kya hai (verified, `docs/HKVM_FEATURE_INVENTORY.md` ke hisaab se)
+
+| Feature | Status | Saral matlab |
+|---|---|---|
+| VM create (KVM/QEMU + cloud image + cloud-init) | ✅ | VM banana aur pehli baar boot par setup. |
+| VM start, stop, restart, reinstall, delete, edit | ✅ | VM ke basic power aur edit control. |
+| Custom CPU model (`custom_cpu_name`) | ✅ | VM ko kisi bhi CPU ka naam dena (`-cpu <model>,model-id=<name>`). |
+| 10 CPU models (Host, Maximum, QEMU 64, KVM 64, Core 2 Duo, Core i7, Skylake, Cascade Lake, Opteron, EPYC) | ✅ | Dropdown mein CPU chunne ke options. |
+| Nested KVM (explicit toggle) | ❌ | Abhi sirf implicit (`cpu=host`). Toggle nahi hai. |
+| Web SSH terminal (xterm) | ✅ | Browser mein terminal. |
+| Serial console (WebSocket) | ✅ | VM ke boot output ko live dekhna. |
+| Snapshots (basic) | ⚠️ | Basic save, pura feature nahi. |
+| VM logs | ✅ | VM ke events ki list. |
+| Live stats (CPU, RAM, network) | ✅ | Live numbers (`/api/vms/:id/stats`). |
+| ISO attach/detach | ✅ | CD jaisi image ko VM se jodna/hatana. |
+| OS templates (catalog + custom + cache) | ✅ | OS ki list, custom template, download cache. |
+| User admin (CRUD = Create, Read, Update, Delete; role) | ✅ | User banana, badalna, hatana. |
+| Discord OAuth login/link/unlink | ✅ | Discord se login. (Bugs hain, Part 4 mein.) |
+| Discord bot settings (token, guild, auto role) | ⚠️ | Settings save hoti hain, lekin bot nahi chalta. |
+| Discord webhook | ❌ | HKVM mein webhook code nahi hai. |
+| File manager | ❌ | HKVM mein file manager nahi hai. |
+| Notifications bell | ⚠️ | Icon hai, backend nahi. |
+| Command palette (Ctrl+K) | ❌ | Nahi hai. |
+| Fullscreen toggle | ✅ | Pura screen. |
+| Stop All VMs (Danger Zone) | ⚠️ | Browser se ek-ek VM ko stop karne ka loop. Server par nahi. |
+| Active sessions list | ⚠️ | Button hai, route nahi. |
+| Maintenance mode | ❌ | Nahi hai. |
+| 2FA (TOTP) | ❌ | Nahi hai. |
+| Windows guest / RDP | ❌ | Nahi hai. |
+| Coupons, billing, orders | ❌ | Nahi hai. |
+| Backups (real) | ❌ | Nahi hai. |
+| Cron / schedules | ❌ | Nahi hai. |
+| Port forward UI | ❌ | Sirf NAT ka SSH port. |
+| Public IPv4 pool | ❌ | Sirf single static IP cloud-init. |
+| Cloudflare | ⚠️ | Sirf DNS dropdown (1.1.1.1). API integration nahi. |
+| Hindi (i18n) | ❌ | Sirf English. |
+
+### 5.5 HKVM ke routes (groups mein)
+- **Auth**: `/api/login`, `/api/logout`, `/api/auth/check`, `/login`, `/logout`, `/profile`, `/dashboard`, `/vms`.
+- **Discord**: `/api/discord-enabled`, `/api/discord-auth-url`, `/auth/discord/callback`, `/api/link-discord-account`, `/api/unlink-discord-account`, `/api/discord-account-info`, `/api/admin/discord-settings`.
+- **Templates**: `/api/os-templates`, `/api/admin/templates...` (CRUD, download, cache).
+- **Create helpers**: `/api/cpu-models`, `/api/smbios`, `/api/network-types`, `/api/dns-providers`, `/api/iso-list`.
+- **VM**: `POST /api/vms` (create), `GET /api/vms`, `POST /api/vms/:id/start|stop|restart|reinstall`, `DELETE /api/vms/:id`, `GET|PUT /api/vms/:id/edit`, `GET /api/vms/:id/stats`, `GET /api/vms/:id/logs`, snapshots, ISO attach/detach.
+- **Console**: `/api/vms/:id/console`, `/api/ssh/connect`, `/api/ssh/command`, WebSocket server.
+- **Admin**: `/api/admin/users...`, `/api/admin/vms`, `/api/admin/dashboard`, `/api/settings` (GET/PUT), `/api/settings/:key` (POST).
+- **User**: `/api/user/profile`, `/api/user/password`.
+- **License stub**: `/license_activation`, `POST /api/license/activate` (kuch nahi karta).
+
+### 5.6 HKVM ka database (8 tables)
+`users`, `vms`, `vm_logs`, `vm_snapshots`, `os_templates`, `settings`, `discord_settings`, `user_discord_accounts`.
+- `vms` table mein migrations (app.js ~L430–460) se naye columns jude: `custom_cpu_name`, `machine_type`, `board_name`, `product_name`, `custom_smbios_manufacturer`, `dns_primary`, `dns_secondary`, `iso_attached`, `boot_from_iso`, `bridge_device`.
+- `discord_settings` mein `bot_token`, `guild_id`, `auto_role_id` hain, lekin unka koi use nahi.
+
+### 5.7 HKVM ke security issues (verified)
+
+| # | Issue | Kahan | Saral matlab | Fix |
+|---|---|---|---|---|
+| S1 | Default admin `admin/admin` apne aap ban jata hai | app.js ~L564–569 | Koi bhi default password se andar ja sakta hai | Pehli baar setup, owner email/password `.env` se. (User ne accept kiya, baad mein badlenge.) |
+| S2 | Session secret code mein likha hai | app.js ~L326 | Attacker secret jaan kar session fake kar sakta hai | `SESSION_SECRET` env se, na ho to random |
+| S3 | Cookie `secure: false` | app.js ~L329 | Cookie HTTP par bhi jaati hai | HTTPS par `secure: true`, `httpOnly`, `sameSite` |
+| S4 | Shell injection (`execSync` mein string jodna) | app.js ~L2059–2094, 2517–2525, 2868–2883, 3897–3910 | VM ka naam ya path se galat command chal sakti hai | `execFile`/`spawn` argv array mein |
+| S5 | Default VM password (`ubuntu`/`ubuntu` etc.) fallback `'password'` | app.js ~L992, 1623, 2390, 2412, 2646, 2667, 3442, 3535 | Har VM ka password pehle se pata ho sakta hai | Admin password dale, minimum 8 characters |
+| S6 | Login par rate limit ya lockout nahi | — | Brute force possible | Rate limit + lockout |
+| S7 | CSRF protection nahi | — | Dusri site se action karwaya ja sakta hai | CSRF token |
+| S8 | Input validation (zod) nahi | — | Galat data andar aa sakta hai | Har route par validation |
+| S9 | Monolith `app.js` | — | Maintain karna mushkil | `routes/`, `services/`, `lib/` mein todna |
+
+### 5.8 HKVM ki galat-fehmiyan (user ne sahi kaha, ye sach hai)
+Pehle ek report mein kuch galat claims the. Sach ye hai:
+
+| Claim | Sach |
+|---|---|
+| "Webhook settings mein hai" | ❌ Webhook code nahi. Settings mein sirf Discord Bot fields hain (token, guild, auto role), jo save hote hain par bot nahi chalta. |
+| "File manager HKVM mein hai" | ❌ Nahi hai. File manager HVM-8 (`/vps/<id>/files/*`) aur NKVM mein hai. |
+| "Nested KVM toggle hai" | ⚠️ Toggle nahi hai. Sirf implicit `cpu=host`. |
+| "Custom CPU model hai" | ✅ Haan, hai. `custom_cpu_name` + 10 CPU models. |
+| "RDP / Windows support" | ❌ Nahi hai. |
+| "Notifications kaam karti hain" | ⚠️ Sirf bell ka UI hai. |
+
+### 5.9 HKVM ke installation mein kya dhyan rakhna (repo ke README/docs se)
+- Native module `sqlite3` ke liye build tools chahiye. Repo mein install karte waqt `npm_config_nodedir=/usr/local npm ci` use hota hai.
+- `.env` mein `PORT=8080`, `STARCLOUD_DATA_DIR=./data`, `PANEL_NAME=StarCloud`, `DEFAULT_LOGO_URL=/images/logo.png`. Koi secret nahi.
+
+---
+
+## 6. Part 3 — Har zip pack ka alag-alag analysis
+
+> Har pack ke liye: **kya hai**, **size/structure**, **features (evidence ke saath)**, **StarCloud ke liye kya lena hai**, **risk**, aur **faisla**.
+> Kisi bhi pack ka poora code copy nahi karna. Sirf idea, flow aur design lena hai, apne code mein likh kar.
+
+### 6.1 `(Nissalop22)HVM-8.zip` — Python (Flask) VPS panel "HVM-8"
+- **Size**: zip 1.8 MB, unzipped 6.8 MB, 83 files.
+- **Tech**: Python Flask (web framework), SQLite. Main file `hvm/hvm.py` (20,118 lines, 165 route decorators). `api.py` (4,076 lines) mein REST API aur webhooks. `node.py` (2,256 lines) node agent. `live_stats_manager.py` (523 lines).
+- **Features (evidence ke saath)**:
+  - **Maintenance mode** (`/admin/maintenance`) — hvm.py mein 18 jagah ka zikr.
+  - **Emergency stop all / reboot all** (`/admin/emergency-stop-all`, `/admin/emergency-reboot-all`).
+  - **Backup**: list, restore, download, delete (`/admin/backup/...`). Backup files `backups/` folder mein `.db` ke roop mein hain.
+  - **VPS expiry, suspend, renew, expiring list** (`/admin/vps/<id>/expiration`, `/suspend`, `/unsuspend`, `/renew`, `/admin/vps/expiring`). Expiry mein 202 jagah zikr.
+  - **Migration** (`/admin/vps/<id>/migrate`, migration progress).
+  - **Port forwarding**: `/ports/add`, `/ports/remove`, bulk ranges (`/admin/ports/bulk`), port quota (`/api/vps/<id>/port-quota`), port reset.
+  - **Snapshots + schedules**: `/vps/<id>/snapshots/create`, `restore`, `delete`, `download`, `upload`, `schedule` (snapshot schedule), size refresh.
+  - **File manager** (`templates/vps_files.html`): `/vps/<id>/files/browse`, `upload`, `download`, `delete`, `rename`, `mkdir`, `read`, `write`, `move`, `chmod`, `compress`, `extract`, `search`.
+  - **Webhooks** (`api.py`: `/webhooks`, `/webhooks/<id>`).
+  - **2FA** (`/2fa`).
+  - **Discord login** (`/auth/discord/login`, `register`, `callback`, `link`, `unlink`).
+  - **Password reset** (`/forgot-password`, `/reset-password/<token>`).
+  - **API keys** (`/admin/api/create`, toggle, delete).
+  - **Nodes with circuit breaker** (`/admin/nodes/circuit-breakers`, reset) — ek node fail ho to traffic rok dena.
+  - **Notifications** (`/notifications`, mark read, mark all, clear, delete).
+  - **Admin tools**: DB vacuum, system info, resource check, logs.
+- **Ek bada dhyan wali baat (LXC)**: LXC (Linux Containers) ek alag technology hai. Ye container hai, KVM VM nahi. HVM-8 ka `hvm.py` ke andar `execute_lxc` function ~196 baar aur `LXC` word ~66 baar aata hai. `node.py` ka header bhi kehta hai "**LXC Container Management Node Agent**". Matlab HVM-8 ka main backend container-based hai, KVM-based nahi. Master spec ke hisaab se StarCloud mein VPS/VDS **hamesha real KVM VM** honge, **LXC nahi**. Isliye HVM-8 ka backend design copy nahi karna. Sirf feature ideas (maintenance, expiry, backup, file manager routes) lene hain.
+- **Risk**: `license_client.py` (238 lines) license check karta hai. Ye commercial gate hai, isko copy nahi karna. Zip ke andar `hvm.db` (database), `hvm.log` (log), `backups/` aur `__pycache__/` mein 4 compiled `.pyc` files (bytecode, source nahi) hain. Ye sab personal ya live data ho sakta hai, isliye copy nahi karna. (Gehri jaanch: Part 6.)
+- **Faisla**: **Feature ideas bahut kaam ke hain** (maintenance, emergency, expiry/suspend/renew, backups, file manager routes, webhooks, 2FA, snapshot schedule, port bulk). Code copy nahi.
+
+### 6.2 `(PapiaGamerz)HVM-V8.zip` — HVM-8 ka doosra version
+- **Size**: zip 1.1 MB, unzipped 4.2 MB, 69 files.
+- **Tech**: Python Flask. `hvm.py` 15,466 lines, 147 route decorators. `api.py` 1,704 lines. `license_manager.py` (615 lines), `license_server.txt` (ek hard-coded license server ka address).
+- **Features**: maintenance (24 keyword hits), emergency (13), backups (91), Discord (170), 2FA (6), cron (4). Routes HVM-8 jaise hi hain (maintenance, emergency, backup, nodes, circuit breaker, API keys).
+- **Installer guide** (`hvm installer guide.txt`): ye ek **systemd service** banane ka tareeka dikhata hai (`/etc/systemd/system/hvm.service`), jisme `Restart=always`. Matlab panel server par 24/7 chalta rahe, crash hone par apne aap restart ho. **Ye idea StarCloud ke installer mein use hoga.** (Guide ke andar license key ka naam hai, wo copy nahi karna.)
+- **Risk**: license server aur license gate. Ye pack HVM-8 se milta-julta hai. Dono ko dekhna kaafi hai.
+- **Faisla**: sirf `systemd` installer idea aur emergency/maintenance ke route names. Code copy nahi.
+
+### 6.3 `(Nissalop22)Svm-v6.zip` — "Svm Panel" (Python Flask, decompiled)
+- **Size**: zip 1.0 MB, unzipped 2.5 MB, 58 files.
+- **Tech**: Python Flask. `svm_panel.py` (4,770 lines, 78 functions). `api.py` (833 lines) REST API blueprint `/api/v1`, jo `X-API-Key` header maangta hai.
+- **⚠️ Source ki halat**: header mein likha hai **"Source Generated with Decompyle++"** aur file `hvm.pyc` (Python 3.12) se bani hai. Matlab ye **original source nahi** hai, compiled bytecode se wapas banaya gaya hai. Isme comments aur kuch logic galat ho sakta hai. Iska license bhi saaf nahi hai.
+- **Features (keywords se)**: maintenance (5), backup (10), 2FA (4), license (26), port (186), SSH (76), ISO (59). Route names `api.py` aur `svm_panel.py` mein hain (static, callback, link-callback, proc/stat jaise paths).
+- **Faisla**: **sirf reference**. Koi code copy nahi. Port ka kaam (186 hits) aur API key ka tareeka (`X-API-Key`) samajhne ke liye dekhna. Kaam ka nahi, kyunki decompiled code hai.
+
+### 6.4 `(Nissalop22)NKVM_Panel_v1.zip` — NKVM (Node.js + Express, GPL-3.0)
+- **Size**: zip 277 KB, unzipped 1.0 MB, 84 files.
+- **Tech**: Node.js 18+, Express, EJS, Socket.IO (live updates), Xterm.js (web terminal), better-sqlite3 (database), JWT (login token). Folder: `src/` (app.js, server.js, routes, services, lib, middleware), `views/` (admin, auth, error, partials, user), `scripts/`, `.devcontainer/`.
+- **License**: **GNU GPL-3.0** (`LICENSE` file ka pehla line). Matlab agar iska code copy kiya to StarCloud bhi GPL-3.0 banega. **Isliye code copy nahi, sirf ideas.**
+- **Features (README ke hisaab se)**:
+  - Glassmorphism UI, 4K wallpaper browser (4kwallpapers.com se), blur aur transparency sliders.
+  - VM creation wizard: 1-click presets (Starter, Standard, Compute/Dev, Powerhouse), vCPU aur RAM slider, distro grid (Ubuntu 22.04/24.04, Debian 11/12/13, Fedora 40, CentOS Stream, AlmaLinux, Rocky Linux).
+  - Xterm.js web SSH console.
+  - Boot logs (QEMU serial output, kernel messages, cloud-init progress), 3 second auto-refresh.
+  - **File manager**: guest agent aur SSH dono se kaam karta hai (agent na ho to SSH fallback). 200 MB+ upload, Monospace code editor modal.
+  - Multi-user: root admin aur standard user, subuser ko per-server permission (Console, File Manager, Backups, Power).
+  - 2FA (TOTP) — `authService.js` mein TOTP ka code hai.
+  - Activity log / "audit logs" (README mein likha hai: VM power actions, login, permission change). **Gehri jaanch (2026-10-25)**: code mein `src/services/activityService.js` hai, jo activity log chalata hai. Alag "audit" naam ki service nahi mili. Dashboard par "audit" sirf ek label hai. (Part 6.)
+  - Snapshots aur cron automation.
+  - Ports: web panel `3001`, SSH forward range `25501–25600`, guest agent range `26101–26200`.
+  - API: `POST /api/login` (JWT), `GET /api/vms`, `POST /api/vms/:id/action` (start, stop, restart, kill), `GET /api/vms/:id/bootlog`, file list/download/upload, wallpapers.
+- **StarCloud ke liye lena hai**: file manager ka design (agent + SSH fallback), boot log tabs, port range idea (`25501–25600` jaisa), subuser permission model (later), wallpaper + blur + transparency sliders (Batch 5).
+- **Risk**: GPL-3.0. Wallpaper API `4kwallpapers.com` ka hai, uska terms check karna padega.
+
+### 6.5 `vpanel-pro-main.zip` — vPanel Pro v3.1.1 (Node.js + MongoDB)
+- **Size**: zip 8.9 MB, unzipped 10.8 MB, 152 files.
+- **Tech**: Node.js 18+, Express, MongoDB (database), EJS views, GitHub Actions (automatic release).
+- **Naam ka matlab**: "Arix Theme v2.1.3" ek design system hai. "Admin Control Plane" (admin ka hissa) aur "Tenant User Panel" (customer ka hissa) alag-alag hain.
+- **Features (README)**:
+  - Arix theme: glassmorphism, blur aur opacity, glowing borders, wallpapers, video backgrounds, audio cues.
+  - Server dashboard: START/RESTART/STOP buttons (STOP par confirmation), 7 live stat cards (address, uptime, CPU, memory, disk, network in aur out), 3 telemetry charts (2.5 second update).
+  - Multi-session SSH terminal (24/7 background persistence), noVNC (browser mein graphical desktop), live boot logs with **AI virtualization diagnostics** (boot fail ka reason).
+  - Admin: cluster nodes, VM deploy (cloud-init images), storage pools (Local Directory, LVM, NFS), user delegation, TOTP 2FA, **admin impersonation** (admin customer ban kar dekh sake, banner ke saath), **MongoDB management studio**, **Command palette (Ctrl+K)**, plugin system, Discord rich embeds, Telegram alerts, signed HTTP webhooks.
+  - **Docker No-KVM mode**: `NO_KVM=1` env se bina KVM ke chalna (development ke liye).
+  - i18n: `src/lib/i18n.js` mein **en, hi (Hindi), es, de, ar** hain. **Hindi yahin se li ja sakti hai.**
+  - Services (23): `auditService`, `backupService`, `scheduleService`, `bootLogService`, `vncService`, `aiLogService`, `billingService`, `mailService`, `storageService`, `networkService`, `sshService`, `vmService`, `activityService`, `agentService`, `apiManagerService`, `authService`, `cacheService`, `mongoManagerService`, `nodeService`, `resourceService`, `templateService`, `updateService`, `wallpaperService`.
+- **⚠️ License**: README mein MIT badge hai, lekin zip mein **LICENSE file nahi** hai. Matlab license clear nahi. **Code copy nahi.** Sirf ideas.
+- **StarCloud ke liye lena hai**: audit service ka design, backup aur schedule ka design, boot log ka tareeka, Hindi i18n ka structure (strings file), command palette (Ctrl+K), webhook sender (signed POST), NO_KVM mode idea (lekin hamara rule: NO_KVM par VPS create block, par panel chalna chahiye).
+- **Billing service** ko sirf coupon ke idea ke liye dekha ja sakta hai. Custom price aur order record nahi lene.
+
+### 6.6 `ALTEX-CODE-main.zip` — ALTREX CODE V4 (AI coding workspace, Electron)
+- **Size**: zip 3.8 MB, 3 top-level files: ek nested zip `ALTREX-CODE-V4-GITHUB-REPO.zip` (286 files), `GITHUB.txt`, `README.md`.
+- **Nested repo**: `ALTREX-CODE/` monorepo. Tech: Electron (desktop app), React, TypeScript, pnpm workspace. Packages: `contracts` aur `core` (core ke folders: agents, context, errors, events, gateway, git, memory, orchestrator, router, security, tasks, testing, tools, util, verification, workspace). Docs ~20 files (architecture, security model, tool system, provider spec, agent protocol, test strategy, Windows release).
+- **Kya hai**: local-first Windows AI coding app. User project folder kholta hai, AI plan banata hai, file edit karta hai, project ke tests chalata hai, aur ek alag AI review karta hai.
+- **Features (README)**:
+  - **Many AI providers**: crax-gpt, Google Gemini, NVIDIA NIM, OpenRouter, Groq, OpenAI, Cerebras, SambaNova, Cloudflare Workers AI, Ollama (local), kisi bhi OpenAI-compatible endpoint, ChatGPT Codex.
+  - **Smart routing**: Auto, Fast, Powerful, Free only, Local only, Custom modes. Provider fail ho to apne aap doosra. Badge batata hai ki asli provider aur model kaun sa chal raha hai.
+  - **Evidence-based verification**: result "Verified" tabhi jab project ke tests, build, typecheck, lint pass ho **aur** ek independent AI review approve kare. Warna saaf likha jata hai kya verify nahi hua.
+  - **Safety**: har change se pehle checkpoint (restore aur undo ek click mein). Risky commands par approval prompt. Forbidden commands (`git push`, shell, `rm -rf` jaisi) kabhi nahi chalte. Permission profiles: Read-only, Standard, Autonomous. Cloud consent: project code cloud AI ko tab tak nahi jata jab tak user allow na kare.
+  - **Secrets**: API keys OS-level encryption (Electron `safeStorage`) mein, kabhi UI par nahi, logs mein nahi.
+- **StarCloud ke liye lena hai (Batch 6)**:
+  - **Provider failover** (ek provider fail → doosra).
+  - **"Verified" ka sach-bolna rule**: AI jo kaam karta hai uska result clearly bataye, aur jo verify na hua ho use saaf likhe.
+  - **Checkpoint + undo** idea: VM ke badlav se pehle state save (snapshot-jaisa).
+  - **Forbidden action list** (AI kabhi ye nahi chalayega).
+  - **Cloud consent**: customer data AI ko bhejne se pehle consent (hamare case mein passwords kabhi nahi).
+- **Risk**: Windows desktop app hai, bahut bada. Code copy nahi. README mein saaf likha hai ki LICENSE file nahi hai.
+
+### 6.7 `MYRAA-Source-Code-1.5.2.zip` — MYRAA 1.5.2 (3D AI companion, Windows)
+- **Size**: zip 7.9 MB, unzipped 9.8 MB, 266 files (161 `.ts`, 35 `.py`, 22 `.tsx`, 6 `.mp4`).
+- **Kya hai**: Windows par 3D AI companion. Voice se Google Gemini Live se baat karti hai. User allow kare to screen dekh sakti hai. PC ke apps aur files control kar sakti hai. Desktop par character rehta hai.
+- **Tech**: Electron, React, three.js (3D), MMD/PMX (character model format), Express + WebSocket backend, Python `desktop_agent/` (Windows UI Automation, input, files, apps), PyInstaller se build.
+- **Important folders**:
+  - `agent/` — planner, action catalog, **risk.ts** (action ka risk level), executor, **audit.ts**, **cancellation.ts**, shell, web fetch, recovery, scheduler.
+  - `api_hub/` — adapter registry, catalogue importer, health checker, built-in adapters (3). **Ye "API hub" idea public-apis ingestion se judta hai.**
+  - `cognition/` — memory, goals, curiosity, initiative, critic, safety, skill manager, model router.
+  - `memory/` — contacts, working memory.
+  - `character_import/` — PMX import.
+  - `permissions/`, `secrets/` (Windows DPAPI se key store), `settings/`.
+  - `assets/` — mp4 videos (character animations).
+- **Features ke ideas**:
+  - **risk.ts**: action ka risk **kaam se** decide hota hai (jaise button ka label, app, key), **planner ke kehne se nahi**. Aur agar high-risk kaam user ne maanga hi nahi, to usko "possible prompt injection" (web page se chupke se diya gaya command) maana jata hai.
+  - **Emergency shortcut** `Ctrl+Alt+Shift+S` se sab rok dena.
+  - **Untrusted data rule**: web page, document, screen ka text "data" hai, "command" nahi.
+  - **Memory separation**: memory alag files mein.
+- **⚠️ Privacy risk**: zip mein `cognition/memories.v1.json`, `cognition/last-session.json` aur `server_memory.ts` jaisi files hain. Ye personal memory ho sakti hai. Isko copy nahi karna, na git mein daalna.
+- **License**: zip mein LICENSE file nahi, README mein license ka zikr nahi.
+- **Faisla**: **risk classification (risk.ts), audit (audit.ts), cancellation idea, prompt injection defence** ke ideas Batch 6 mein use honge. Voice aur 3D part StarCloud ke liye nahi hai.
+
+### 6.8 `ZORIN-M4-source.zip` — ZORIN M4 (Python voice companion, Windows)
+- **Size**: zip 199 KB, unzipped 0.5 MB, 127 files (113 `.py`).
+- **Kya hai**: Windows voice companion, Gemini Live native audio model ("Gemini 3.1 Flash Live Preview", voice "Puck"). Hindi aur Hinglish samajhta hai. Desktop actions: app kholna, click, scroll, volume, typing.
+- **Launcher files**: `RUN-ZORIN-VOICE.bat` (mic on), `RUN-KEYBOARD-WITH-VOICE.bat` (mic off, voice reply on), `run.bat --text` (dono off), `SETUP-AUDIO.bat`.
+- **Important files**:
+  - **`risk.py`**: regex se decide karta hai — "delete, remove, format, purchase, pay, send, post, password, security, disable, uninstall, reset account" jaise words ho to **confirm** ya **deny**. Blocked apps: `powershell`, `cmd`, `regedit`, `password manager`, `Windows Security` etc. Allowed keys ki list hai.
+  - **`confirmation.py`**: `ConfirmationGate` class. Ek action pending hota hai, uska nonce (random id) banta hai, **60 second** mein haan/na nahi, timeout par cancel. Event bhi bhejta hai.
+  - **`planner.py`**: plan banata hai (step by step).
+  - **Providers**: `gemini_provider.py`, `groq_provider.py`, `openai_provider.py`, `local_provider.py` — ek hi interface, alag-alag provider.
+  - **`check_*.py`** files: live tests (mic, screen, desktop, Hinglish).
+- **⚠️ Safety note**: README kehta hai "**no wake-word gate**, spoken commands can execute immediately". Matlab bina pooche kaam ho sakta hai. StarCloud mein ye nahi hona chahiye; confirmation zaroor.
+- **StarCloud ke liye lena hai (Batch 6)**:
+  - **Risk gate + Confirm** (exact design: risky action → plan dikhao → 60 second mein haan).
+  - **Provider registry** (ek interface, kai providers).
+  - **Hinglish command ideas** (AI ko Hindi/Hinglish samajhna).
+- **Risk**: voice, microphone, desktop control StarCloud ke liye nahi hai. README mein personal Windows paths hain.
+- **License**: LICENSE file nahi.
+
+### 6.9 `StarCloud-Logo.png` aur `StarCloud-Banner.png` (Analyse-File ke andar, zip nahi)
+| File | Size | Dimension | Use |
+|---|---|---|---|
+| `StarCloud-Logo.png` | 2.7 MB | 1254 x 1254 | Sidebar, favicon. 512 px tak chhota karna hai (~537 KB). |
+| `StarCloud-Banner.png` | 2.9 MB | 1673 x 940 | Login page ka hero image. 1600 px tak chhota karna hai (~2.5 MB, optimize baaki). |
+
+**Ye files Analyse-File mein hain, inhe nahi chhedna.** Repo mein `public/images/` mein copy karna hai.
+
+---
+
+*Part 2 aur Part 3 khatam. Part 4 (features) aur Part 5 (security, missing packs, script, next steps) aage hain.*
+
+---
+
+## 7. Part 4 — Har feature ka alag analysis
+
+> Har feature ka format same hai:
+> - **Kya hai** (saral bhasha mein)
+> - **Kyun chahiye** (fayda)
+> - **Kaise kaam karega** (step by step)
+> - **Source** (kis pack ya file se idea)
+> - **HKVM mein status**
+> - **StarCloud mein kaise jodein** (kin files mein kaam)
+> - **Risk**
+>
+> Status ke shabd: ✅ = hai, ⚠️ = adhoora, ❌ = nahi hai, 🔵 = design/idea hai, code abhi nahi.
+
+### Group A — Host safety aur base (Batch 1)
+
+#### A1. KVM capability detection (KVM ki jaanch)
+- **Kya hai**: panel check karta hai ki ye computer real VM (KVM) chala sakta hai ya nahi. Teen cheezein dekhta hai: `/dev/kvm` file hai ya nahi aur likhne ki permission hai ya nahi; CPU mein `vmx` (Intel) ya `svm` (AMD) flag hai ya nahi; nested virtualization on hai ya nahi (`/sys/module/kvm_intel/parameters/nested` ya `kvm_amd`).
+- **Kyun chahiye**: bina KVM ke VPS banane par VM bahut dheema chalega ya fail hoga. Pehle hi pata chalna chahiye.
+- **Kaise kaam karega**:
+  1. Panel start hote hi `/proc/cpuinfo` padhta hai aur flags dhoondhta hai.
+  2. `/dev/kvm` ka existence aur write permission check karta hai.
+  3. Nested setting padhta hai.
+  4. Result ek object mein rakhta hai: `kvm_available`, `dev_kvm_exists`, `dev_kvm_writable`, `cpu_virt`, `nested_supported`, `mode`, `reason`.
+  5. Result 10 second tak cache hota hai, taaki baar-baar file na padhni pade.
+  6. Admin ke liye `GET /api/admin/capabilities` route, aur capability report page.
+- **Source**: master spec (owner ka build spec) section 0; koi pack ka direct code nahi.
+- **HKVM mein status**: ❌ (koi check nahi, sirf `-enable-kvm` hardcoded hai, aur KVM na ho to TCG software fallback chalta hai jo dheema hai).
+- **StarCloud mein kaise jodein**: naya file `services/capabilities.js`. `app.js` mein route. Admin create page par banner.
+- **Risk**: `/proc/cpuinfo` ka format alag ho sakta hai (ARM, container). Isliye "unknown" state bhi rakhni hai.
+
+#### A2. Bina KVM ke VPS create block
+- **Kya hai**: agar host par KVM nahi hai to VPS/VDS banane ka button band ho jata hai, aur saaf message dikhta hai.
+- **Kyun chahiye**: user ko galat VM mile ye nahi hona chahiye. Ye rule master spec ka hai: VPS/VDS hamesha real KVM VM hon, LXC nahi.
+- **Kaise kaam karega**: `POST /api/vms` ke shuru mein check. KVM nahi to `409` status aur `NO_KVM` code. Frontend button disable, aur banner mein reason (jaise "/dev/kvm nahi mila").
+- **Source**: D-12, D-13, master spec.
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `app.js` ke `POST /api/vms` ke shuru mein, aur `views/admin/vm-create.ejs` mein banner.
+- **Risk**: bade bug se bhi bina KVM ke VM ban sakta tha. Isliye server-side check zaroori hai, sirf frontend nahi.
+
+#### A3. Nested KVM toggle (VM ke andar VM)
+- **Kya hai**: VPS ke andar bhi customer apna KVM VM chala sake. Ye toggle create form mein hai, "VM inside VPS (Nested KVM)", default ON.
+- **Kyun chahiye**: customer ko Docker ya VM ka use karna ho, to ye zaroori hai. D-12 ka faisla hai.
+- **Kaise kaam karega**:
+  1. Host kernel mein `kvm_intel nested=1` ya `kvm_amd nested=1` chahiye.
+  2. Agar host support karta hai, to QEMU ko CPU flag dete hain: `-cpu host,+vmx` (Intel) ya `+svm` (AMD).
+  3. Agar host support nahi karta, to toggle grey ho jata hai aur saaf likha hota hai ki nested host par enable nahi.
+  4. VM ki DB row mein `nested_kvm` column save hota hai.
+- **Source**: D-12, master spec §1. Implementation idea in-house hai.
+- **HKVM mein status**: ❌ (implicit `cpu=host` hai, toggle nahi).
+- **StarCloud mein kaise jodein**: `vms` table mein `nested_kvm` column (migration), create form mein toggle, aur QEMU args builder mein flag.
+- **Risk**: nested KVM se performance thodi kam hoti hai. Kuch host kernels mein ye band hota hai. Security ke liye bhi dhyan: customer ke VM se host tak escape rokna hota hai.
+
+#### A4. Custom CPU model (VPS/VDS create form mein same)
+- **Kya hai**: VM ko kisi bhi CPU ka naam dena, jaise `Intel-Xeon-E5-2680v4`. QEMU ko `-cpu <model>,model-id=<name>` diya jata hai.
+- **Kyun chahiye**: D-11 ke hisaab se VPS aur VDS dono ke create form mein HKVM wala same option, same animation.
+- **Kaise kaam karega**: checkbox, phir text field. Checkbox on ho to text field bhari honi chahiye. QEMU command mein `model-id` jodta hai.
+- **Source**: HKVM ka `views/admin/vm-create.ejs` (CPU model section, custom checkbox).
+- **HKVM mein status**: ✅ (sirf HKVM create form mein).
+- **StarCloud mein kaise jodein**: VDS aur VPS dono ke create form mein same component copy karke (apne code mein), same CSS class.
+- **Risk**: galat CPU naam se QEMU start fail ho sakta hai. Isliye validation chahiye.
+
+#### A5. Capacity guard (host ki jagah ka hisaab)
+- **Kya hai**: host par kitne vCPU, RAM aur disk free hain, uska hisaab. Naya VM tabhi bane jab fit ho.
+- **Kyun chahiye**: zyada VM banane se host crash ho sakta hai, aur sab VM dheeme ho jate hain.
+- **Kaise kaam karega**: host ke total vCPU, RAM, disk minus running VM ke resources. Message: "X vCPU aur Y GB RAM free hai, Z VM fit honge". Over-allocation limit (jaise 1.5x) admin set kare.
+- **Source**: master spec §0 (own design). Koi pack ka direct code nahi.
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `services/capacity.js`, create API mein check.
+- **Risk**: "free" ka hisaab sirf VM ke allocated numbers par hai, actual use par nahi. Ye ek simple rule hai.
+
+#### A6. VM password zaroori (minimum 8 characters)
+- **Kya hai**: admin har VPS/VDS ka password khud dalega. Template ka default password (jaise `ubuntu/ubuntu`) nahi chalega.
+- **Kyun chahiye**: S5 security issue. Default password se koi bhi VM khul sakta hai.
+- **Kaise kaam karega**: create form mein password field `required` aur `minlength="8"`. Server par bhi check. Galat ho to `400` error.
+- **Source**: D-15. Minimum 8 characters user ne 2026-10-25 ko confirm kiya.
+- **HKVM mein status**: ❌ (template default `ubuntu/ubuntu` tha).
+- **StarCloud mein kaise jodein**: `vm-create.ejs` ka password field, `app.js` mein `POST /api/vms` ka check, aur edit route ka bhi check.
+- **Risk**: password DB mein plain text mein hai (HKVM ka design). Ye bhi ek security risk hai, aage encrypt karna chahiye.
+
+#### A7. Maintenance mode (website band karna, admin ko chhod kar)
+- **Kya hai**: ek switch jo ON karne par non-admin users ko maintenance page dikhata hai, aur API par `503` (Service Unavailable) status deta hai. Admin login chalta rehta hai.
+- **Kyun chahiye**: update, server kaam, ya emergency mein user ko kaam karne se rokna.
+- **Kaise kaam karega**:
+  1. Setting table mein `maintenance_on` aur `maintenance_message`.
+  2. Ek middleware har request par check karta hai. Admin, login aur maintenance API ko chhod kar baaki sab par `503`.
+  3. Page par custom message.
+- **Source**: HVM-8 (`/admin/maintenance`, 18 jagah zikr), HVM-V8 (24), Svm-v6 (5), master spec.
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `app.js` mein middleware, `views/maintenance.ejs`, settings page par toggle.
+- **Risk**: admin ka session bhi band na ho jaye. Isliye admin role check pehle hona chahiye.
+
+#### A8. Emergency Stop All aur Reboot All
+- **Kya hai**: ek click mein sab running VM ko stop ya reboot karna. Dono ke liye exact phrase type karna padta hai (`STOP ALL`, `REBOOT ALL`).
+- **Kyun chahiye**: attack, bug ya overload ke waqt turant rokna.
+- **Kaise kaam karega**: server par `POST /api/admin/emergency/stop-all` aur `reboot-all`. Har VM ke liye wahi stop/restart code chalta hai jo normal button use karta hai. Har action audit log mein jata hai.
+- **Source**: HVM-8 (`/admin/emergency-stop-all`, `/admin/emergency-reboot-all`), HVM-V8 (13 hits), Svm-v6 (route names).
+- **HKVM mein status**: ⚠️ (Stop All sirf browser ka loop hai, server par nahi).
+- **StarCloud mein kaise jodein**: `app.js` mein do routes, `views/admin/settings.ejs` ka Danger Zone.
+- **Risk**: galti se sab band ho jaye. Isliye exact phrase zaroori. Reboot par data loss ho sakta hai.
+
+#### A9. Audit log (kisne kya kiya, kab, kahan se)
+- **Kya hai**: har important action ka permanent record: kaun (user), kya action, kis par (target), result (ok ya failed), IP address, time, aur details.
+- **Kyun chahiye**: security, galti pakadna, aur "kisne VM delete kiya" ka jawab.
+- **Kaise kaam karega**:
+  1. `audit_log` table.
+  2. `logActivity()` function login, VM create/start/stop, settings change, maintenance, emergency par call hota hai.
+  3. Admin page par search, filter (action, result), paging (100 per page).
+  4. CSV export (`/api/admin/audit.csv`).
+  5. Password, token ya webhook URL kabhi log nahi hota.
+- **Source**: vPanel Pro (`auditService.js`, `webAdminAudit.js`), NKVM (audit logs), apanel (idea, docs mein).
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `services/audit.js` (naya), `app.js` routes, `views/admin/audit.ejs`, sidebar link.
+- **Risk**: audit table bahut badhegi, isliye index aur retention (kitne din rakhne) chahiye.
+
+#### A10. Per-VM security scan (VM ke andar ka check)
+- **Kya hai**: VM ke andar read-only check. Dekhta hai: crypto miner jaisi known process names, bahut zyada failed login (brute force ka nishan), aur suspicious cron entries.
+- **Kyun chahiye**: customer VPS par malware ya miner chal sakta hai. Host aur doosre VM ko nuksan.
+- **Kaise kaam karega**: SSH ya guest agent se commands chalate hain (jaise `ps`, `last`, `crontab -l`). Result report banata hai. **Kuch bhi automatically kill nahi karta**. Admin ko dikhata hai, admin confirm kare.
+- **Source**: apanel `akvm.py` ka `scan_vm_for_threats` aur `MINER_PROCESS_NAMES` (apanel zip ab Analyse-File mein nahi hai, docs ke hisaab se).
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `services/vm-scan.js`, admin VM detail page par button.
+- **Risk**: customer ki privacy. Scan sirf admin ke kehne par, aur log mein dikhe. Ye bhi disclose karna chahiye.
+
+#### A11. Discord webhook field (optional, khali default)
+- **Kya hai**: Settings mein ek field jahan Discord webhook URL daala ja sakta hai. Khali ho to kuch nahi bhejta.
+- **Kyun chahiye**: D-16. Admin chahe to Discord channel par alerts aaye.
+- **Kaise kaam karega**: `settings` table mein `discord_webhook_url`. Saving par URL ka format check (`https://discord.com/api/webhooks/...`). Public `GET /api/settings` par ye key kabhi nahi jaati.
+- **Source**: D-16 (2026-10-18). Sending code Batch 4 mein (D3).
+- **HKVM mein status**: ❌ (koi webhook code nahi).
+- **StarCloud mein kaise jodein**: Settings ka Discord tab, `app.js` mein GET/POST routes, aur public settings filter.
+- **Risk**: URL leak ho to koi bhi us channel par message bhej sakta hai. Isliye admin-only aur hidden.
+
+#### A12. Installer (ek command se setup)
+- **Kya hai**: ek script (`install.sh`) jo sab setup karta hai: OS check, `/dev/kvm` aur `vmx`/`svm` check, QEMU aur tools install, Node.js, `npm ci`, `.env` banana, aur systemd service.
+- **Kyun chahiye**: D-13 (KVM auto-detect), aur "koi bhi KVM-capable VPS par self-host kar sake" ka rule.
+- **Kaise kaam karega**:
+  1. Check: `/dev/kvm`, `vmx`/`svm`, nested.
+  2. Install: `qemu-kvm`, cloud-init tools, `genisoimage`, Node.js.
+  3. `npm ci` (sqlite3 ke liye build tools aur `npm_config_nodedir`).
+  4. `.env` template banana (secrets generate karke).
+  5. `systemd` service banana aur enable karna, taaki panel 24/7 chale. (Idea HVM-V8 ke installer guide se.)
+- **Source**: HVM-V8 `hvm installer guide.txt` (systemd idea). KVM check D-13.
+- **HKVM mein status**: ❌ (installer nahi, sirf README).
+- **StarCloud mein kaise jodein**: `install.sh` root mein, `deploy/starcloud.service` template.
+- **Risk**: `curl | sh` jaisi script se bachna. Pinned version aur checksum (SHA256) use karna.
+
+### Group B — VM management (Batch 2)
+
+#### B1. VM expiry, renew aur suspend
+- **Kya hai**: har VM ki expiry date hoti hai. Expiry par VM suspend (band, data safe). Renew karne par date aage badhti hai.
+- **Kyun chahiye**: monthly plan wale customers ke liye, aur unpaid VM band karne ke liye.
+- **Kaise kaam karega**:
+  1. `vms` table mein `expires_at`, `status` (active, suspended, expired).
+  2. Daily cron job expiry check karta hai. 3 din pehle warning (Discord webhook/DM).
+  3. Expiry par `suspend`: VM stop, start block.
+  4. Admin `renew` karta hai: plan ki duration jodi jaati hai.
+  5. Admin expiring list dekhta hai.
+- **Source**: HVM-8 (`/admin/vps/<id>/expiration`, `/suspend`, `/unsuspend`, `/renew`, `/admin/vps/expiring`; "expir" 202 zikr), HVM-V8 (same).
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `vms` migration, `services/expiry.js`, scheduler, admin VM page par buttons.
+- **Risk**: suspend par data loss nahi hona chahiye. Delete alag cheez hai, usme dobara confirm.
+
+#### B2. Coupons (discount codes) — VM management mein
+- **Kya hai**: admin ek code banata hai, jaise `DIWALI20`. Teen type: **percentage** (jaise 20% off), **fixed amount** (jaise ₹100 off), **100% free**. Ye expiry date, usage limit aur kaun se plan par chale, wo set kar sakta hai. Admin kabhi bhi on/off ya disable kar sakta hai.
+- **Kyun chahiye**: user ka direct requirement. Coupons billing se shift hokar VM management mein aaye (D-7).
+- **Kaise kaam karega**:
+  1. Table `coupons`: `code` (unique), `type` (percent, fixed, free), `value`, `valid_from`, `valid_to`, `max_uses`, `used_count`, `plan_ids`, `is_active`.
+  2. Apply karne par server check karta hai: active, date ke andar, `used_count < max_uses`, plan match.
+  3. Usage badhana **atomic** hona chahiye: `UPDATE coupons SET used_count = used_count + 1 WHERE id = ? AND used_count < max_uses`. Isse do log ek saath use karein to bhi limit cross nahi hoti.
+  4. Discord ticket mein price dikhane se pehle discount calculate hota hai.
+- **Source**: master spec §9 (own design), nobitahost (idea, docs mein). Koi pack ka full code nahi.
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `coupons` table, `services/coupons.js`, admin page "Coupons" VM management section mein, Discord price calc.
+- **Risk**: "order record" nahi banana hai (D-6). Coupon ka usage count ek alag cheez hai, User ne 2026-10-25 ko faisla kiya: sirf count rakho, kaun se Discord user ne use kiya ye nahi (Part 5 sawal 3).
+
+#### B3. Giveaway codes (ek-baar wale free codes)
+- **Kya hai**: admin ek saath N codes banata hai (jaise 50 codes). Har code sirf ek baar use hoga. Claim karne wale ka record rehta hai (kis Discord user ne claim kiya, kab).
+- **Kyun chahiye**: contest, promo, ya community giveaway ke liye.
+- **Kaise kaam karega**:
+  1. Random codes banana (crypto-safe random, kam se kam 10 characters).
+  2. `giveaway_codes` table: `code`, `plan_id`, `claimed_by_discord_id`, `claimed_at`.
+  3. Claim: Discord command ya website. Atomic update: `UPDATE ... WHERE claimed_by IS NULL`.
+  4. Claim ke baad VM banne ka process chalta hai (ya admin approval).
+- **Source**: master spec §9 (own design). Pack mein direct code nahi.
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `giveaway_codes` table, admin page, Discord command.
+- **Risk**: code leak ho to kisi aur ne claim kar liya. Ek-baar rule aur rate limit zaroori.
+
+#### B4. Public IPv4 aur har VM ko alag port (single shared IP) — PTERODACTYL SAMAJH KE SAATH
+Ye feature sabse important hai, isliye detail mein.
+
+**B4.1 Problem kya hai**
+- Ek public IPv4 address (jaise `203.0.113.10`) ek hi hai. Lekin 10 VM chahiye.
+- Har VM ko port 22 (SSH) chahiye. Lekin ek hi IP par port 22 sirf ek VM ke paas ja sakta hai.
+- Isliye har VM ko **alag public port** dena padega, aur ek port ko do VM ko nahi dena.
+
+**B4.2 Hamara solution (Network Address Translation + Port Forwarding)**
+- Host machine par ek public IP. Host par port forwarding rule: `public port 20001` → `VM1 ka private IP:22`.
+- VM2: `public port 20002` → `VM2 ka private IP:22`.
+- Ye router jaisa hai: ghar mein ek public IP, andar kai devices, har device ka alag darwaza.
+- HKVM mein ye pehle se hai, lekin **sirf NAT SSH port** (default 2222). Automatic allocation nahi hai.
+
+**B4.3 Pterodactyl ka case (detail mein)**
+Pterodactyl ek game server panel hai. Ismein do hisse hote hain:
+1. **Panel**: web interface, jo aam taur par port **80** (HTTP) aur **443** (HTTPS) par chalta hai.
+2. **Wings**: ek daemon (agent) jo game containers chalata hai. Iska API default port **8080** hai, aur SFTP (file transfer) port **2022**.
+3. **Game allocations**: har game server ko ek alag port chahiye, jaise Minecraft ke liye `25565`, aur doosre games ke liye alag.
+
+Ab ek shared IP par 3 VM mein Pterodactyl chalana hai, to problem ye hai:
+- VM1 ka Panel port 80 chahega. VM2 ka Panel bhi 80 chahega. Ek hi IP par do VM port 80 nahi le sakte.
+- Wings 8080 bhi har VM ko chahiye. Conflict.
+- SFTP 2022 bhi conflict.
+- Game port `25565` bhi har VM ke Minecraft server ko chahiye. Conflict.
+
+**Solution (teen layer)**:
+- **Layer 1 — Website (HTTP/HTTPS)**: ek reverse proxy (jaise Caddy) host par port 80/443 par baitha hai. Ye domain name se decide karta hai ki request kis VM ko jaaye. Jaise:
+  - `panel1.example.com` → VM1 ka `:80`
+  - `panel2.example.com` → VM2 ka `:80`
+  - HTTPS ka certificate Let's Encrypt se apne aap aata hai (kyunki proxy port 80 aur 443 sambhalta hai). Let's Encrypt ko port 80 par pahunchna zaroori hai, isliye domain ka DNS sahi hona chahiye.
+- **Layer 2 — Wings aur SFTP (TCP)**: har VM ka port unique rakhna. Port forwarding ke saath:
+  - VM1 Wings: public `28001` → VM1 `8080`
+  - VM1 SFTP: public `22001` → VM1 `2022`
+  - VM2 Wings: public `28002` → VM2 `8080`
+  - VM2 SFTP: public `22002` → VM2 `2022`
+- **Layer 3 — Game ports (TCP/UDP)**: har game allocation ko ek unique public port. Jaise:
+  - VM1 Minecraft: public `30001` → VM1 `25565`
+  - VM2 Minecraft: public `30002` → VM2 `25565`
+  - Game ports HTTP proxy se nahi chal sakte (ye raw TCP ya UDP hain). Isliye har game ke liye direct forwarding chahiye.
+
+**B4.4 Automatic port allocation (admin ko manual kuch nahi karna)**
+- Pool ranges (example): SSH `20000–20999`, Wings/API `28000–28999`, SFTP `22000–22999`, game `30000–39999`.
+- Algorithm:
+  1. VM banate waqt us VM ki zaroorat list karo (SSH, Wings, SFTP, game ports).
+  2. `port_allocations` table mein dekho: kaun se port free hain.
+  3. Deny list mein wale port skip karo.
+  4. Lowest free port lo, `UNIQUE(public_port, protocol)` constraint ke saath save karo.
+  5. Ye transaction mein karo, taaki do VM ko same port na mile.
+  6. VM delete hone par ports free karo.
+- **Deny list** (kabhi public nahi): jaise MySQL `3306`, PostgreSQL `5432`, MongoDB `27017`, Redis `6379`, Docker API `2375`/`2376`, Elasticsearch `9200`. Inhe public IP par khulne se data chori ka khatra hai.
+- **Source**: HVM-8 mein tables `port_allocations`, `port_forwards`, `port_quota`, bulk routes (`/admin/ports/bulk`). Ye verified hai. Pool logic in-house hai.
+
+**B4.5 IPv4 ke 4 modes (master spec)**
+| Mode | Kya hai | Kab |
+|---|---|---|
+| A — NAT + port forward | Ek IP, har VM ko port. (Hamara default, D-9.) | Jab IP kam hain. |
+| B — Dedicated bridged IPv4 | Har VM ka apna public IP (bridge). | Jab har VM ko alag IP chahiye aur IP available hain. |
+| C — Routed subnet ya 1:1 NAT | Ek subnet ke IP ek-ek VM ko. | Jab provider subnet deta hai. |
+| D — IPv6 | Naya address, bahut zyada addresses. | Future ke liye. |
+
+**B4.6 Admin IP Pool page**: IP list, assign aur release, conflict check. Ye apanel ke `public_ips.html` ka idea hai (docs mein zikr, zip ab nahi).
+
+**B4.7 Risk aur honest note**
+- Pterodactyl ke Wings ko "behind proxy" mode mein chalana padta hai jab proxy HTTPS sambhalta ho. Ye untested hai, kyunki sandbox mein Pterodactyl install nahi hua.
+- Game server ka asli test real VM aur real domain par hi hoga.
+
+- **Status**: 🔵 design hai, code nahi.
+- **StarCloud mein kaise jodein**: `services/ports.js` (allocator), `port_allocations` table, Caddy config generator, VM create form mein "needed ports" checklist.
+
+#### B5. Bulk port forward (ek saath kai VM)
+- **Kya hai**: ek range ke liye ek saath port add ya remove.
+- **Kyun chahiye**: 50 VM ke liye ek-ek karna mushkil hai.
+- **Kaise kaam karega**: `POST /admin/ports/bulk` mein range aur target. Conflict check ke baad ek transaction mein sab.
+- **Source**: HVM-8 (`/admin/ports/bulk`, `/admin/ports/bulk/<id>` DELETE, 36 "bulk" zikr).
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: B4 ke allocator ke upar ek wrapper.
+- **Risk**: range ka galat input poore network ko hila sakta hai. Preview zaroori.
+
+#### B6. Boot log viewer (VM ke start hone ka log)
+- **Kya hai**: VM start hote waqt serial output (kernel messages) aur cloud-init ka log, live ya file se, tabs mein.
+- **Kyun chahiye**: VM start nahi ho raha to pata chale ki kya galat hua. Customer ko bhi help.
+- **Kaise kaam karega**: QEMU ka serial output file mein (`-serial file:<path>`). Panel woh file ka aakhri hissa (tail) dikhata hai. Auto-refresh 3 second.
+- **Source**: NKVM (boot log tab, 3 second polling), vPanel Pro (`bootLogService.js`), vPanel ka AI diagnostics idea.
+- **HKVM mein status**: ⚠️ (serial console WebSocket hai, boot log file view nahi).
+- **StarCloud mein kaise jodein**: VM start par `-serial file:` argument, `GET /api/vms/:id/bootlog`, VM detail page par tab.
+- **Risk**: log mein password aa sakta hai (cloud-init user-data). Redaction zaroori.
+
+#### B7. Web terminal (SSH) — customer ke VPS ke liye
+- **Kya hai**: browser mein terminal kholna, jo VM ke SSH se judta hai.
+- **Kyun chahiye**: customer ko VM ke liye alag software ki zaroorat nahi.
+- **Kaise kaam karega**: xterm.js (browser terminal) aur `ssh2` (server se SSH). Command `POST /api/ssh/command`.
+- **Source**: HKVM (✅ already), NKVM (xterm.js), vPanel (multi-session terminal).
+- **HKVM mein status**: ✅.
+- **StarCloud mein kaise jodein**: already hai. Customer ke liye bhi same, sirf us ka apna VM.
+- **Risk**: SSH password browser se jaane ki zaroorat nahi, server se hi connect ho.
+
+#### B8. Live stats (CPU, RAM, network ke graphs)
+- **Kya hai**: VM ke live numbers aur chhote charts.
+- **Kaise kaam karega**: `GET /api/vms/:id/stats` aur history `GET /api/vms/:id/metrics/history` (HVM-8 ka route). Data source: QEMU monitor ya `/proc`.
+- **Source**: HKVM (✅ route), HVM-8 (`live_stats_manager.py`, metrics routes), vPanel (7 cards, 2.5 second charts).
+- **HKVM mein status**: ✅ (data source verify karna baaki).
+- **Risk**: bahut zyada polling se server dheema hoga. Cache zaroori.
+
+#### B9. Snapshots (saved state)
+- **Kya hai**: VM ki disk ki ek saved state, jise wapas laa sakte hain.
+- **Kaise kaam karega**: qcow2 snapshot (`qemu-img snapshot`) ya file copy. Create, restore, delete, download.
+- **Source**: HKVM (basic), HVM-8 (create, restore, delete, download, upload, schedule, size refresh — 373 zikr).
+- **HKVM mein status**: ⚠️ (basic).
+- **StarCloud mein kaise jodein**: `vm_snapshots` table already hai, restore aur delete routes jodne hain.
+- **Risk**: snapshot disk space leta hai. Limit aur cleanup chahiye. Live snapshot par consistency ka dhyan.
+
+#### B10. File manager (VM ki files ka browser) — D-17 ke hisaab se ADD
+- **Kya hai**: browser mein VM ke folders dekhna, file upload, download, edit, rename, delete, zip aur unzip.
+- **Kyun chahiye**: 2026-10-18 par user ne ADD confirm kiya. Customer aur admin dono ke kaam ka.
+- **Kaise kaam karega** (do engine, pehle SSH):
+  1. **SSH/SFTP engine** (pehla, bina agent): panel VM mein SSH karke list, read, write, upload, download karta hai. `ssh2` library se.
+  2. **Guest agent engine** (baad mein): VM mein chhota daemon (Python HTTP) jo file operations karta hai. NKVM ka idea.
+  3. Path check: `../` ka attack rokna (path normalize). Sirf us VM ke root ke andar.
+  4. Size limit: upload 200 MB tak (NKVM ka number).
+  5. Text file editor modal (monospace, UTF-8).
+  6. Permission: admin sab, customer sirf apna VM.
+- **Source**: HVM-8 (`templates/vps_files.html` aur 13 `/files/*` routes: browse, upload, download, delete, rename, mkdir, read, write, move, chmod, compress, extract, search, verified), NKVM (guest agent aur SSH dual engine, 200 MB upload, code editor modal, verified README), vPanel (file-related code ~52 files mein), apanel (`/vm/<id>/files`, docs mein).
+- **HKVM mein status**: ❌ (file manager nahi hai).
+- **StarCloud mein kaise jodein**: `services/files.js` (SSH engine), `routes/files.js`, `views/vm-files.ejs`, ek editor modal.
+- **Risk**: sabse bada risk: customer doosre VM ki files na dekh sake. Path aur owner check server par. Upload se virus bhi aa sakta hai (scan ideally).
+
+#### B11. Status page (service ka health aur uptime history)
+- **Kya hai**: public page jo dikhata hai ki service chal rahi hai ya nahi, aur pichle 30 din ka uptime bar.
+- **Kaise kaam karega**: har minute ek health check, result `uptime_checks` table mein, page par bars.
+- **Source**: in-house (koi pack mein direct nahi, D-list ke bahar, proposal).
+- **HKVM mein status**: ❌.
+- **Status**: 🔵 proposal, user ne abhi confirm nahi kiya.
+
+#### B12. Referral aur Flash sale (in-house proposals)
+- **Referral**: ek user dusre ko laye to dono ko credit. Code `ref_code` ke saath.
+- **Flash sale**: kuch ghante ke liye special discount, countdown timer.
+- **Status**: 🔵 proposal, user ne 2026-10-25 ko "rakho" kaha (Part 5 sawal 4).
+
+*Part 4A khatam. Part 4B mein Group C (Backup), D (Discord), E (Premium look), F (AI), G (Later) hain.*
+
+---
+
+### Group C — Backup aur automatic kaam (Batch 3)
+
+#### C1. Scheduled power (VM ko time par start, stop, restart)
+- **Kya hai**: VM ko fixed time par apne aap band ya chalu karna. Jaise raat 2 baje stop, subah 8 baje start.
+- **Kyun chahiye**: bill bachana, aur maintenance window.
+- **Kaise kaam karega**: `schedules` table (`vm_id`, `action`, `cron_expression`, `timezone`, `enabled`). Ek scheduler har minute check karta hai aur action chalata hai. Timezone Asia/Kolkata default.
+- **Source**: NKVM (cron automation), vPanel (`scheduleService.js`), HVM-8 (snapshot schedule ka pattern).
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `services/scheduler.js`, `schedules` table, VM detail page par schedule list.
+- **Risk**: scheduler crash ho to kaam ruk jayega. Har run ka log rakhna chahiye, aur missed runs ka handling.
+
+#### C2. Scheduled backup
+- **Kya hai**: VM ka disk har din/hafte apne aap backup.
+- **Kaise kaam karega**: C4 ka backup function, cron ke time par chalega. Retention (kitne backup rakhne) — jaise last 7.
+- **Source**: HVM-8 (backup routes), vPanel (`backupService.js`).
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: C1 ka scheduler + C4.
+- **Risk**: backup ke liye disk space. Limit aur alert zaroori.
+
+#### C3. Scheduled snapshot
+- **Kya hai**: B9 ka snapshot automatic.
+- **Source**: HVM-8 (`/vps/<id>/snapshots/schedule`, 373 zikr), NKVM (snapshots aur cron).
+- **HKVM mein status**: ❌ (scheduled), ⚠️ (manual basic).
+- **StarCloud mein kaise jodein**: C1 scheduler mein action `snapshot`.
+- **Risk**: snapshot ko backup samajhna galat hai. Snapshot same disk par hota hai, isliye asli backup nahi.
+
+#### C4. Backup aur restore (asli backup)
+- **Kya hai**: VM ki poori disk ek file mein save karna (backup), aur kabhi bhi wapas laana (restore). Backup alag jagah rakha jaata hai, snapshot se alag.
+- **Kyun chahiye**: host disk kharab ho to data bache.
+- **Kaise kaam karega**:
+  1. VM band karo (safe copy ke liye), ya live snapshot se copy.
+  2. `qemu-img convert` ya file copy se disk ko `backups/` folder mein save.
+  3. SHA-256 (Secure Hash Algorithm 256-bit) checksum banao (file ki pehchaan, ki file bigdi nahi).
+  4. Restore: VM band, purani disk replace, checksum verify, VM start.
+  5. Download aur upload dono.
+- **Source**: HVM-8 (backup list, restore, download, delete, `backups/` folder), vPanel (`backupService.js`), HVM-V8 (backup 91 zikr).
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `services/backup.js`, `backups` table, `backups/` folder (Git mein nahi, `.gitignore` mein).
+- **Risk**: backup files mein customer ka data hai. Ye private hai, access control aur encryption zaroori. Pack ke backup `.db` files repo mein nahi daalne.
+
+### Group D — Discord, UPI, email aur support (Batch 4)
+
+#### D1. Discord bot (tickets, UPI payment, credentials) — Python discord.py
+- **Kya hai**: ek Discord bot jo tickets banata hai, customer ko plan dikhata hai, UPI payment ka process chalata hai, aur VPS ki credentials Discord par deta hai.
+- **Kyun chahiye**: user ne decide kiya hai ki orders, tickets aur customer baat Discord par hogi. Website admin-only hai.
+- **Language**: Python `discord.py` (user ne 2026-10-25 ko confirm kiya).
+- **Admin kaise setup kare**: website ki Settings mein bot token dalta hai. Token save hone par bot apne aap start hota hai (ya restart par). Token encrypt karke rakha jaata hai.
+- **Kaise kaam karega (step by step)**:
+  1. Customer server par command/button se "Buy VPS" chunta hai.
+  2. Bot ek private ticket channel banata hai (sirf customer aur admin dikhenge).
+  3. Plan list dikhata hai. Coupon code ho to apply hota hai (B2).
+  4. Price dikhata hai, aur UPI ID dikhata hai (ya UPI QR).
+  5. Customer payment karke screenshot ticket mein daalta hai.
+  6. Admin Discord button "Payment confirm" dabata hai (ya website se).
+  7. Confirm hone par VPS create hota hai (admin password dalta hai).
+  8. Credentials (IP, port, username, password) **private message (DM)** ya ticket mein "only customer" message se jaati hain. Public channel mein kabhi nahi.
+  9. Ticket close ya archive.
+- **Honest note**: UPI payment ko bot apne aap check nahi kar sakta. UPI ka koi free public verification API nahi hai jo bina bank/gateway ke kaam kare. Isliye **admin ki manual confirmation** zaroori hai. Ye limitation user ko saaf batana chahiye.
+- **Source**: user ka design (2026-10-18). Discord bot ka base HKVM mein sirf settings hai (bot_token, guild_id, auto_role_id), bot nahi.
+- **HKVM mein status**: ⚠️ (settings save hoti hain, bot nahi chalta).
+- **StarCloud mein kaise jodein**: `bot/` folder (Python), `services/discord_bridge.js` ya HTTP bridge, `discord_settings` table.
+- **Risk**: bot token leak ho to koi bhi bot ki tarah kaam kar sakta hai. Token kabhi log ya public page par nahi. Credentials DM mein bhi ek baar dekhne ke baad admin/customer delete kare.
+
+#### D2. Discord bot admin page
+- **Kya hai**: Settings ke andar ek page: bot token, guild ID, bot online ya offline status, last error, start/stop button.
+- **Source**: apanel (docs mein Discord bot admin page idea), HKVM settings (partial).
+- **HKVM mein status**: ⚠️.
+- **StarCloud mein kaise jodein**: `views/admin/settings.ejs` ka discord tab.
+- **Risk**: token field masked hona chahiye (`****`), dobara dekhne ka option nahi.
+
+#### D3. Discord webhook alerts (channel par alert)
+- **Kya hai**: kuch events par (VM create, expiry warning, emergency stop, payment ticket) Discord channel par message jaana.
+- **Kaise kaam karega**: webhook URL par JSON `POST`. Ek simple wrapper. Khali URL ho to kuch nahi bhejta (D-16).
+- **Source**: vPanel (`pluginManager.js` Discord embeds, signed webhooks), HVM-8 (`api.py` webhooks).
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `services/webhook.js`, `sendAlert(event, data)`.
+- **Risk**: Discord rate limit (zyada messages par block). Batch ya queue. Secrets message mein nahi.
+
+#### D4. sshx link (browser se terminal share)
+- **Kya hai**: sshx ek tool hai jo VM ke terminal ka live link deta hai, jise browser se khola ja sakta hai. User ne tmate hataya aur sshx rakha hai (2026-10-25).
+- **Kaise kaam karega**: VM ke andar sshx chalta hai, ek link banta hai, admin ya customer use khol sakta hai.
+- **Source**: user ka decision. Koi pack ka code nahi.
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: VM detail page par "Start sshx" button, link show.
+- **Risk**: link public hai. Jo link mil jaye, woh terminal dekh sakta hai. Expiry aur sirf admin/customer ke liye. Installer se sshx ka version pin karna (blindly `curl | sh` nahi).
+
+#### D5. Discord OAuth login (Discord se login/link)
+- **Kya hai**: user Discord account se login kar sake, aur apne website account ko Discord se link kare.
+- **HKVM mein status**: ✅ hai, lekin **do bugs** hain (memory ke verified notes):
+  1. **Email auto-match bina verified check**: app.js ~L742 par `discordUser.email` se purane account se match ho jata hai, bina ye dekhe ki Discord email verified hai ya nahi. Attacker ek aisa Discord email set kar sakta hai jo kisi aur ke account se match ho.
+  2. **GET route missing**: `/link-discord-account` ka GET route nahi hai, sirf POST. Link page kholne par error.
+- **Fix**: email match sirf `verified === true` par. Missing GET route jodna. State parameter (CSRF) check.
+- **Source**: HKVM (app.js, login.ejs ~L353, L509–536). Verified read-only.
+- **StarCloud mein kaise jodein**: `app.js` ke Discord block (~L679–900) mein fix.
+- **Risk**: account takeover. Ye high priority bug hai.
+
+#### D6. UPI payment ticket flow (no payment gateway)
+- **Kya hai**: payment ka poora process Discord ticket mein. UPI ID aur amount dikhana. Website par koi payment gateway ya UPI upload nahi (user ka faisla).
+- **Kaise kaam karega**: D1 ka step 3–6. Admin payment confirm karta hai.
+- **Source**: user ka decision (D-5, D-6). Koi pack ka code nahi.
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: Discord bot ka `payment` module, UPI ID setting.
+- **Risk**: fake screenshot. Admin ko bank statement se mila kar confirm karna chahiye. Bot ye automatic nahi kar sakta.
+
+#### D7. Email verification (free, on/off)
+- **Kya hai**: signup par email par ek link ya code bhejna, taaki email sach ho. Ye toggle se band ho sakta hai (HKVM jaisa).
+- **Kyun chahiye**: spam accounts rokna.
+- **Kaise kaam karega**: signup par token banana, email bhejna, link par `verified_at` set karna.
+- **Free option**: Brevo free plan: 300 emails per day (9,000 per month), unlimited contacts, bina card ke. Shart: "From" address Brevo mein verify karna padta hai (Senders, Domains and Dedicated IPs). Daily limit cross karne par error 550 aata hai. Gmail app password bhi option hai.
+- **Source**: user ka decision (email verification acceptable, free aur toggle). Brevo details: Brevo pricing aur free SMTP guides (web se).
+- **HKVM mein status**: ⚠️ (HKVM mein verification flow hai, toggle ke saath).
+- **StarCloud mein kaise jodein**: `services/mailer.js`, `.env` mein `SMTP_*`, settings mein toggle.
+- **Risk**: 300 email/day ki limit. Bahut signups par email nahi jayega. Logs mein code na dikhe.
+
+### Group E — Security aur premium look (Batch 5)
+
+#### E1. 2FA (Two-Factor Authentication) TOTP, backup codes ke saath
+- **Kya hai**: login ke baad phone ke Authenticator app (Google Authenticator jaisa) ka 6-digit code. Plus 10 backup codes agar phone kho jaye.
+- **Kyun chahiye**: password chori hone par bhi account bacha rahe. Admin account par zaroori.
+- **Kaise kaam karega**:
+  1. Setup page par secret key aur QR code.
+  2. User app se 6-digit code daal kar confirm.
+  3. Login par password ke baad code.
+  4. 10 backup codes ek baar dikhte hain, hashed save hote hain.
+- **Source**: NKVM (`authService.js` TOTP), HVM-8 (`/2fa` route), vPanel (TOTP 2FA).
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `services/totp.js`, `users` table mein `totp_secret` (encrypted) aur `backup_codes_hash`.
+- **Risk**: secret leak ho to code ban sakte hain. Secret encrypt karna. Time sync (server ka clock) zaroori.
+
+#### E2. Wallpaper, blur aur transparency
+- **Kya hai**: dashboard ke peeche wallpaper, aur glass effect (blur) ka level, transparency slider.
+- **Kyun chahiye**: user ne premium aur smooth UI maanga hai. HKVM ka dark glassmorphism theme rakhna hai.
+- **Kaise kaam karega**: CSS variables (`--bg-card`, `--border-color`) aur `backdrop-filter: blur()`. Slider settings DB mein per-user ya global.
+- **Source**: NKVM (4K wallpaper browser, blur aur transparency sliders), vPanel (Arix theme, wallpapers).
+- **HKVM mein status**: ⚠️ (theme hai, wallpaper nahi).
+- **StarCloud mein kaise jodein**: `public/css/admin.css` (theme variables), `public/wallpapers/` folder (local images).
+- **Risk**: external wallpaper site (4kwallpapers.com) se hotlink karna terms ke khilaf ho sakta hai. Local images use karna safe hai. Blur zyada ho to slow phone par lag.
+
+#### E3. Hindi aur English (dono languages)
+- **Kya hai**: poori website Hindi aur English mein. Language switch.
+- **Kyun chahiye**: user ne maanga hai (UI languages: English aur Hindi).
+- **Kaise kaam karega**: `locales/en.json` aur `locales/hi.json`. `t('key')` function. Language setting cookie ya user profile mein.
+- **Source**: vPanel Pro (`src/lib/i18n.js` mein en, hi, es, de, ar — Hindi yahin se), NKVM (Hindi/English).
+- **HKVM mein status**: ❌ (sirf English).
+- **StarCloud mein kaise jodein**: `locales/` folder, `views/` mein string replace, language switcher partial.
+- **Risk**: sabhi strings translate karna kaam hai. Hindi mein Devanagari font chahiye (browser par), aur layout check. Discord bot ke messages bhi translate ho sakte hain.
+
+#### E4. Custom branding (logo, banner, naam)
+- **Kya hai**: site ka naam, logo, login banner admin Settings se badal sake.
+- **Kaise kaam karega**: `settings` table mein `site_name`, `logo_path`, `banner_path`. Upload field. Default images `public/images/`.
+- **Source**: user ki files `Analyse-File/StarCloud-Logo.png` (1254x1254, 2.7 MB) aur `StarCloud-Banner.png` (1673x940, 2.9 MB). Branding ka idea apanel aur vPanel mein.
+- **HKVM mein status**: ⚠️ (logo HKVM ka hai).
+- **StarCloud mein kaise jodein**: logo ko 512 px tak chhota karna (~537 KB), banner ko 1600 px (~2.5 MB, aur optimize baaki). Repo mein `public/images/logo.png` aur `banner.png` (banner abhi missing hai).
+- **Risk**: 2.9 MB ki image page slow karegi. Optimize zaroori. `hopingboyz` ka naam website se hata kar `KingSlayer` karna (rename already, verify baaki).
+
+#### E5. Notification bell (kaam ka)
+- **Kya hai**: top bar ki bell par unread count, dropdown list, mark read.
+- **Kaise kaam karega**: `notifications` table (`user_id`, `message`, `read_at`). Routes: list, mark read, mark all, clear, delete (HVM-8 ka pattern).
+- **Source**: HVM-8 (`/notifications` routes).
+- **HKVM mein status**: ⚠️ (icon hai, backend nahi).
+- **StarCloud mein kaise jodein**: `notifications` table, `app.js` routes, `partials/` mein bell.
+- **Risk**: polling se server par load. Ek minute ka interval kafi.
+
+#### E6. Command palette (Ctrl+K)
+- **Kya hai**: Ctrl+K dabane par ek search box: pages, VM aur actions dhoondho, Enter se chalao.
+- **Kyun chahiye**: admin ka kaam tez ho.
+- **Kaise kaam karega**: ek JSON list (page names, VM names, actions). Fuzzy search. Keyboard arrows.
+- **Source**: vPanel Pro (`views/partials/command_palette.ejs`, verified).
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `views/partials/command_palette.ejs` (naya), `public/js/palette.js`.
+- **Risk**: destructive action (delete) palette se bina confirm na chale.
+
+### Group F — Built-in AI assistant (Batch 6, ab "build now")
+
+> AI ka faisla (2026-10-18): provider Google AI Studio ka free Gemini API key. Key sirf `.env` mein. Free tier mein Google prompts ko product improve karne mein use kar sakta hai, isliye **customer passwords, tokens aur secrets kabhi AI ko nahi bheje jaate**.
+
+#### F1. AI chat (owner/admin ke liye)
+- **Kya hai**: admin ek chat box mein Hindi, Hinglish ya English mein poochta hai: "Kitne VM running hain?", "Naya user banao", "Port 20005 kiske paas hai?"
+- **Kaise kaam karega**:
+  1. Message server par aata hai.
+  2. AI ko "tools" ki list di jaati hai (jaise `list_vms`, `get_vm`, `create_vm`, `set_setting`). Har tool ka naam aur input fixed hai.
+  3. AI sirf tool ka naam aur input bataata hai. Asli kaam server karta hai, server check karta hai ki user owner/admin hai.
+  4. Result AI ko wapas, AI jawab banata hai.
+- **Source**: ZORIN (`planner.py`), ALTEX (tool system, `docs/TOOL_SYSTEM.md`), MYRAA (`agent/actions/` catalogue).
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `services/ai/` folder: `gemini.js` (provider), `tools.js` (allowlist), `chat.js` (route). `views/admin/ai.ejs`.
+- **Risk**: prompt injection (web ya Discord ka text AI ko command dene ki koshish). Iska jawab: tools server-side allowlist, aur har write par confirm (F3).
+
+#### F2. Provider failover (ek provider fail to doosra)
+- **Kya hai**: Gemini fail ho to doosra provider (agar configure ho). Abhi sirf Gemini active hai (user ka faisla).
+- **Source**: ALTEX (smart routing, provider failover), ZORIN (providers: gemini, groq, openai, local).
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `services/ai/providers/` mein ek interface, Gemini ek implementation.
+- **Risk**: alag provider ka data policy alag ho sakta hai. Har provider ke liye alag consent.
+
+#### F3. Risk gate aur confirmation (sabse zaroori safety)
+- **Kya hai**: AI koi bhi risky kaam seedha nahi karta. Pehle plan dikhata hai, aur admin "haan" kare tab hota hai.
+- **Risk levels**:
+  - **Low**: list, read, status. Seedha chalega.
+  - **Medium**: start, stop, restart (ek VM). Confirm.
+  - **High**: delete VM, stop-all, reboot-all, delete user, change password, change settings. Confirm + exact phrase.
+- **Confirmation** (ZORIN ka design): action pending hota hai, ek random nonce id, 60 second ke andar haan/na. Timeout par cancel.
+- **Kaun check karta hai**: server, session identity se. AI ki "haan" par bharosa nahi.
+- **Source**: ZORIN (`risk.py`, `confirmation.py`, `ConfirmationGate`, 60 second), MYRAA (`agent/actions/risk.ts`, `audit.ts`), ALTEX (approval prompts, forbidden commands).
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `services/ai/risk.js`, `services/ai/confirm.js`.
+- **Risk**: ZORIN README mein likha hai ki "no wake-word gate, spoken commands run immediately". Ye StarCloud mein nahi hona chahiye.
+
+#### F4. AI log doctor (boot fail ka karan)
+- **Kya hai**: VM boot fail ho to AI logs padh kar ek saaf reason aur fix batata hai.
+- **Kaise kaam karega**: boot log ka aakhri 200 line lo, **pehle redact karo** (password, token, IP ko `***`), phir AI ko bhejo, AI reason aur steps deta hai.
+- **Source**: vPanel Pro ("AI virtualization diagnostics", `aiLogService.js`).
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: `services/ai/doctor.js`, B6 ke boot log ke saath.
+- **Risk**: log mein secret ho sakta hai. Redaction ke bina nahi bhejna.
+
+#### F5. AI action audit
+- **Kya hai**: AI jo bhi kare, uska record: "AI ne (admin ki request par) VM 12 stop kiya". Actor `ai:<admin-username>`.
+- **Source**: MYRAA (`audit.ts`), A9 ka audit log.
+- **HKVM mein status**: ❌.
+- **StarCloud mein kaise jodein**: A9 ke `logActivity()` mein actor field.
+- **Risk**: kam.
+
+#### F6. AI default OFF
+- **Kya hai**: AI bydefault band. Admin Settings se on kare.
+- **Kyun**: API key aur data policy ka faisla admin ka.
+- **Source**: in-house decision.
+- **StarCloud mein kaise jodein**: `settings.ai_enabled = false` default.
+
+#### F7. Owner/admin AI (poori website control, server-side checks ke saath)
+- **Kya hai**: owner ya admin AI se poori website chala sake (VM, user, settings, coupons, ports).
+- **Rule**: owner-only checks server par session se. AI yahan bhi tool allowlist ke bahar kuch nahi kar sakta.
+- **Source**: user ka 2026-10-18 faisla (owner/admin-gated, poori website).
+- **StarCloud mein kaise jodein**: F1 ke tools, role check middleware.
+
+#### F8. Customer AI (support-only, option B)
+- **Kya hai**: customer ka AI ye kar sakta hai:
+  - Sawal ka jawab (plans, UPI payment kaise karein, Discord ticket kaise khole).
+  - Troubleshooting ki salah (SSH kaise connect karein, password bhool gaye to kya karein).
+  - **Apne VPS ko start ya stop** — sirf confirmation ke saath (F3).
+- **Ye nahi kar sakta**: VPS create karna, dusre user ka VPS chhuna, admin settings badalna, passwords dekhna.
+- **Admin ki request par**: saaf jawab "this is not for you" (user ka exact wording).
+- **Enforcement**: server par session ka user id dekh kar, AI ke kehne par nahi.
+- **Source**: user ka 2026-10-18 faisla (option B). ALTEX/ZORIN ke confirmation aur risk design.
+- **StarCloud mein kaise jodein**: F1 ke tools mein customer ka alag allowlist (`start_own_vm`, `stop_own_vm` only).
+
+#### F9. Secrets aur data rule
+- **Rule**: Gemini ko ye kabhi nahi bheja jaata: passwords, bot token, webhook URL, session secret, API keys, customer ka personal data (email, UPI detail).
+- **Source**: user ka faisla (free Gemini tier), ALTEX (keys encrypted), MYRAA (DPAPI idea).
+
+#### F10. public-apis ka knowledge (Batch 6)
+- **Kya hai**: `public-apis/public-apis` GitHub repository ki list (free public APIs ki curated list, MIT license). AI is list mein se sahi API dhoondh sake.
+- **Kaise kaam karega**:
+  1. README ko parse karke ek JSON catalog banao: `name`, `category`, `auth` (kya key chahiye), `https` (yes/no), `cors`, `link`.
+  2. Catalog SQLite ya JSON file mein.
+  3. AI ko tool `search_public_apis(query)` diya jaata hai. AI memory se nahi, catalog se jawab deta hai.
+  4. Repo ka LICENSE file check karna zaroori (repo mein LICENSE hai, text is session mein verify nahi kiya).
+- **Source**: user ka 2026-10-18 request, GitHub repo `public-apis/public-apis`.
+- **StarCloud mein kaise jodein**: `services/ai/catalog/public-apis.json`, ingestion script `scripts/ingest-public-apis.js`.
+- **Risk**: list ki API kabhi band ho sakti hai ya rate limit ho. Har API ko AI ke bharose na mano, use karne se pehle test.
+
+### Group G — Later (baad mein, abhi build nahi)
+
+| # | Feature | Source | Saral matlab | Kyun later |
+|---|---|---|---|---|
+| G1 | Multi-node aur circuit breaker | HVM-8 (`/admin/nodes/circuit-breakers`), Hex-Mc (GPL-3.0, docs) | Kai host, ek fail ho to traffic rok | Ek host se shuru. Ye bahut bada kaam hai. HVM-8 ka node LXC par hai, KVM design alag banana hai. |
+| G2 | Sub-users (team members) | NKVM (per-server permission) | Ek VM par kai log, alag permissions | Customer ek hi user hai. |
+| G3 | Admin impersonation (customer ban kar dekhna) | vPanel Pro | Admin customer ki jagah dekh sake, banner ke saath | Privacy aur consent ka sawal. Abhi nahi. |
+| G4 | Per-VM firewall UI | nobitahost, NR-PROTECTION (docs) | VM ke andar ports khole/band | Pehle port forward se kaam chal raha hai. |
+| G5 | Blog aur changelog | nobitahost (docs) | Updates likhna | Website ka kaam baad mein. |
+| G6 | Currency selector | nobitahost (docs) | ₹ aur $ dikhana | UPI aur INR mein kaam, pehle INR. |
+| G7 | Plugin system | vPanel Pro (`pluginManager.js`) | Naye features plug-in se | Bahut bada architecture. |
+| G8 | Template store (VM images) | Template-main (docs; Proxmox `.vma.zst` format) | Ready-made VM images | Format alag, KVM mein cloud image use hoti hai. |
+
+### Group H — Master spec ke special items (owner ka faisla pending)
+
+#### H1. Owner "Remote Support Mode" aur telemetry
+- **Kya hai**: master spec mein sochi gayi cheez: owner remote support ke liye kuch access rakh sake, aur telemetry (usage data bhejna).
+- **Status**: **Faisla (2026-10-25): NAHI. Dono hatao.** Koi owner remote access nahi, koi telemetry nahi. Ye Part 5 ke sawal 2 mein recorded hai.
+- **Rule agar rakhna ho**: poori tarah disclose karna (customer ko pata ho), opt-in, audit log mein record, aur customer password kabhi nahi.
+- **Sawal**: Part 5 mein.
+
+*Part 4B khatam. Part 5 mein security, missing packs, branch state, video script aur next steps hain.*
+
+---
+
+## 8. Part 5 — Security, licenses, bache hue packs, branch ki halat, video script, agle kadam
+
+### 8.1 Security ka saar (ek jagah)
+Ye sab issues Part 2 mein detail mein hain. Yahan sirf priority hai.
+
+| Priority | Issue | Kya karna hai | Status |
+|---|---|---|---|
+| 1 | Session secret code mein (S2) | `.env` se, na ho to random | Repo HEAD mein abhi bhi hardcoded (app.js ~L326). |
+| 2 | Discord email auto-match verified check ke bina (D5) | Sirf verified email par match | Abhi bug hai (app.js ~L742). |
+| 3 | Shell injection `execSync` (S4) | `execFile` / argv array | Open. |
+| 4 | Cookie `secure: false` (S3) | HTTPS par `secure: true`, `httpOnly`, `sameSite` | Fix `5dfba23` mein tha, HEAD mein nahi. |
+| 5 | Default admin `admin/admin` (S1) | First login par badlo | User ne accept kiya. |
+| 6 | Default VM password fallback (S5) | Admin password dale, min 8 | Create form par rule plan mein hai. |
+| 7 | Login rate limit nahi (S6), CSRF nahi (S7), validation nahi (S8) | Rate limit, CSRF token, zod | Open. |
+| 8 | Monolith `app.js` (S9) | `routes/`, `services/`, `lib/` mein todna | Open, bada kaam. |
+| 9 | Customer data AI ko (F9) | Redaction aur allowlist | Design plan mein. |
+
+**Secret hygiene (sabse zaroori)**:
+- `.env` aur `data/` ka koi asli secret Git mein nahi jaayega. `.gitignore` check karna hai.
+- Pack ke secret/data files (sirf naam, value kabhi nahi dekhi aur nahi copy karni):
+  - `.env` hkvm-2 mein (copy nahi).
+  - `.env.example` NKVM, ZORIN, vPanel mein (sirf template, lekin check karke).
+  - Database files: `hvm.db` aur backups (HVM-8, HVM-V8), `svm.db` (Svm-v6), `data/hkvm.db` (hkvm-2).
+  - Log files: `hvm.log` (HVM-8), `svm.log` (Svm-v6). Compiled bytecode: `svm.pyc`, `api.pyc` (Svm-v6), 4 `.pyc` (HVM-8).
+  - Personal memory aur session JSON: `cognition/memories.v1.json`, `last-session.json` (MYRAA).
+  - `license_server.txt` HVM-V8 mein: ek hard-coded license server ka address. Use nahi karna.
+
+### 8.2 Har pack ka license (kya karna hai)
+
+| Pack | License (zip ke hisaab se) | Code copy? | Sirf idea? |
+|---|---|---|---|
+| hkvm-2 (base) | `package.json` mein MIT, zip mein LICENSE file nahi | Base hai, rename ke saath use | MIT notice add karna (LICENSE file banao). |
+| NKVM | GPL-3.0 (LICENSE file hai) | ❌ (copyleft: code copy karne par aapka project bhi GPL banega) | ✅ |
+| vPanel Pro | README mein MIT, LICENSE file nahi | ❌ | ✅ |
+| HVM-8 | Commercial license client (`license_client.py`) | ❌ | ✅ |
+| HVM-V8 | Commercial license manager + hard-coded server | ❌ | ✅ |
+| Svm-v6 | Decompiled, license saaf nahi | ❌ | ✅ (reference) |
+| ALTEX | README mein kaha LICENSE missing | ❌ | ✅ |
+| MYRAA | LICENSE file nahi | ❌ | ✅ |
+| ZORIN | LICENSE file nahi | ❌ | ✅ |
+| public-apis | MIT (repo, LICENSE file hona chahiye, verify karna) | Catalog data use karna (attribution ke saath) | ✅ |
+
+**Matlab**: StarCloud ka apna code hoga. Packs se sirf ideas, flow aur design lena hai. Agar kisi pack ka code seedha copy hua, to license problem aa sakti hai.
+
+### 8.3 Bache hue packs aur dropped items
+
+| Item | Status | Kya pata hai |
+|---|---|---|
+| Mpanel | ❌ Dropped (user ne maana) | Download nahi, inspect nahi (zip bahut bada, 25 MB se upar, read nahi hua). |
+| Nobita | ❌ Dropped (user ne maana) | Same. |
+| `apanel` | ⚠️ Zip Analyse-File mein nahi | Docs ke hisaab se: `akvm.py` (per-VM security scan), public IP pool, Discord bot admin page, sshx, notifications, audit. Verified nahi. |
+| `nobitahost` | ⚠️ Zip nahi | Docs: coupons, otplib 2FA, firewall, blog, currency. Verified nahi. |
+| `NR-PROTECTION` | ⚠️ Zip nahi | Docs: maintenance, firewall. Verified nahi. |
+| `free-claude-code` | ⚠️ Zip nahi | MIT (memory ke hisaab se), AI provider failover idea. Verified nahi. |
+| `Hex-Mc` | ⚠️ Zip nahi | GPL-3.0 (memory), multi-node idea. Verified nahi. |
+| `Template-main` | ⚠️ Zip nahi | Proxmox `.vma.zst` template format. KVM ke liye alag format. |
+| Master spec (`StarCloud VM MAKER WEBSITE MASTER-PROMPT.txt`) | ⚠️ Folder mein nahi | Pehle lines padh kar notes bane. Latest user messages override karte hain. |
+
+**Ye sab packs ke baare mein jo bhi yahan likha hai, wo docs se hai, zip khud verify nahi hui.** Video mein inhe "docs ke hisaab se" kehna.
+
+### 8.4 Branch ki halat (2026-10-25, sach-sach)
+
+| Cheez | Kya hai | Verified kaise |
+|---|---|---|
+| Branch | `arena/f1ba8616-all-vm-panel`, HEAD `fd1f3d6` "Add files via upload" | `git log` |
+| Rename HKVM → StarCloud | ✅ app.js mein 26 "StarCloud", 0 "HKVM", 0 "hopingboyz", 3 "KingSlayer". views aur public mein 0 HKVM aur 0 hopingboyz. | `grep -c` (aaj) |
+| Logo | ⚠️ `public/images/logo.png` abhi HKVM ka original (753,604 bytes, 1254x1254). StarCloud logo copy nahi hua. | `ls`, PNG header |
+| Banner | ❌ `public/images/banner.png` missing | `ls` |
+| Batch 1 code (capacity, audit, maintenance, webhook, no-KVM) | ❌ HEAD mein nahi. Pehle chalta tha, lekin ab git history mein nahi. | `git log`, `services/` absent |
+| `services/` folder | ❌ Absent | `ls` |
+| Discord email bug | ❌ abhi bhi (app.js ~L742) | `grep` |
+| Session secret | ❌ abhi bhi hardcoded (app.js ~L326) | `grep` |
+| `/link-discord-account` GET route | ❌ missing | `grep` |
+| `node_modules` | ❌ Nahi hai (repo mein `npm ci` chalana padega) | `ls` |
+| Analyse-File | ✅ Aap ke zip files aur 2 PNG. Kuch files aap baad mein delete karenge. Ye file change nahi hui. | `ls` |
+| "All Analyse File Detail.md" | ⚠️ Repo root mein, ab commit hogi (ye file). | `git status` |
+
+**Progress (2026-10-18 ke hisaab se, aaj verify nahi hua)**:
+- Active build items: 40.
+- Done (recorded): 8. Lekin code HEAD mein nahi hai, isliye dobara banana padega.
+- Partial: webhook field (save hota hai, bhejta nahi), logo aur banner.
+- Remaining active: 32.
+- Later (baad mein): 7, abhi shuru nahi.
+- Yaani about 20% count ke hisaab se.
+
+### 8.5 Video script (bachon ke liye saral, ~10–12 minute)
+
+> Ye script bolne ke liye hai. Har scene ke baad "screen" ka note hai, jo dikhana hai. Kathin shabd pehle samjhaye gaye hain. Bolne ki speed dheemi rakhein.
+
+**Scene 1 — Intro (0:00–0:40)**
+- Bolo: "Namaste. Aaj main aapko StarCloud ke bare mein batata hoon. StarCloud ek panel hai, jisse ek computer par kai chhote computers, jinhe Virtual Private Server (VPS) kehte hain, banaye aur chalaye jaate hain."
+- Screen: StarCloud logo aur banner.
+
+**Scene 2 — Kuch shabd (0:40–2:00)**
+- Bolo: "Pehle kuch shabd. Virtual Machine (VM) ek computer ke andar ek aur computer hai. KVM (Kernel-based Virtual Machine) wo Linux ka feature hai jo ye VM sach mein chalata hai, dheere nahi. VPS ek VM hai jo customer ko milta hai. VDS (Virtual Dedicated Server) ka matlab hai zyada resources wala VM."
+- Screen: ek bada computer, uske andar 3 chhote boxes (VM).
+
+**Scene 3 — Ek IP, kai darwaze (2:00–4:00)**
+- Bolo: "Internet par har computer ka ek address hota hai, jise IP address kehte hain. Humare paas ek hi public IP hai. Har VM ko alag port milta hai. Port ek darwaza hai. SSH (Secure Shell) port 22 hai, lekin ek hi IP par sab 22 nahi le sakte, isliye har VM ko alag number, jaise 20001, milta hai."
+- Screen: ek IP address, 3 VM, har ek ka alag port number.
+- Bolo: "Pterodactyl ek game server panel hai. Uske liye ek saath kai port chahiye: panel ka port 80, Wings ka port 8080, aur game ka port 25565. Har VM ke liye ye sab unique hone chahiye. Isliye panel automatic port dhoondhta hai, admin ko kuch nahi dalna."
+- Screen: port table.
+
+**Scene 4 — KVM check aur nested KVM (4:00–5:00)**
+- Bolo: "Installer pehle check karta hai ki server par KVM hai ya nahi. Agar nahi hai, to VPS banane ka button band ho jata hai. Nested KVM ka matlab hai VPS ke andar bhi ek VM. Ye toggle default ON hai."
+- Screen: create form, toggle.
+
+**Scene 5 — Discord se order (5:00–6:30)**
+- Bolo: "Customer ke orders aur baat Discord par hoti hai. Website sirf admin ke liye hai. Customer Discord ticket kholta hai, plan chunta hai, UPI se payment karta hai, aur admin confirm karta hai. Phir credentials, yani login details, Discord par private message mein jaati hain."
+- Bolo: "Dhyan rakhna: UPI payment bot apne aap check nahi kar sakta, admin ko confirm karna hai."
+- Screen: ticket flow, 5 steps.
+
+**Scene 6 — Coupons aur giveaway (6:30–7:15)**
+- Bolo: "Coupon ek code hai jo discount deta hai. Teen tarah: percentage, fixed amount, aur 100% free. Giveaway code ek baar chalne wala free code hai."
+- Screen: coupon form.
+
+**Scene 7 — AI assistant (7:15–9:00)**
+- Bolo: "StarCloud mein AI assistant hai. Admin ka AI poori website sambhal sakta hai, lekin har badlav se pehle confirmation maangta hai, 60 second ke andar. Customer ka AI sirf sawal ka jawab deta hai, aur apna VPS start ya stop kar sakta hai, confirmation ke saath. Naya VPS banane ka haq sirf admin ke paas hai. Customer ke passwords kabhi AI ko nahi jaate."
+- Screen: AI chat, confirmation box.
+
+**Scene 8 — Packs kahan se (9:00–10:30)**
+- Bolo: "Hamne 9 zip packs dekhe. Kuch se ideas liye, jaise file manager, backup, maintenance mode, risk gate. Code copy nahi kiya, kyunki kuch GPL license wale hain, jo copy karne par humara project bhi GPL ban jaata. Kuch packs mein license file hi nahi hai."
+- Screen: pack list, license column.
+
+**Scene 9 — Kya abhi bacha hai (10:30–11:30)**
+- Bolo: "Abhi kaam baki hai. Rename HKVM se StarCloud ho chuka hai. Pehle ke kuch changes git mein nahi hain, unhe dobara banana hai. Bahut kaam ahead hai: backup, expiry, 2FA, Hindi, aur AI."
+- Screen: progress bar (about 20%).
+
+**Scene 10 — End (11:30–12:00)**
+- Bolo: "Dhanyavaad. Agle video mein hum VPS banana live dikhayenge."
+
+### 8.6 Agle kadam (order mein)
+1. Ye file repo mein hai. `git add` karke branch `arena/f1ba8616-all-vm-panel` par commit, phir push (ek baar try). TLS error aaye to pehle `git ls-remote` retry.
+2. Batch 1 dobara lagana: `services/capabilities.js`, `services/audit.js`, maintenance, emergency, no-KVM block, webhook field, password rule, nested toggle, logo aur banner copy. Ye HEAD mein nahi hain.
+3. Security fixes pehle: session secret, cookie flags, Discord email verified check, `execSync` replace, route GET fix.
+4. Sab 3 faisle confirm karna (ek baar, implement se pehle): Python discord.py bot (D-25), XRDP remove (D-26), minimum password 8 (D-24). Ye Part 1 mein answered hain, lekin pehle ye note hua tha ki open hain.
+5. Batch 2 (VM management), Batch 3 (backup), Batch 4 (Discord), Batch 5 (premium), Batch 6 (AI).
+6. Har batch ke baad live test (KVM ke bina ye sirf create block test ho sakta hai; real VM test ke liye KVM wali VPS chahiye).
+
+### 8.7 Sawal aur user ke jawab (2026-10-25)
+Chaar sawal user se ask_user ke zariye poochhe gaye. Jawab neeche hain, aur inhi ke hisaab se aage kaam hoga.
+
+| # | Sawal | Jawab (2026-10-25) | Kya asar padega |
+|---|---|---|---|
+| 1 | Repo mein `.env` aur `data/` ki stripped copy? | **Haan, stripped rakho.** Secrets aur database Git mein nahi jayenge. | `.gitignore` check, `.env.example` sirf template. |
+| 2 | Owner "Remote Support Mode" aur telemetry? | **Nahi, dono hatao.** | H1 band. Koi remote access nahi, koi telemetry nahi. |
+| 3 | Coupon usage record "order record" maana jaye? | **Sirf count rakho.** Har coupon par kitni baar use hua. | Coupon table mein `used_count` hi. Order table nahi. |
+| 4 | Referral, flash sale, status page? | **Teeno rakho.** | B11, B12 build list mein. |
+
+Abhi khule sawal (user ne abhi jawab nahi diya):
+- `{{DOMAIN}}` aur `{{OWNER_EMAIL}}` placeholders kya hain? (Naya domain kab milega?)
+- Banner (2.9 MB) ko optimize karna theek hai? (Recommended: haan.)
+
+### 8.8 Ye file kaise banti hai (transparency)
+- Part 1: glossary, overview, decisions, branch state.
+- Part 2: HKVM base ka poora analysis, security.
+- Part 3: 9 zip packs ka alag analysis.
+- Part 4: har feature ka analysis, source ke saath.
+- Part 5: security saar, licenses, bache packs, branch state, video script, next steps, sawal.
+- Galat claims pehle wali reports mein thi (webhook, file manager, nested toggle). Ye file unhe sudhar kar likhti hai.
+
+*File khatam.*
+
+---
+
+## 9. Part 6 — Gehri jaanch aur file-wise analysis (2026-10-25 update)
+
+### 9.1 Jaanch kaise ki gayi
+- Har zip ko repo ke **bahar** (`/tmp/an/`) extract kiya gaya. Zip mein kuch bhi change nahi kiya gaya.
+- Ginti (count) **zip ki listing** se li gayi (zip ki asli entries). Extract ke baad ginti alag aa sakti hai, isliye zip listing ko hi sahi maana gaya.
+- Har claim ke liye code mein grep (text search) kiya gaya. Jahan verify nahi hua, wahan saaf likha hai.
+- Koi bhi secret value, password ya personal data print nahi kiya gaya. Sirf file ke naam aur structure dekhe gaye.
+
+### 9.2 Sab packs ka ek-saath table
+
+| Pack (Analyse-File mein) | Zip entries | Files | Folders | LICENSE file | Main tech | Sabse zaroori code files |
+|---|---|---|---|---|---|---|
+| `(Nissalop22)HVM-8.zip` | 99 | 83 | 16 | **Nahi** (sirf `license_client.py`) | Python Flask | `hvm/hvm.py` (20,118 lines), `hvm/api.py` (4,076), `hvm/node.py` (2,256, LXC), `hvm/live_stats_manager.py` (523), `hvm/license_client.py` (238) |
+| `(PapiaGamerz)HVM-V8.zip` | 80 | 69 | 11 | **Nahi** (`license_manager.py` + `license_server.txt`) | Python Flask | `hvm/hvm.py` (15,466), `hvm/api.py` (1,704), `hvm/license_manager.py` (615), `hvm installer guide.txt` |
+| `(Nissalop22)Svm-v6.zip` | 68 | 58 | 10 | **Nahi** | Python Flask (decompiled) | `svm_panel/svm_panel.py` (4,770), `svm_panel/api.py` (833) |
+| `(Nissalop22)NKVM_Panel_v1.zip` | 103 | 84 | 19 | **Haan**: `Nkvm-main/LICENSE` (GPL-3.0) | Node.js, Express, EJS, Socket.IO | `src/routes/*.js`, `src/services/*.js` (12 services), `install.sh`, `docker-compose.kvm.yml` |
+| `vpanel-pro-main.zip` | 180 | 152 | 28 | **Nahi** (README mein MIT likha hai) | Node.js, Express, MongoDB, EJS | `src/services/*.js` (23 services), `src/lib/i18n.js`, `src/lib/pluginManager.js`, `views/partials/command_palette.ejs` |
+| `ALTEX-CODE-main.zip` | 4 | 3 (+ nested zip) | 1 | **Nahi** (README mein kaha) | Electron, React, TypeScript, pnpm | Nested: `ALTEX-CODE-main/ALTEX-CODE-main/ALTREX-CODE-V4-GITHUB-REPO.zip` (286 files) |
+| `MYRAA-Source-Code-1.5.2.zip` | 266 | 266 | 0 (Windows path names) | **Nahi** | TypeScript, Python, Electron, three.js | Asli folder: `MYRAA-source-1.5.2/` (agent, api_hub, cognition, electron, desktop_agent) |
+| `ZORIN-M4-source.zip` | 127 | 127 | 0 (sab root mein) | **Nahi** | Python (113 `.py`), Windows `.bat`/`.ps1` | `risk.py` (48 lines), `confirmation.py` (35), `planner.py`, `executor.py`, `*_provider.py` (4) |
+| `hkvm-2` (base, `(Nissalop22)hkvm-2.zip`) | 3,619 | 2,952 | 667 | **Nahi** (`package.json` mein MIT) | Node.js, Express, sqlite3, EJS, ssh2 | `Hkvm/app.js` (4,912), `Hkvm/licenses.js` (no-op stub) |
+
+Do PNG files (`StarCloud-Logo.png`, `StarCloud-Banner.png`) zip nahi hain. Inka detail Part 3 (6.9) mein hai.
+
+### 9.3 Pack-wise verified facts (code se)
+
+**(a) HVM-8** (`hvm/`)
+- Routes: `hvm.py` mein 165 `@app.route` decorators. `api.py` mein 94 `route(` entries.
+- Verified keywords/routes: maintenance (18 jagah), expiry (202), bulk (36), snapshot (373), file manager routes (13: browse, upload, download, delete, rename, mkdir, read, write, move, chmod, compress, extract, search).
+- **Database tables (verified, `CREATE TABLE` se)**: `activity_logs`, `api_keys`, `backups`, `license`, `nodes`, `notifications`, `os_icons`, `password_reset_tokens`, `port_allocations`, `port_forwards`, `sessions`, `settings`, `snapshot_schedules`, `users`, `vps`, `vps_metrics`, `vps_snapshots`. (Pehle likhi list mein `license_state` tha, wo code mein nahi mila.)
+- **LXC**: `hvm.py` mein `execute_lxc` function ~196 baar, `LXC` word ~66 baar. `node.py` mein `lxc` ~52 baar. Matlab backend container-based hai, KVM nahi.
+- Zip mein live data: `hvm.db`, `hvm.log`, `backups/` (`hvm_backup_*.db` aur `-wal` files), aur `__pycache__/` mein 4 compiled `.pyc` files. Inme se kuch bhi copy nahi karna.
+
+**(b) HVM-V8** (`hvm/`)
+- `hvm.py` mein 147 `@app.route`. `api.py` 1,704 lines.
+- `hvm installer guide.txt` mein systemd service ka tareeka hai (`/etc/systemd/system/hvm.service`, `Restart=always`). Ye idea StarCloud installer mein lenge (Part 4 A12).
+- `license_server.txt` mein ek hard-coded server address hai. Use nahi karna.
+
+**(c) Svm-v6** (`svm_panel/`)
+- Files: `svm_panel.py` (4,770), `api.py` (833), `api.pyc`, `svm.pyc`, `svm.db`, `svm.log`, `static/uploads`, `templates/`.
+- `api.py` mein `/api/v1` prefix aur `X-API-Key` header (7 baar). Ye REST API ka tareeka hai.
+- **Decompiled**: `api.py` aur `svm_panel.py` dono ke header mein "Decompyle++" likha hai. Matlab original source nahi.
+- Route decorator (`@app.route`) count 0 mila. Routes doosre style mein define hain. Exact count is session mein verify nahi hua.
+
+**(d) NKVM** (`Nkvm-main/`)
+- **LICENSE**: GNU GPL-3.0 (verified, `Nkvm-main/LICENSE` ki pehli line "GNU GENERAL PUBLIC LICENSE, Version 3").
+- Services (12): `activityService`, `agentService`, `authService` (TOTP), `backupService` (snapshot), `bootLogService`, `mailService`, `nodeService`, `scheduleService` (cron), `sshService`, `vmService`, `vncService`, `wallpaperService`.
+- Routes (verified names): `/vms/:id/bootlog`, `/bootlog/stream`, `/vms/:id/files`, `/files/download`, `/files/read`, `/vms/:id/backups`, `/vms/:id/schedules`, `/vms/:id/subusers`, `/settings/tfa/setup` (2FA), `/user/login-history`, `/verify`, `/forgot`, `/reset`, `/register`, `/admin/nodes`, `/admin/wallpapers`, `/api/wallpapers`.
+- Ports (code mein): `3001` (web panel), `25501` aur `25600` (SSH forward range), `26101` aur `26200` (agent range).
+- Wallpapers: `4kwallpapers.com` se (code mein `4kWallpapers()` function aur URL).
+- **Correction**: pehle "Audit logs" likha tha. Code mein `activityService.js` hai (activity log). Alag "audit" service nahi.
+
+**(e) vPanel Pro** (`vpanel-pro-main/`)
+- **LICENSE file**: root mein nahi hai. README mein MIT badge hai. Matlab license clear nahi.
+- Services (23, verified): `activityService`, `agentService`, `aiLogService`, `apiManagerService`, `auditService`, `authService`, `backupService`, `billingService`, `bootLogService`, `cacheService`, `mailService`, `mongoManagerService`, `networkService`, `nodeService`, `resourceService`, `scheduleService`, `sshService`, `storageService`, `templateService`, `updateService`, `vmService`, `vncService`, `wallpaperService`.
+- i18n (`src/lib/i18n.js`): `en`, `hi` (Hindi), `es`, `de`, `ar`. Hindi yahin se li ja sakti hai (idea), code copy nahi.
+- `src/lib/pluginManager.js` aur `src/routes/webAdminPlugins.js` (plugins). `views/partials/command_palette.ejs` (Ctrl+K palette).
+- `NO_KVM` mention: `docker-compose.yml`, `docker-compose.kvm.yml`, README, README-DOCKER.md.
+
+**(f) ALTEX (ALTREX CODE V4)**
+- Outer zip: `README.md`, `GITHUB.txt`, nested zip. Nested repo ke root mein: `ALTREX.md`, `README.md`, `UPLOAD_TO_GITHUB.txt`, `apps/`, `docs/`, `packages/`, `package.json`, `pnpm-workspace.yaml`. **LICENSE file nahi.**
+- Packages: `packages/contracts`, `packages/core`. App: `apps/desktop`. Multi-AI code: `apps/desktop/src/main/multi-ai/director.ts`.
+- Provider words (kitni baar aaye, `.ts` aur `.md` files mein; ye count hai, provider ka pakka number nahi): codex 279, gemini 232, ollama 223, nvidia 175, groq 140, openrouter 91, crax-gpt 45, cerebras 30, sambanova 18, Cloudflare Workers AI 4.
+- Safety words: `git push` (5 jagah), `rm -rf` (2 jagah) tests aur code mein. "Forbidden" word kai test files mein.
+- "Verified" status ka test: `agent-runner.test.ts`, `hardening.scenarios.test.ts`.
+
+**(g) MYRAA 1.5.2** (`MYRAA-source-1.5.2/`)
+- Zip ke andar file names Windows path ki tarah hain (`MYRAA-source-1.5.2\agent\actions\risk.ts`). Isliye folder count 0 dikhta hai. Asli folder `MYRAA-source-1.5.2/` hai.
+- **LICENSE**: nahi mila.
+- Verified: `agent/actions/risk.ts`, `agent/actions/catalog.ts`, `agent/actions/executor.ts`, `agent/audit.ts`, `agent/cancellation.ts`, `agent/recovery.ts`, `agent/scheduler.ts`, `agent/shell.ts`, `agent/webFetch.ts`, `api_hub/` (3 built-in adapters), `cognition/`, `electron/main.cjs` (default emergency shortcut `Control+Alt+Shift+S`), `desktop_agent/`, `desktop_agent.spec` (PyInstaller).
+- **Personal data (copy nahi)**: `cognition/memories.v1.json`, `cognition/last-session.json`, `server_memory.ts`.
+- Heavy folders: `models/`, `native/`, `assets/` (mp4), `build/`. Model aur media files ka license alag ho sakta hai.
+
+**(h) ZORIN M4** (flat root)
+- **LICENSE**: nahi mila.
+- Zip listing: 127 entries, 113 `.py`, 4 `.bat`, 2 `.ps1`, 2 `.md`, 2 `.txt`, 1 `.yaml`, 1 `.ini`, 1 `.gitignore`.
+- `risk.py` (48 lines): `SENSITIVE` regex (delete, remove, format, purchase, buy, pay, send, post, password, security, permission, disable, uninstall, reset account, erase), `BLOCKED_APP` regex (powershell, cmd, terminal, regedit, credential, password manager, windows security). Password field aur protected desktop par `deny`.
+- `confirmation.py` (35 lines): `asyncio.wait_for(self.future, 60)` (60 second gate), `fingerprint`, `expires`.
+- Providers: `gemini_provider.py`, `groq_provider.py`, `openai_provider.py`, `local_provider.py`.
+- **Ginti ka farq**: zip listing mein 113 `.py`, lekin extract karne par 103 mile. Zip mein do naam duplicate hain (`__init__.py`, `live.py`), isliye extract mein overwrite ho jate hain. Baaki farq abhi saaf nahi hai. Zip listing hi count maana gaya.
+- `config.yaml`, `secrets.py`, `database.py`: secrets aur data files. Values check nahi ki gayi.
+
+**(i) hkvm-2 (base)**
+- `app.js` (4,912 lines), `licenses.js` (header: "All license checks silently return 'activated' — no server calls, no keys required"), `data/` (database file), `node_modules/`, `public/`, `views/`, `package.json`, `package-lock.json`.
+- Repo ka `app.js` aur hkvm-2 ka `app.js` normalized compare mein sirf 4 lines alag (rename wali).
+
+### 9.4 Pehle wali galtiyan aur sudhaar (ek jagah)
+
+| Pehle kya likha tha | Ab kya sahi hai |
+|---|---|
+| NKVM: "Audit logs (VM power actions, login, permission change)" | Code mein `activityService.js` hai (activity log). Alag audit service nahi mili. |
+| HVM-8 DB tables mein `license_state` | Code mein nahi mila. Sahi list 9.3(a) mein hai. |
+| ZORIN: "127 files (113 `.py`)" | Zip listing ke hisaab se sahi. Extract mein 103 `.py` dikhte hain (duplicate naam ki wajah se). |
+| MYRAA: ek hi folder mein sab files | Asli folder `MYRAA-source-1.5.2/` hai. Zip ke andar naam Windows path hain. |
+| ALTEX: "nested repo `ALTREX-CODE/`" | Nested zip ka naam `ALTREX-CODE-V4-GITHUB-REPO.zip` hai, aur wo `ALTEX-CODE-main/ALTEX-CODE-main/` ke andar hai. |
+| HVM-8 mein sirf "live data" ka zikr | Ab exact list: `hvm.db`, `hvm.log`, `backups/`, 4 `.pyc`. |
+| Svm-v6 routes count | Verify nahi hua (decorator style alag hai). |
+
+### 9.5 Ab tak ki kami (honest)
+- Mpanel aur Nobita: user ne drop kiya tha, inhe analyse nahi kiya. Dekho Part 7 mein.
+- Docs se li gayi packs (apanel, nobitahost, NR-PROTECTION, free-claude-code, Hex-Mc, Template-main): zip repo mein nahi hai, abhi verify nahi hua.
+- `public-apis/public-apis`: abhi ingest nahi kiya. Ye Batch 6 mein hoga.
+
+---
+
+## 10. Part 7 — Badi files (30 MB aur usse upar) upload karne ka tarika
+
+### 10.1 GitHub ki limits (official docs se)
+| Tarika | Limit | 30 MB file | Kya karein |
+|---|---|---|---|
+| GitHub website par drag-drop (browser) | **25 MiB** per file | ❌ fail | Chhoti file hi |
+| `git` command line se push | **50 MiB par warning**, **100 MiB par block** | ✅ chal jayegi (warning aa sakti hai) | Repo mein rakhna ho to ye |
+| Git LFS (Large File Storage) | Per file: Free/Pro **2 GB**, Team **4 GB** | ✅ | 100 MiB se upar, repo mein rakhna ho to |
+| GitHub Release asset | Per file **2 GB** | ✅ | Download ke liye, repo ke bahar |
+
+Sources: GitHub Docs "About large files on GitHub" aur "About Git Large File Storage", aur Stack Overflow / community pages (sab ek hi number dete hain).
+
+### 10.2 Aapke sawal ka seedha jawab
+- **30 MB file ko website se upload nahi hoga** (limit 25 MiB).
+- **Git command line se 30 MB push ho jayegi**, bas 50 MiB ki warning aa sakti hai. Ye aapke apne computer par karna hoga.
+- **100 MB se badi file ke liye Git LFS** ya **Release** use karo.
+- **Sabse aasaan**: Google Drive par folder banao, sab files wahan upload karo, phir folder ka link ya naam mujhe do. Main Google Drive connector se list karke padh sakta hoon.
+
+### 10.3 Git command line se 30 MB file upload (step by step, aapke computer par)
+1. Git install karo (Windows par "Git for Windows").
+2. Repo clone karo:
+   `git clone https://github.com/kingslayer76/All-vm-panel.git`
+3. Apni branch par jao:
+   `cd All-vm-panel`
+   `git checkout arena/f1ba8616-all-vm-panel`
+4. File ko `Analyse-File/` folder mein copy karo.
+5. Stage karo:
+   `git add "Analyse-File/aapki-file.zip"`
+6. Commit karo:
+   `git commit -m "Add Analyse-File: aapki-file.zip"`
+7. Push karo:
+   `git push origin arena/f1ba8616-all-vm-panel`
+- GitHub login aapke apne account se hoga. Token ya password kisi ko chat mein na dein.
+- 50 MiB se upar warning aayegi. Push phir bhi hoga, lekin repo bada hoga.
+
+### 10.4 100 MB se badi file (Git LFS)
+1. `git lfs install`
+2. `git lfs track "*.zip"`
+3. `git add .gitattributes`
+4. Phir upar wale steps 5 se 7.
+- Free plan par LFS ka storage aur bandwidth limit hota hai. Bahut baar upload karne par limit khatam ho sakti hai.
+
+### 10.5 Google Drive folder (sabse aasaan, aapke liye)
+- Ek folder banao, jaise `StarCloud Analyse Files`.
+- Sab files upload karo (30 MB bhi chalegi).
+- Folder ka naam ya link mujhe do. Main Google Drive connector se list karunga aur files padhunga.
+- Note: Mpanel aur Nobita (Drive mein dikh rahi hain) par aapne drop kiya tha. Inhe main tab tak nahi kholunga jab tak aap na kahein.
+
+### 10.6 Drive mein dikhi files (sirf naam aur size)
+| File | Size | Status |
+|---|---|---|
+| `Nobita-Cloud-main.zip` | 34,945,574 bytes (~34.9 MB) | Drop kiya gaya, **open nahi kiya** |
+| `Mpanel-main.zip` | 27,891,527 bytes (~27.9 MB) | Drop kiya gaya, **open nahi kiya** |
+
+*Part 6 aur Part 7 khatam.*
+
+---
+
+## 11. Part 8 — Phone se Termux ke zariye file upload (easy steps)
+
+> Ye steps aap khud apne phone par karoge. Assistant aapke GitHub login ya token ko nahi dekh sakta, isliye login aapke phone par hi hoga.
+
+**Pehle ek baar setup**
+1. Termux app install karo. F-Droid se lo (Play Store wala purana hai).
+2. Termux kholo aur ye likho:
+   `pkg update -y && pkg install -y git`
+3. Phone ki storage ka access lo:
+   `termux-setup-storage` (ek popup aayega, "Allow" dabao)
+4. GitHub login: `pkg install -y gh` phir `gh auth login` chalao. Screen par diya gaya code browser mein daalo. Token ya password kisi ko mat dena.
+
+**Har baar upload ke liye**
+1. Repo lo:
+   `git clone https://github.com/kingslayer76/All-vm-panel.git`
+2. Folder mein jao aur branch badlo:
+   `cd All-vm-panel` phir `git checkout arena/f1ba8616-all-vm-panel`
+3. File copy karo. Maan lo file phone ke Downloads mein hai:
+   `cp ~/storage/downloads/aapki-file.zip Analyse-File/`
+4. Git ko apna naam aur email batao (sirf pehli baar):
+   `git config user.name "Aapka Naam"` aur `git config user.email "aapka-github-email"`
+5. Add, commit, push:
+   `git add "Analyse-File/aapki-file.zip"`
+   `git commit -m "Add aapki-file.zip"`
+   `git push origin arena/f1ba8616-all-vm-panel`
+
+**Badi file ke liye**
+- 50 MB se upar warning aayegi, par push ho jayega.
+- 100 MB se upar block hoga. Tab ye karo: `pkg install -y git-lfs`, phir `git lfs install`, phir `git lfs track "*.zip"`, phir `git add .gitattributes`, phir upar wale step 5 dohrao.
+
+**Dhyan rakhne wali baatein**
+- Sirf wahi files upload karo jo aap upload karna chahte ho. Personal data (database, log, password wali files) mat dalo.
+- Upload ke baad GitHub par `Analyse-File/` folder mein file dikhegi.
+
+*Part 8 khatam.*

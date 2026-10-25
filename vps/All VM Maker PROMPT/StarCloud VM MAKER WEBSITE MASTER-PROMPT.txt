@@ -1,0 +1,1181 @@
+========================================================================
+        STARCLOUD — VPS / VDS / RDP CONTROL PANEL
+        MASTER BUILD PROMPT  (single file, nothing missing)
+========================================================================
+
+KAISE USE KARNA HAI (Hinglish):
+1. Naya chat kholo (ChatGPT / Claude / Gemini / Arena — koi bhi).
+2. Neeche 'PROMPT START' wali line se 'PROMPT END' wali line tak POORA text copy karo
+   (ya poori file hi copy kar lo - dono chalega).
+3. Paste karo aur bhej do. Bas — AI ko sab kuch isi file me mil jayega.
+4. Sirf 2 cheezein bharni hain: {{DOMAIN}} aur {{OWNER_EMAIL}} (installer bhi pooch lega).
+5. AI ek-ek phase banayega. Aage badhane ke liye file ke last me chhote prompts diye hain.
+
+Note: spec English me hai (technical accuracy ke liye), har bhaag ke saath
+Hinglish explanation bhi hai taaki tumhe samajh aata rahe ki kya ban raha hai.
+
+
+=== PROMPT START ===
+
+
+========================================================================
+PART 1 — THE BUILD SPEC (identity, rules, theme, motion, glossary, owner tier, all 16 feature areas, phases)
+========================================================================
+// Ye asli spec hai — AI isi se panel banayega.
+
+
+# ROLE
+
+You are a **principal full-stack engineer + cloud infrastructure architect + UI designer**. You build production-grade, real, working software — never demos, never mockups, never stubs. You have deep expertise in: Node.js/Express, TypeScript, SQLite/Postgres, Socket.IO, xterm.js, noVNC, QEMU/KVM/libvirt, cloud-init, Linux networking, Docker, payment gateways, and LLM tool-calling agents.
+
+# PROJECT
+
+Build **`StarCloud`** — a complete, self-hosted **VPS (KVM/QEMU virtual machine) control panel website** where an admin can create and fully manage virtual servers and end-users can self-manage their own servers. It must be a **single installable product** (one command install) with an admin panel, a user panel, a public API, and a built-in AI assistant.
+
+Design language: **the HKVM panel theme** (pure-black glassmorphism — spec below) with **`StarCloud`** branding.
+
+# PROJECT VARIABLES (fill before you start)
+
+```
+PANEL_NAME      = StarCloud                   # brand shown everywhere (logo + banner already exist in repo)
+TAGLINE         = Your Cloud, Your Rules
+PRIMARY_DOMAIN  = {{DOMAIN}}                  # fill: e.g. starcloud.example.com (installer asks if empty)
+STACK           = Node.js 20 + Express + EJS + better-sqlite3 + Socket.IO + xterm.js + noVNC
+SCALE           = single-node (ONE host), but architected so a node-agent can be added later without rewrite
+VIRTUALIZATION  = AUTO-DETECT: KVM if available, else QEMU/TCG software mode, else LXC/Docker containers
+PRODUCT_LINES   = VPS (KVM) + VDS (dedicated) + RDP (Windows) + optional LXC/Docker containers
+BILLING         = SELLING BUSINESS: Razorpay/UPI primary, Stripe + crypto optional, manual/offline payments,
+                  coupons & giveaway events, 100%-free codes, half-price events, custom amounts, reseller mode
+AI_PROVIDER     = multi-switch (Gemini free / OpenAI / Groq / Ollama local)
+AUDIENCE        = public signup (paying customers) — fraud controls required
+UI_LANGUAGES    = en, hi                      # English + हिंदी toggle
+TARGET_OS       = Ubuntu 22.04 / 24.04 host (Debian/Fedora/RHEL/Arch also supported), guests: Linux + Windows Server
+OWNER_EMAIL     = {{OWNER_EMAIL}}             # first-run only; never hardcoded in source
+CURRENCY        = INR (primary) + USD (optional), GST-ready invoices
+```
+
+**Two facts that shape the whole build:**
+1. **The panel must run on a host WITH or WITHOUT KVM.** It auto-detects and adapts — it must never crash or refuse to install just because `/dev/kvm` is missing.
+2. **This is a commercial hosting business** (selling VPS / VDS / Windows RDP, plus free giveaways and discount events), so pricing flexibility, payments, fraud control, and support tooling are first-class features — not add-ons.
+
+# NON-NEGOTIABLE RULES
+
+1. **Everything real.** No `TODO`, no `// implement later`, no fake arrays, no lorem data. Every endpoint must actually execute the underlying QEMU/SSH/DB operation. If something cannot run in the current environment, it must return a clear, honest error — not a stub.
+2. **Service-layer architecture.** No 4000-line files. `routes/` (thin) → `services/` (logic) → `lib/` (db/config/logger) → `drivers/` (qemu, ssh, vnc, agent, node-agent). Max ~300 lines/file.
+3. **Idempotent DB migrations** (versioned migration files, run on boot, safe to re-run). Never `DROP TABLE` on upgrade.
+4. **Validation on every input** (zod or joi). Every write is parameterized SQL. Every route is authenticated + authorized by role.
+5. **Secrets**: `.env` only, `.env.example` shipped, secrets encrypted at rest (VM passwords, API keys, SMTP, gateway keys) with a master key from env. **Never** log a secret. Never hardcode an IP/domain/license server.
+6. **Security defaults**: Argon2id hashing, Helmet, CSRF, strict CORS allowlist, per-route rate limiting, login lockout, 2FA for owner+admin, HttpOnly+Secure+SameSite cookies, least-privilege file modes (no `0777`), sanitized shell args (no string-interpolated `exec` — use argv arrays).
+7. **Idempotent + observable**: every mutation writes an `activity_logs` row (actor, action, target, IP, user-agent, result, timestamp).
+8. **UI**: mobile-responsive, accessible (ARIA, keyboard nav, focus states, `prefers-reduced-motion`), skeleton loaders, toasts, empty states, optimistic UI, real-time updates via Socket.IO. No page reloads for VM state changes.
+9. **Ship tests + CI** for every phase: Vitest + Supertest for API, migration tests, and a GitHub Actions workflow (lint → typecheck → test → build).
+10. **After every phase**: list files created, endpoints added, the exact `curl`/UI steps to verify, and what is intentionally not done yet.
+
+# THEME SPEC — "HKVM" (implement exactly)
+
+```css
+:root{
+  --bg-primary:#000000; --bg-secondary:#0a0a0a;
+  --bg-card:rgba(18,18,18,.85); --bg-card-hover:rgba(28,28,28,.9);
+  --bg-sidebar:rgba(10,10,10,.95); --bg-header:rgba(0,0,0,.85);
+  --bg-input:rgba(20,20,20,.8); --bg-modal:rgba(15,15,15,.98); --bg-overlay:rgba(0,0,0,.85);
+  --bg-table-hover:rgba(255,255,255,.03); --bg-elevated:rgba(25,25,25,.9);
+  --accent-primary:#ffffff; --accent-secondary:#e5e5e5; --accent-tertiary:#cccccc;
+  --accent-green:#00ff00; --accent-red:#ff0000; --accent-orange:#ff8800;
+  --accent-pink:#ff00ff; --accent-blue:#0088ff; --accent-teal:#00ffff;
+  --color-indigo:#6366F1; --color-emerald:#10B981; --color-amber:#F59E0B;
+  --color-red:#EF4444; --color-violet:#8B5CF6; --color-cyan:#06B6D4; --color-gray:#9CA3AF;
+  --border-color:rgba(255,255,255,.12); --border-color-hover:rgba(255,255,255,.25);
+  --border-subtle:rgba(255,255,255,.06); --border-focus:rgba(255,255,255,.4);
+  --text-primary:#fff; --text-secondary:#ccc; --text-muted:#999; --text-disabled:#666;
+  --shadow-sm:0 2px 8px rgba(0,0,0,.6); --shadow-md:0 4px 20px rgba(0,0,0,.7);
+  --shadow-lg:0 8px 40px rgba(0,0,0,.8); --shadow-xl:0 20px 60px rgba(0,0,0,.9);
+  --radius-sm:6px; --radius-md:10px; --radius-lg:16px;
+  --panel-blur:18px; --panel-transparency:.85;   /* user-adjustable sliders */
+}
+```
+- Fonts: **Inter** (UI) + **JetBrains Mono** (terminal, numbers, code, IPs, ports).
+- Style: **pure-black glassmorphism** — translucent cards, 1px white-alpha borders, deep shadows, subtle `radial-gradient` mesh background, glowing accent halos on hover. **Accent = white** (not blue); semantic colors only for status.
+- Layout: collapsible left sidebar + sticky top header containing: breadcrumb (icon → panel name → page), **global search**, live **"Online" status dot**, **dark/light theme switcher**, **notification bell with unread dot**, **fullscreen toggle**, **avatar dropdown**.
+- Login page: animated grid background, floating icons, glass card, shake animation on error, show/hide password, 2FA step, OAuth buttons.
+- Components to build: `btn` (primary/success/danger/warning/outline/ghost/icon/sm/lg), `card`, `badge` (running/stopped/pending/error/admin/user/owner), `table` (sortable, striped, hover, column config), `modal`, `dropdown`, `tabs`, `alert`, `toast`, `tooltip`, `switch`, `slider`, `progress`, `skeleton`, `empty-state`, `code-block`, `chart`, `terminal`, `file-tree`, `wizard`.
+- Extras: user-adjustable **backdrop-blur (0–40px)** and **transparency (0–100%)** sliders, wallpaper picker (upload image or looping video), accent-color override, all persisted per-user.
+
+# MOTION & "PREMIUM FEEL" SPEC (animations — the user explicitly wants this to feel expensive)
+
+**Motion tokens (use everywhere, never invent new timings):**
+```css
+--ease-out-expo: cubic-bezier(.16,1,.3,1);   /* main easing */
+--ease-spring:   cubic-bezier(.34,1.56,.64,1);
+--dur-fast: 120ms; --dur-base: 200ms; --dur-slow: 320ms; --dur-slower: 600ms;
+```
+
+**Required animations (all GPU-friendly: only `transform` + `opacity`, never animate width/height/top/left):**
+1. **Page transitions** — new page content fades in + slides up 8px (`--dur-base`).
+2. **Sidebar** — collapse/expand with spring easing, icons rotate slightly, tooltips fade in on hover.
+3. **Cards** — hover: lift `translateY(-2px)` + border brightens + soft accent glow (`box-shadow` transition); press: `scale(.99)`.
+4. **Buttons** — hover glow, active `scale(.97)`, subtle **ripple** on click, loading state swaps label → spinner without changing button width.
+5. **Dashboard numbers** — **count-up animation** on load (e.g. `0 → 24 VMs` over 600ms with easing).
+6. **Charts** — line draws left-to-right, bars grow from baseline.
+7. **Tables/lists** — rows **stagger in** (30ms delay each, max 12 rows), skeleton shimmer while loading.
+8. **Modals** — backdrop blur-in + panel `scale(.96)→1` with spring; close reverses faster.
+9. **Toasts** — slide in from top-right with spring, auto-dismiss with a thin progress line, stack with offset.
+10. **Tabs** — sliding underline that animates between tabs.
+11. **Status** — running/stopped dot **pulses**; power-state changes morph color smoothly and show a brief glow ring on the VM card.
+12. **Terminal** — xterm.js with a custom HKVM-black theme, blinking cursor, optional subtle typing sound (off by default).
+13. **Login page** — parallax grid that reacts to mouse move, floating icons, card entrance, shake on error, success → card scales up and fades to the dashboard.
+14. **Ambient background** — very slow animated mesh gradient + film-grain noise overlay; optional low-CPU canvas particle field that **pauses when the tab is hidden**.
+15. **Scroll reveals** — sections fade+rise via `IntersectionObserver` (once only).
+16. **Command palette (Ctrl+K)** — drops down from the top with spring + backdrop blur.
+17. **Success moments** — VM created / payment success → brief glow + optional confetti (**"Fun Mode" — every user can toggle it in their own settings** (default ON for users, OFF on admin/owner dashboards); it adds confetti, particles, 3D tilt cards, animated gradients, typing effects and subtle UI sounds).
+18. **Progress** — real staged progress (image download → seed → disk → boot → agent) with a glowing bar and stage labels; never a fake indeterminate spinner.
+19. **Micro-interactions** — copy button morphs to "Copied ✓", password eye toggle, switch springs, slider thumb glows while dragging, notification bell bounces once on a new item.
+
+**Hard rules:** respect `prefers-reduced-motion: reduce` (disable all non-essential motion), hold **60fps** (no layout thrash, `will-change` used sparingly), no jQuery, no heavy animation libraries — vanilla CSS + tiny JS helpers (or Alpine.js) only, and animations must never delay an action (a button works instantly; the animation is decoration).
+
+# GLOSSARY (so nothing gets misread — implement exactly these meanings)
+
+**Virtualization:** **KVM** = hardware-assisted virtualization, full speed (needs `/dev/kvm`). **TCG** = QEMU's software emulation, 3–10× slower, used when KVM is missing. **QEMU** = the program that actually runs the VM. **cloud-init** = the tool that configures a fresh Linux VM on first boot (hostname, user, SSH key, packages). **cloud image** = a ready-made OS disk image (no installer needed). **ISO** = a full OS installer disc image (needed for Windows). **qcow2** = QEMU's disk file format (supports snapshots, thin allocation). **OVMF/UEFI** = modern firmware (needed for Windows 11 / Secure Boot). **virtio** = fast paravirtual drivers (disk/network) — Windows needs them injected. **unattended install / autounattend.xml** = Windows installing itself with no clicking. **cloudbase-init** = Windows' equivalent of cloud-init.
+
+**Resources:** **vCPU** = virtual CPU core given to a VM. **over-allocation** = selling more vCPU/RAM than physically exists (fine for CPU, risky for RAM). **CPU pinning (vcpupin)** = binding a VM to specific physical cores (what makes a VDS "dedicated"). **hugepages** = pre-allocated large memory pages for guaranteed RAM performance. **NUMA** = memory is attached to specific CPU sockets; crossing sockets is slower. **ballooning** = taking unused RAM back from a VM. **thin provisioning** = disk file grows as it's used.
+
+**Networking:** **bridge** = VM joins your real LAN and gets its own real IP. **NAT** = VM hides behind the host with port forwarding. **port forwarding** = host port 22001 → VM port 22. **rDNS / PTR** = reverse DNS (IP → name); mail servers require it. **allocation pool** = a reserved range of IPs/ports the panel hands out. **MTU** = network packet size. **VLAN** = a tagged virtual network segment.
+
+**Console/Access:** **VNC** = remote framebuffer protocol → **noVNC** = VNC inside the browser. **RDP** = Windows Remote Desktop Protocol. **xterm.js** = the terminal emulator widget used in browsers. **SSH** = encrypted shell access. **guest agent (qemu-guest-agent)** = a small service inside the VM that reports OS/disk/network back to the host.
+
+**Containers:** **LXC** = Linux containers (share the host kernel). **LXD/Incus** = a daemon + CLI on top of LXC that makes containers behave like light VMs (`lxc launch`, `lxc exec`); Incus is the community fork of LXD. **nesting (`security.nesting=true`)** = allowing containers to run *inside* a container. **Docker** = app-focused containers with images. **egg** = a Pterodactyl-style app template (image + startup command + env vars).
+
+**Snapshots vs Backups:** a **snapshot** = instant point-in-time state on the same disk (fast, cheap, dies with the disk). A **backup** = a separate copy (can be offsite/encrypted, survives disk loss).
+
+**Business:** **MRR/ARR** = monthly/annual recurring revenue. **proration** = charging only the difference when a plan changes mid-cycle. **dunning** = retrying failed payments automatically. **churn** = customers who left. **reseller / white-label** = someone sells your panel under their own brand. **GST invoice** = Indian tax-compliant invoice with GSTIN + tax split. **ToS/AUP** = terms of service / acceptable use policy. **SLA** = promised uptime.
+
+**Security:** **Argon2id** = password hashing algorithm. **2FA/TOTP** = time-based one-time codes (Google Authenticator). **OAuth** = "login with Discord/Google/GitHub". **CSRF** = cross-site request forgery (token-protected). **rate limiting** = max requests per IP/route. **Turnstile** = Cloudflare's captcha. **disposable email block** = rejecting 10-minute-mail signups. **Let's Encrypt** = free auto-renewing TLS certificates. **Argon2 + HttpOnly + SameSite cookies** = baseline session hardening.
+
+**Platform:** **EJS** = server-rendered HTML templates. **better-sqlite3** = fast embedded SQL database (one file, no server). **Socket.IO** = real-time push over websockets. **migration** = a versioned, idempotent DB schema change that runs on boot. **PWA** = installable web app with push notifications. **i18n** = multi-language UI (en + hi here).
+
+# ROLES & THE OWNER TIER (read carefully)
+
+Roles: `owner` (exactly one, immortal) > `admin` > `user`. Optional `reseller` if BILLING=reseller.
+
+**OWNER rules:**
+1. Exactly **one** owner account, created only by the first-run installer / `.env` (`OWNER_EMAIL`, `OWNER_PASSWORD_PROMPT`). It is never created by the signup page and never by any API.
+2. Owner **cannot be deleted, suspended, demoted, locked out, or have 2FA reset by anyone** — including other admins and including the owner's own admin UI (only a signed CLI command `starctl owner recover` on the host shell can reset owner credentials).
+3. Owner is **hidden from the standard user list and from user-facing APIs by default** (`users.is_visible = 0`), appears only in the Owner Console. *(This is a UI-level visibility flag, and it is documented — see Honesty rule below.)*
+4. Owner has unrestricted read access to everything: all nodes, VMs, users, logs, payments, AI actions.
+5. **Owner Console** (`/owner`, owner-only): live global dashboard, all-nodes/all-VMs table, kill-switch (`emergency stop-all`, `reboot-all`, `clear-suspensions`, `reset-ports`), maintenance mode, deployment/license list, AI tool permissions, audit log explorer, system tools (DB vacuum, SMTP test, resource check), and a **remote-support control**.
+6. **Remote Support Mode (consent-based, time-boxed):** a customer/admin can enable "Allow owner support for N hours" from their own dashboard; only then can the owner open a support session into that account/VM. Sessions auto-expire, are shown with a persistent banner to the account holder, and are fully audit-logged. No permanent silent access path exists.
+7. **Honesty rule (hard requirement):** the owner tier, the support mode, and any telemetry must be **plainly documented** in `README.md`, `SECURITY.md`, and the first-run installer screen, and visible in the DB schema. **Do not obfuscate, encrypt, or hide the existence of the owner account in the source code, and do not create any covert/unauthenticated access path into a customer's installation.** A hidden backdoor is out of scope and must not be implemented in any form (no hidden routes, no magic passwords, no hardcoded master keys, no "license server" phone-home that grants access).
+8. **Telemetry (disclosed, opt-out):** panel version, uptime, VM/node counts, error rates → owner's dashboard. Never VM contents, never user credentials, never file data. Toggle in admin settings; off = no outbound traffic.
+9. **Second admin:** installer flag `CREATE_DEFAULT_ADMIN=true|false`. When false, no other privileged account exists until the owner creates one. Owner can enable/disable any admin at any time.
+
+# FEATURE SCOPE
+
+## 0. Hypervisor auto-detection & capability engine (build this FIRST — everything depends on it)
+
+On install and on every boot, the panel probes the host and writes a `host_capabilities` record + shows a **Capability Report** page in admin:
+
+- **KVM**: `/dev/kvm` present + readable/writable? CPU virtualization flags (`vmx`/`svm` via `/proc/cpuinfo`)? Nested virtualization enabled (`/sys/module/kvm_intel/parameters/nested`)? User in `kvm` group?
+- **CPU**: model, physical cores, threads, sockets, NUMA nodes, flags (aes, ssse3, avx2), current MHz, `lscpu` output.
+- **RAM**: total, available, hugepages (`/proc/meminfo`), ballooning support.
+- **Disk**: pools/mounts, free space per pool, backing filesystem, SSD/NVMe detection (`/sys/block/*/queue/rotational`), qcow2 vs raw support, thin-provisioning support, IO scheduler.
+- **Network**: interfaces, existing bridges, MTU, public IPv4 (auto-detect via outbound probe **and** allow manual override), IPv6 availability + prefix, default gateway, DNS, VLAN support, `nftables`/`iptables` presence.
+- **OS/tooling**: host distro + version (auto-pick the right package manager: apt/dnf/pacman), qemu/qemu-img versions, cloud-image-utils, xorriso, OVMF/UEFI, virtio drivers, python3, git.
+- **Self-awareness**: is the panel itself running inside a VM? (then warn about nested virt), is it inside Docker?, available cgroup version (v1/v2), systemd present?
+
+**Modes derived from the probe (user can also force them in Settings):**
+| Mode | When | Behaviour |
+|---|---|---|
+| `kvm` | `/dev/kvm` OK | Full-speed VMs, hot-plug, live migration possible |
+| `tcg` | no KVM | **QEMU software emulation** — must still work; show a persistent amber banner "Software emulation — expect 3–10× slower CPU", recommend max 1–2 vCPU / 2GB per VM, block huge VMs with a clear reason, and suggest containers instead |
+| `lxc` | no KVM + LXC available | Container-based "VPS" product (fast, low overhead) |
+| `docker` | Docker available | Container product line |
+
+Rules: mode is **auto-detected, never required to be configured**; the create-wizard adapts (hides UEFI/SMBIOS/hot-plug options that TCG can't do, disables migration in TCG, caps resources sensibly); every VM card shows a small badge `KVM` / `TCG` / `LXC` / `Docker`; the hypervisor layer is a **driver interface** (`drivers/{kvm,tcg,lxc,docker}`) so modes are swappable without touching services/routes.
+
+**Smart capacity guard (runs live):** "This host has 8 vCPU / 32 GB RAM / 400 GB free. You have allocated 6 vCPU / 24 GB. **2 more 4 GB VMs fit.**" Over-allocation ratio configurable; hard-block or warn-and-allow; auto-suggest the biggest VM that still fits; refuse to create a VM that would starve the host, with a human-readable reason.
+
+## 1. Product lines (VPS · VDS · RDP · Bot Hosting) — sellable product types
+
+> **HARD RULE (owner's explicit requirement):** a sold **VPS or VDS is always a real KVM/QEMU virtual machine — never an LXC/LXD container.** It must behave like a **Proxmox VE VM**: the customer gets a real kernel, can install *anything*, load kernel modules, run Docker/LXD/KVM inside, use VPN/WireGuard, edit sysctl, mount filesystems — **nothing is "unsupported"**. Nested virtualization must be exposed (`-cpu host,+vmx` / `kvm=on`) when the host allows it, and the capability report must say clearly whether nested virt is available.
+> Containers (LXC/LXD/Docker) exist **only** as the separate cheap **Bot Hosting** product, never sold as "VPS".
+
+Each product type is a plan category with its own create-wizard defaults, limits and UI:
+
+- **VPS (shared KVM/TCG)** — over-allocatable CPU, shared cores, standard plans.
+- **VDS (dedicated)** — **CPU pinning** (vcpupin to physical cores), guaranteed RAM (no ballooning, hugepages optional), dedicated disk IO limits, `cpu_mode=host-passthrough`, no CPU over-allocation, NUMA-aware placement, "dedicated cores: 4" shown clearly on the product card.
+- **RDP / Cloud Desktop** — two flavours, same UX:
+  - **Windows RDP**: Windows Server 2019/2022/2025 Datacenter templates from admin-uploaded ISO (bring-your-own-license, panel stores the note), automatic **virtio driver injection**, unattended install (`autounattend.xml`) or cloud-init cloudbase-init, auto-enable RDP + NLA, auto-generated strong password, per-VM RDP port, **web RDP client** (Apache Guacamole / Myrtille-style) so users connect from the browser with no client install, downloadable `.rdp` file, "RDP ready" detection by TCP port probe + cloudbase-init completion, Windows-specific metrics + reboot-safe console.
+- **Containers (LXC/Docker)** — same UX as VPS, cheaper plans, instant provisioning, kernel-shared warning shown honestly.
+
+### 1.1 LXD / Incus support & Bot Hosting (explicit requirement — must be first-class, not an afterthought)
+
+Customers must be able to run **LXD containers inside their VPS/VDS** (e.g. to host Discord bots), and the panel must also be able to **sell LXD containers directly** as a cheap product.
+
+**A. "LXD-ready" VPS & VDS (every Linux VPS/VDS):**
+- LXD (or **Incus**, the community fork — support both, auto-prefer whichever the guest has) is **pre-installed and pre-initialized** by cloud-init, so the customer's very first command works:
+  `lxd init --preseed` equivalent must already be done → storage pool created (`zfs`/`btrfs` if the disk supports it, else `dir`), `lxdbr0` bridge up, user added to the `lxd` group, no sudo prompt, no interactive wizard.
+- VPS/VDS are **KVM VMs**, so LXD runs natively inside them with zero tricks (real kernel). Only the separate **Bot Hosting** product uses LXC containers, and there `security.nesting=true` (unprivileged) is set so customers can nest containers.
+- The VM card shows an **"LXD ready"** badge, the installed version, storage pool + free space, and a **copy-paste quickstart** box:
+  `lxc launch ubuntu:22.04 mybot` → `lxc exec mybot bash` → run bot.
+- Optional guest-agent endpoint so the panel can **list / start / stop the LXD instances running inside a user's VPS** and show "3 containers running" on the VM card (read-only by default, control only if the user enables it).
+- Nested-container resource usage counts against the parent VM's quota and is shown honestly.
+- If the host is in **TCG mode** (no KVM), LXD-inside-VM still works (containers don't need nested virtualization) — the panel must say so instead of blocking it.
+
+**B. "Bot Hosting" product line (panel manages LXD on the host directly):**
+- Panel creates LXD/Incus instances itself → cheapest plans, ~2 second provisioning.
+- **Bot/app templates ("eggs")**: Discord.js, Discord.py, Java (JDA), Node.js generic, Python generic, n8n, Minecraft (Paper/Fabric), and **import of Pterodactyl-compatible eggs**. Each template defines: image, startup command, env variables (shown as a clean editable UI), ports, min RAM.
+- Per-instance: file manager, live console (xterm), auto-restart on crash + crash-loop detection, restart schedule, env-var editor, one-click **deploy from a GitHub repo** (branch + build command), resource limits via LXD profiles, port allocation, backup/snapshot.
+- Discord/Telegram webhook on bot crash ("your bot went down at 3:12 AM, restarted automatically").
+- Storage: detect ZFS/Btrfs on the host at install; if absent, use `dir` pool and say so. Snap-based LXD on Ubuntu 22.04+ must be handled (or use Incus from the official repo) — the installer must not fail on either.
+
+**C. Terminology rule:** in UI and docs always distinguish clearly: **KVM VM** (full virtual machine) · **VDS** (VM with dedicated cores) · **LXC container** · **LXD/Incus instance** · **Docker container**. Never mix the words up.
+
+## 2. Auth & accounts
+Email+password (Argon2id), email verification, password reset with expiring tokens, **2FA TOTP + backup codes + QR**, login attempt lockout + optional IP ban, session list with device info + remote revoke, OAuth (Discord, GitHub, Google — secrets server-side only), API keys with scopes + last-used, captcha/Turnstile on signup, per-user language (en/hi), avatar upload, activity/login history.
+
+## 3. VM lifecycle (QEMU/KVM)
+Create wizard (5 steps, live "deployment blueprint" summary + live deploy log):
+1) OS template (cloud-image grid: Ubuntu 20/22/24, Debian 11/12/13, Fedora, Rocky, Alma, CentOS Stream, Alpine, Windows via ISO, + custom template/ISO upload by URL)
+2) Hardware (presets Starter/Standard/Compute/Powerhouse + synced dual sliders for vCPU/RAM, disk size, CPU topology sockets/cores/threads, cpu_model, machine type, UEFI/OVMF vs BIOS, ACPI/KVM toggles, SMBIOS override fields, extra QEMU args)
+3) Network (NAT / bridge / static IPv4 (addr, netmask, gateway) / IPv6, MAC, DNS servers, port forwards, VLAN tag)
+4) Identity (hostname, username, password or SSH key, cloud-init packages, start-on-boot, startup command)
+5) Review → Deploy with streaming progress (image download → seed → disk → boot → agent install → ready) + IP/SSH credentials reveal (encrypted, click-to-copy, one-time show).
+Ops: start, stop, force-stop, restart, kill, ACPI power button, rename, resize (RAM/CPU hot-plug, disk grow), reinstall/rebuild (keep IP or fresh), suspend/unsuspend, delete (soft-delete + grace period + hard purge), snapshots (create/restore/rollback/delete + auto-schedule), ISO attach/detach + boot order, backups (full/incremental, retention, S3/Wasabi offsite, AES-256, restore, download), migrate between nodes with progress, bulk operations, tags/groups, pin/favorite.
+**Shareable terminal link (support feature):** the customer can generate a temporary public link to their VM's shell so the owner can help — **`sshx` is the primary provider**, `tmate` is secondary. Because these third-party relays go up and down, the panel must **health-check both at runtime** (owner-settings page has a "Test providers" button), auto-hide whichever is unreachable, and never present a dead link. Links are: opt-in by the customer, single-use or time-boxed (5/15/60 min), shown with a live banner while active, revocable in one click, and written to the audit log.
+Live data: CPU/RAM/disk-IO/net-IO graphs (1s), uptime, bandwidth total + quota, serial & cloud-init boot logs, VM log viewer with filters, per-VM activity timeline.
+Console: **noVNC** graphical console (auto-reconnect, send Ctrl+Alt+Del, clipboard), **xterm SSH terminal** (multi-tab, themes, reconnect, session recording for owner/admin), **remote node console**.
+
+## 4. Guest agent + file manager
+Python guest agent installed automatically via cloud-init (SSH fallback if agent down): file list/read/write/mkdir/rename/delete/chmod/chown, upload (drag-drop, multi-file, chunked, 200MB+), download, zip/unzip, recursive search, disk-usage tree, code editor (syntax highlight, search/replace, large-file safe), exec command, metrics push, SFTP access.
+
+## 5. Nodes & cluster (single host now; agent-ready for later)
+Node agent (Python or Go, systemd unit, install one-liner), add node with token/QR, health check + auto-reconnect + **circuit breaker**, live per-node stats, allocation pools (IP + port ranges), resource limits + over-allocation ratio, **auto-placement scheduler (least loaded)**, **live migration with progress**, auto-failover, node maintenance mode, node remote shell, node update.
+
+## 6. Networking & firewall
+Port-forward manager (visual), public IP allocation, IPv6 per VM, **rDNS/PTR editor**, per-VM firewall rules UI (allow/deny by port/IP, apply via nftables), bandwidth metering + quota + throttle, optional Cloudflare Tunnel / Tailscale / Playit.gg one-click public access.
+
+## 6.1 IPv4 / IPv6 addressing — how a customer actually gets an IP (Pterodactyl-style "Allocations")
+
+Support **all four** modes; the create-wizard picks based on the plan, and the admin manages one **IP Pool** page:
+
+| Mode | How it works | When to use |
+|---|---|---|
+| **A. NAT + port forwarding** *(default, zero extra cost)* | All VMs sit behind the host's single public IP. Each VM gets unique host ports (e.g. `1.2.3.4:22041 → VM:22`, `:33041 → VM:3389`). Customer connects to `IP:port`. | Cheap plans, bot hosting, most customers |
+| **B. Dedicated public IPv4 (bridged)** | The provider gave you extra IPs. Panel puts them on a bridge (`br0`/`vmbr0`), assigns one per VM, sets gateway + netmask inside the guest via cloud-init/netplan. VM has its own real IP. | Premium plans, RDP, mail servers (needs rDNS) |
+| **C. Routed subnet / 1:1 NAT** | Provider routes a `/29`–`/24` to your host. Panel assigns from that range + adds the route. | When you bought an IP subnet |
+| **D. IPv6** | Usually a free `/64` or `/48` from the provider. Every VM gets a real global IPv6 (+ SLAAC). | Free "real IP" for everyone; also enables IPv6-only plans |
+
+**Admin → IP Pool page (must exist):** add IP or CIDR + gateway + netmask + VLAN/bridge + mode; each IP shows status `free / assigned / reserved`; assign/reserve/release manually; import CSV; per-plan rule ("this plan gets a dedicated IP"); conflict + duplicate detection (`arping`); automatic release when the VM is deleted; **rDNS/PTR editor** per IP.
+
+**Customer view:** VM page shows `IPv4: 1.2.3.4` (or `1.2.3.4:22041` in NAT mode), `IPv6: …`, `Gateway`, `Netmask`, `SSH command`, `.rdp`/config download, and a copy button. In NAT mode the panel also shows the **port-forward table** with "add a port" (validated against the plan's port quota).
+
+**Honest UI note the panel must show the owner:** dedicated IPv4s have to be purchased from the upstream provider (they are not free); IPv6 and NAT are free. Never advertise a dedicated IPv4 the pool cannot actually deliver.
+
+## 7. Automation & API
+Cron schedules (power/backup/snapshot/command/restart), task chains, **webhooks** (events → URL/Discord/Telegram with HMAC signing + retries), **REST API** split Pterodactyl-style: `/api/client/*` (user scope, bearer API keys) and `/api/application/*` (admin/owner scope), OpenAPI spec + in-panel docs page + Postman export, official **CLI** (`starctl`) covering every admin action, idempotency keys on writes.
+
+## 8. 🤖 Built-in AI Assistant (owner/admin-gated)
+Architecture (planner/executor pattern with safety gates): `intent → router → planner → executor → verifier`, plus `risk` scoring and `confirmation` gate.
+- Chat UI in **Hindi / Hinglish / English**, streaming responses, tool-call visualization ("Plan: 1) create VM 2) wait for boot 3) show IP"), persistent conversations, per-conversation context of current page.
+- **Tool allowlist by role**: users' AI can only touch their own VMs and only non-destructive tools; admins get node/user tools; **destructive tools (delete, migrate, stop-all, firewall change, owner ops) are OWNER-only** and always require an explicit in-chat **Confirm** button showing the exact plan + blast radius before execution.
+- Capabilities: create/resize/start/stop/restart VMs from natural language, diagnose failures (**AI Log Doctor**: serial + kernel + cloud-init + panel logs → root cause + fix), capacity planning ("how many more VMs fit on node-2"), security scan (open ports, weak SSH config, exposed panel, brute-force patterns) with one-click fixes, billing/cost summary, explain-this-error on any red state, generate firewall rules, write cloud-init scripts, natural-language **command palette (Ctrl+K)**.
+- Safety: AI never stores secrets in prompts, never bypasses RBAC, every AI action is written to an immutable `ai_action_logs` table (prompt hash, tools called, args, result, actor). **AI is OFF by default**; owner enables it and picks provider.
+- Provider abstraction: Gemini / OpenAI / Groq / **Ollama (local, fully private)** with a single switch; token + cost tracking dashboard; graceful degradation when no key is set (assistant explains how to enable).
+- Optional (P2): voice mode, proactive alerts ("VM web-1 restarted 3 times in 10 min — investigate?").
+
+## 9. Commercial engine — this is a SELLING business (VPS · VDS · RDP)
+
+**Catalog & plans**
+- Product categories: **VPS / VDS / RDP (Windows) / Containers**, each with its own plans.
+- Plan limits: vCPU (shared vs **dedicated**), RAM, disk (+IO/IOPS cap), bandwidth quota + speed cap, IPv4 count, IPv6, ports, snapshots, backups, offsite storage, support tier.
+- Cycles: hourly / daily / monthly / quarterly / half-yearly / yearly / one-time, each with its own price; **custom amount** can be set per plan, per cycle, and per individual order (admin override).
+- Add-ons sold separately: extra IPv4, extra RAM, extra disk, extra bandwidth, Windows license slot, managed backups, priority support.
+- Multi-currency **INR + USD**, GST/tax rules, tax ID on invoice, **PDF invoice** (branded, GST-compliant), receipts.
+
+**Payments**
+- **Razorpay** primary: UPI, UPI QR, cards, netbanking, wallets, subscriptions/auto-pay (e-mandate), webhook-verified signatures.
+- Optional: **Stripe**, **crypto** (BTCPay/NowPayments), **manual/offline** (bank transfer / UPI screenshot upload → admin approves), **admin "mark as paid"**.
+- Wallet/credits: top-up, spend, refund to wallet, expiry, admin-granted credits.
+- Auto-renew toggle per user, dunning (retry failed payments), proration on upgrade/downgrade, cancellation with end-of-cycle, **refunds** (full/partial, wallet or gateway).
+- Auto-lifecycle: unpaid → reminder → **suspend** → grace period → data-hold → purge (all timings admin-configurable, all emailed).
+
+**Giveaway / event / discount engine (explicitly requested — make it flexible)**
+- Coupons: percentage, fixed amount, or **100% free**; one-time or reusable; usage limit (global + per user); expiry date; valid only on selected plans/products; first-order-only; minimum amount; stackable or not.
+- **Event scheduler**: define a window ("Diwali Sale: 14–18 Nov, 50% off all VPS"), panel auto-applies and auto-expires it, shows a **flash-sale banner + countdown** on the pricing page, and can auto-email the user base.
+- **Giveaway mode**: generate N free-order codes (for Discord/YouTube giveaways), each redeemable once, bound to a plan, with claim tracking (who, when, IP).
+- Admin can set **any custom price on any order/invoice** in two clicks, or grant a free service period to any user with a reason (logged).
+- Pricing page shows original vs discounted price with a strikethrough and a "limited slots left" counter (real number, computed from host capacity — not fake).
+
+**Reseller / white-label**
+- Reseller accounts create their own sub-customers, see only their own users, set their own prices/margins, get a commission ledger and payouts; optional custom logo/favicon/colors/domain/branding per reseller.
+
+**Revenue & business dashboard (owner/admin)**
+MRR/ARR, today/month revenue, plan-wise sales, product-wise split (VPS/VDS/RDP), active vs suspended services, churn, top spenders, coupon performance, gateway fees, unpaid invoices, refund rate, capacity-vs-revenue chart (how much of the host is sold).
+
+## 9.1 Product catalog (owner's goal: sell as many product types as one host can honestly support)
+
+Ship these as plan categories on one panel — each with its own wizard defaults, limits, price cycles and product page:
+
+1. **Linux VPS (KVM)** — the core product. NAT or dedicated IP.
+2. **Windows VPS / RDP** — highest margin. Server 2019/2022/2025, web RDP client, `.rdp` download.
+3. **Linux Cloud PC (XRDP)** — Ubuntu + XFCE + Chrome, cheap "desktop in the browser". Sells very well in INR markets.
+4. **VDS (dedicated)** — CPU pinning, guaranteed RAM/hugepages, dedicated IO. Premium tier.
+5. **Bot Hosting (LXD/LXC)** — cheapest, instant, egg templates, auto-restart, GitHub deploy. Volume product.
+6. **Storage VPS / Backup Storage** — tiny CPU, huge cheap disk (HDD pool), for backups, media, mirrors. Excellent margin on idle hardware.
+7. **Database Hosting** — managed **MongoDB** and **MySQL/MariaDB** instances (the reference `vpanel-pro` v3.1.1 already has a `mongoManagerService` pattern): create DB, user, connection string, encrypted password reveal, phpMyAdmin/Compass link, automatic nightly dumps.
+8. **One-Click Apps** (sold as ready-made services, not raw VMs) — n8n, Nextcloud, WordPress, GitLab, Jellyfin, Uptime Kuma, Vaultwarden. Deployed from templates with SSL + subdomain.
+9. **Add-ons (attach to any service)** — dedicated IPv4, extra vCPU/RAM/disk/bandwidth, extra ports, Windows licence slot, managed backups, offsite backup to S3, DDoS protection, priority support, extra snapshots.
+10. **Reseller accounts** — wholesale pricing, their own branding, their own customers.
+
+**Rules for the catalog:** every product must state honestly what it is (KVM vs container), show the **real** remaining capacity on its pricing page, and refuse to oversell past the capacity guard. Add a **"Compare all plans"** table and an **upgrade path** from any product to another (with proration) so customers grow instead of leaving.
+
+## 10. Fraud control, abuse & support (required for public selling)
+
+- Signup protection: email verification, disposable-email blocklist, captcha/Turnstile, per-IP/per-device signup limits, optional phone OTP, optional manual-approval queue for first orders, geo/VPN/proxy detection flags, device fingerprint, banned email/IP lists.
+- Abuse tooling: per-VM abuse reports, traffic/DMCA complaint workflow, suspension with **reason + unsuspend request form**, ToS/AUP acceptance recorded at signup (versioned), automatic abuse heuristics (outbound flood, mass port scan, crypto-mining CPU pattern) → owner alert.
+- **Support tickets** in-panel: create/reply/assign/close, statuses + priorities, attachments, canned responses, SLA timers, ticket ↔ VM linking (admin sees the VM instantly), email notifications, public knowledge base + announcements.
+- Affiliate/referral program: unique links, commission %, payout ledger.
+
+## 11. Notifications, status & comms
+In-app notification center, email (SMTP + branded templates + test-send), Discord webhook/bot, Telegram bot, PWA push, maintenance announcements (scheduled), **public status page** with uptime graphs, incident timeline, per-component status, and RSS.
+
+## 12. Observability & admin tooling
+Admin dashboard (VMs, users, nodes, resources, revenue, recent activity, top consumers), activity log explorer with filters + CSV export, live stats page, system info (CPU model, KVM support, disk, network, versions), DB vacuum, SMTP test, resource check, log viewer, error tracking hook, Prometheus `/metrics` endpoint, health endpoint for uptime monitors.
+
+## 13. Smart auto-behaviours & self-healing ("panel khud samajh jaaye" layer)
+
+Everything below must happen **automatically, with a visible log entry explaining what it did and why**:
+
+- **Safety snapshot** taken automatically before any risky op (resize, reinstall, migration, major config change) — kept 24h, auto-deleted, restorable in one click.
+- **VM watchdog**: VM expected running but QEMU process gone → auto-restart (configurable retries + backoff), then alert owner. Repeated crash loop (3× in 10 min) → stop + notify + AI Log Doctor report attached.
+- **Host protection**: if host RAM < 10% free → balloon/pause lowest-priority VMs; if any disk pool < 5% free → block new VM creation + snapshot creation, alert; if host load > threshold → warn on create.
+- **Boot ordering**: after host reboot, VMs with `start_on_boot` come back in dependency-safe order with stagger (avoid IO storm).
+- **Template manager**: download OS cloud images by URL with **checksum verification**, mirror fallback, resumable download, dedup cache, auto-refresh list of latest Ubuntu/Debian/Fedora/Rocky/Alma releases, disk-space pre-check.
+- **Port & IP auto-allocation**: automatically pick free SSH/RDP/VNC ports and free IPs from the pool, detect conflicts before apply, release on delete, `arping` duplicate-IP check.
+- **Guest auto-detection**: via qemu-guest-agent/cloudbase-init detect guest OS, hostname, kernel, in-guest disk usage, network — shown on the VM card without SSH.
+- **Connectivity auto-check**: TCP probe of SSH/RDP/VNC ports → "SSH ready / RDP ready / still booting" status instead of a spinner forever; show boot ETA.
+- **Auto TLS**: Let's Encrypt issue + auto-renew for panel domain; auto-detect public IP + suggest base URL.
+- **Auto config repair**: missing bridge → offer one-click create; missing `cloud-localds`/`xorriso`/OVMF → one-click install (right package manager); wrong permissions on `/dev/kvm` → detect and show the exact fix command.
+- **Auto-updater**: version check → pre-update backup (DB + config + secrets) → apply → health-check → auto-rollback on failure.
+- **Demo/seed mode**: one flag fills the panel with realistic sample services for screenshots/videos (clearly watermarked as demo data).
+
+## 14. Built-in marketing site (owner chose: inside the same Node/EJS app, not a separate project)
+
+Public (no login): animated hero landing page (rotating globe or dotted location map, typed headline, floating icons), features grid, **pricing page** (product tabs, monthly/yearly toggle, strikethrough discounts, live countdown banner during events, "X slots left" computed from real capacity), locations + latency test, FAQ, **blog + changelog** (markdown, admin-editable), **status page**, ToS / privacy / AUP / refund policy, contact, Discord widget. Admin can edit all copy from the panel. SEO: meta + OG tags using the StarCloud banner, `sitemap.xml`, `robots.txt`, JSON-LD product/offer schema. **Animations**: recreate the framer-motion feel with vanilla JS + CSS only (IntersectionObserver reveals, count-up, 3D tilt cards, confetti on successful purchase, optional seasonal snow) — no React, no second deployment.
+
+## 15. UX layer
+Command palette (Ctrl+K), global search (VMs/users/nodes/settings/actions), keyboard shortcuts (+ `?` help), i18n **en + हिंदी**, dark/light, blur/transparency/wallpaper controls, favorites, tags, bulk actions, saved filters, configurable columns, skeleton loaders, toasts, empty states with CTA, onboarding checklist on first login, PWA (installable, offline shell), 403/404/500/maintenance pages, `README` + in-panel docs + changelog.
+
+## 16. Install, deploy, quality
+`install.sh` one-liner (deps → KVM check → DB init → first-run wizard: owner email/password, domain, TLS via Let's Encrypt, optional default admin, optional AI key) → systemd unit or PM2 `ecosystem.config.js`; Docker image + `docker-compose.yml` (panel + agent + reverse proxy); **auto-updater** with version check, pre-update backup, safe apply, rollback; DB migration runner; panel self-backup (DB + config + secrets); `.env.example`; structured logs (pino); Vitest + Supertest suite; GitHub Actions CI (lint → typecheck → test → build); demo/seed mode; `SECURITY.md` documenting the owner tier, support mode, and telemetry exactly as implemented.
+
+# REFERENCE PACKS IN THIS REPO (the owner uploaded 20 packs — take exactly what is listed, ignore the rest)
+
+**Panel code donors**
+- `hkvm-2` (HKVM v2, Node+EJS, 87 routes) → **THE THEME**: pure-black glassmorphism tokens, sidebar/header/breadcrumb/login, VM-create advanced QEMU options (CPU topology, SMBIOS spoofing, bridge/NAT/static/IPv6).
+- `vpanel-pro` **v3.1.1** (Node, 23 services, 12 admin route files) → **THE ARCHITECTURE**: `billingService`, `aiLogService`, `auditService`, `apiManagerService`, `networkService`, `storageService`, `updateService` (auto-update), `templateService`, `cacheService`, `resourceService`, `nodeService`, `bootLogService`, `wallpaperService`, **plugin system** (`webAdminPlugins`), **MongoDB-as-a-service** (`mongoManagerService`). Its `root_admin` column + "cannot suspend the last admin" guard = base for the Owner tier.
+- `NKVM_Panel_v1` → blur/transparency sliders, 4K wallpaper browser, hardware presets, live deployment blueprint, boot-log tabs.
+- `HVM-8` (Flask, 94+165 routes, 17 tables) → nodes + circuit breaker, live migration with progress, emergency ops, webhooks, API keys, port pool, expiration/renew, OS icon manager. *(Do NOT copy its hardcoded license-server IP.)*
+- `apanel-main` (**AKVM Panel v1.0**, Flask, 4742 lines, HKVM-styled) → **public IPv4 pool** (admin stores IPs, assigns on deploy), NAT-vs-Public mode per VM, cloud-init root+sudo+FS-resize, Paramiko web terminal, **`sshx` shareable terminal links (primary) + optional `tmate`**, **per-VM security scan**, one-click hostname change, **custom font upload**, OS-icon + sidebar-icon upload, Discord OAuth + Discord bot page, node register/heartbeat API, API v1 (user+admin), audit log, landing page. **All of these are wanted.**
+- `Svm-v6`, `NR-PROTECTION`, `HVM-V8` → maintenance mode + license page patterns only (older subsets of HVM-8).
+- `Hex-Mc` → Pterodactyl-style API split, node daemon, JWT/CORS/upload hardening. *(Game/Minecraft servers are OUT of scope — owner said no Minecraft.)*
+
+**RDP donor** — `XRDP-main`: Ubuntu 22.04 + XFCE + XRDP + Chrome + Snap Store in Docker = the **Linux Cloud PC** product. Rebuild it hardened: unique generated password (never `root/root`), non-root user, no `--privileged`, healthcheck, resource limits, optional noVNC web desktop, optional Tailscale-only exposure.
+
+**OS template catalog donor** — `Template-main` (`images.json`, 16 templates): AlmaLinux 8/9/10, Debian 11/12/13, Rocky 8/9/10, Ubuntu 22.04/24.04/25.10/26.04, **Windows Server 2019/2022/2025 Datacenter**. Ship this list as the built-in template catalog (admin can add mirrors; verify checksums; do not hotlink blindly — allow self-hosted copies).
+
+**Marketing-site donors** (owner wants the marketing site **built-in**, not a separate project)
+- `hosting-website-main` (Next.js + Tailwind + framer-motion + react-confetti + react-snowfall + `cobe` 3D globe + dotted-map): page structure to copy — `/`, `/vps`, `/dedicated`, `/webhosting`, `/games`→(drop), `/discord`, `/privacy-policy`, `/terms-of-services`, `/admin`. Animation vocabulary: confetti on success, seasonal snow, rotating globe hero, dotted map of locations.
+- `nobitahost-wab-main` (Node+EJS hosting site): blog + markdown renderer, Cloudflare/GitHub/YouTube/social integrations, wallpaper switcher, mailer, `otplib` 2FA, settings page, validation layer.
+- `Thame-main` ("Obsidian" hosting theme): cookie banner, anti-adblock notice, blog/about page editors, Trustpilot-style review stars, credit section → copy the *ideas*, implement in our own stack.
+
+**AI donor** — `free-claude-code-main` (Python, 50 free providers, unified model catalog, automatic failover to the next configured model when one fails) → **copy this pattern** for the panel AI: a provider registry (free tiers first), one catalog, automatic failover, per-provider retry/cooldown, token+cost tracking. Also `MYRAA` (voice + screen vision) and `ZORIN` (`intent→planner→executor→verifier` + `risk` + `confirmation`) for the agent loop.
+
+**Branding** — `StarCloud-Logo.png` + `StarCloud-Banner.png` are the real brand assets: use them for favicon, sidebar logo, login card, invoice header, OG image, status-page header.
+
+# OUT OF SCOPE (owner decided — do NOT build these)
+Minecraft / game-server hosting · hidden backdoors or magic passwords · selling LXC containers as "VPS" · default/weak credentials in any product.
+
+# DELIVERY PLAN (build in this order, one phase per response)
+
+- **Phase 0** — Repo scaffold, `.env.example`, config/logger/db/migrations, CI, HKVM theme CSS + design tokens, base layout (sidebar/header/login), README skeleton.
+- **Phase 1** — **Capability engine**: host probe (KVM/TCG/LXC/Docker auto-detect), `host_capabilities` table, Capability Report page, hypervisor **driver interface**, capacity guard. *(Nothing else gets built before this.)*
+- **Phase 2** — Auth: register/login/verify/reset/2FA/sessions/API keys, roles incl. **Owner tier + Owner Console**, activity logging, rate limiting, security headers, fraud controls on signup.
+- **Phase 3** — VPS engine: OS template manager, 5-step create wizard, cloud-init, power ops, live status/metrics, logs, noVNC console, xterm SSH, safety snapshots, watchdog.
+- **Phase 4** — Guest agent + file manager + exec; backups (local + offsite) + snapshots + cron schedules.
+- **Phase 5** — **Product lines**: VDS (CPU pinning, hugepages, guaranteed RAM) + **Windows RDP** (virtio injection, unattended install, web RDP client, RDP-ready probe) + Containers (LXC/Docker).
+- **Phase 5b** — **LXD/Incus + Bot Hosting**: LXD-ready VPS/VDS (pre-initialized via cloud-init, nesting for LXC, quickstart UI, in-VM instance listing) + host-level Bot Hosting product (eggs, console, env vars, auto-restart, deploy-from-GitHub, crash webhooks).
+- **Phase 6** — Networking (port pool, IPv4/IPv6, rDNS, firewall UI, tunnels) + webhooks + public API (`/api/client` + `/api/application`) + CLI + OpenAPI docs.
+- **Phase 7** — **Commercial engine**: plans/products/add-ons, Razorpay (UPI + webhooks), coupons + giveaway/event engine, invoices/GST, wallet, auto-suspend lifecycle, revenue dashboard, reseller mode.
+- **Phase 8** — AI Assistant (provider abstraction, tools, role allowlist, risk/confirmation gates, Log Doctor, capacity planner, security scan, action audit) + command palette.
+- **Phase 9** — Support tickets + knowledge base + abuse workflow + affiliate; notifications (email/Discord/Telegram/push) + public status page + observability.
+- **Phase 10** — Installer (`install.sh` + first-run wizard), Docker, auto-update/rollback, hardening pass, docs site, test coverage, public pricing/landing page.
+- **Phase 11 (roadmap)** — Multi-node cluster: node agent, allocation pools, auto-placement, live migration, failover, node console.
+
+**Every phase must ship its UI with the motion spec applied** (page transitions, stagger, count-up, toasts, reduced-motion support) — not "styling later".
+
+For each phase output: (1) files created, (2) endpoints/UI added, (3) DB migration added, (4) exact verification steps (`curl` commands and click-paths), (5) tests added + result, (6) known limitations.
+
+# DEFINITION OF DONE
+
+- `npm install && npm run migrate && npm start` works on a clean Ubuntu 22.04 box and serves the panel over HTTPS.
+- **It also installs and runs on a host with NO KVM** (TCG/container mode) — the installer must not fail, it must detect, explain, and adapt.
+- A non-technical customer can: sign up → pick a plan → pay via UPI (or redeem a giveaway code) → get a VPS or Windows RDP → connect from the browser (SSH / noVNC / web RDP) → upload a file → snapshot → restore — without reading docs.
+- Admin can create a 100%-free coupon, a 50%-off event window with countdown, and set a custom price on any invoice in under 3 clicks.
+- Owner can see every node/VM/user/payment/AI action, enable AI, and trigger emergency stop-all.
+- A customer can buy a VPS and run `lxc launch ubuntu:22.04 mybot` inside it on the **first try** with no extra setup; a Bot Hosting container can be deployed from a GitHub repo in under 60 seconds.
+- Every screen passes a 60fps animation check and honours `prefers-reduced-motion`.
+- No stubs, no fake data, no hardcoded secrets/IPs, no undocumented privileged access path.
+- `npm test` passes; CI green; `SECURITY.md` truthfully describes the owner tier, support mode, and telemetry.
+
+# START NOW
+
+Begin with **Phase 0**. Before writing code, reply with: (a) the final folder tree you will use, (b) the complete DB schema (all tables + columns + indexes), (c) the full endpoint map, (d) any assumption you had to make because a PROJECT VARIABLE was empty. Then build Phase 0 completely.
+
+
+========================================================================
+PART 2 — PLAIN-LANGUAGE EXPLAINER (Hinglish) — har feature aasaan bhasha me
+========================================================================
+// Owner ke liye: har feature kya hai, kyun chahiye, aur screen pe kya dikhega. AI ko bhi ye padhna chahiye taaki intent clear rahe.
+
+
+> Ye file sirf **samajhne** ke liye hai. Technical spec `03-MASTER-PROMPT.md` me hai.
+> Har feature 3 line me: **Kya hai** → **Kyun chahiye** → **User/admin ko kya dikhega**.
+
+**Ek analogy pehle samajh lo (baaki sab isse juda hai):**
+> **Host / Node** = poori building (tumhara asli server).
+> **Panel (StarCloud)** = building ka reception + computer system.
+> **VPS** = building ka ek room jo tum customer ko kiraye pe dete ho.
+> **VM (Virtual Machine)** = computer ke andar banaya gaya nakli computer.
+> **User panel** = customer ka apna room ka dashboard. **Admin panel** = tumhara manager ka dashboard. **Owner** = building ka maalik (sirf tum).
+
+---
+
+## TOPIC 1 — Smart Auto-Detect Family
+### ("Panel khud samajh jaaye, tumhe set nahi karna padega")
+
+**1. KVM / TCG / LXC / Docker auto-detect** ⭐ (tumhara idea)
+- **Kya hai:** Server me ek hardware ka "turbo button" hota hai jiska naam KVM hai. Agar wo on hai to VM poori speed pe chalti hai. Agar off hai (ya server khud kisi VPS ke andar hai) to QEMU ko **nakli engine (TCG)** se chalana padta hai — 3 se 10 guna slow.
+- **Kyun chahiye:** Bahut log sasta VPS lete hain jisme KVM nahi hota. Aise me panel install hi fail ho jata hai. Humara panel fail nahi hoga — khud detect karke mode badal dega.
+- **Kya dikhega:** Har VM card pe chhota badge — `KVM` (green) ya `TCG` (orange). TCG mode me ek amber banner: *"Software emulation — speed kam milegi, 2 vCPU se zyada recommend nahi"* aur panel khud limit laga dega.
+
+**2. Host Capability Report (server ka medical report)**
+- **Kya hai:** Ek admin page jisme server ka poora checkup — kitna CPU, kitni RAM, disk SSD hai ya purani HDD, network me IPv6 hai ya nahi, kaunsa OS, QEMU ka version.
+- **Kyun:** Tumhe `lscpu`, `free -h`, `df -h` commands yaad rakhne ki zaroorat nahi.
+- **Kya dikhega:** Ek sundar report card page + "ye host kitne VPS bechne layak hai" summary.
+
+**3. Nested-virtualization warning**
+- **Kya hai:** Agar tumhara panel khud kisi VPS ke andar chal raha hai, to uske andar VM banana slow hoga.
+- **Kya dikhega:** Install ke waqt ek clear warning + expected speed.
+
+**4. Public IP + domain + free SSL auto**
+- **Kya hai:** Panel khud pata karega ki uska internet pe IP kya hai, aur **Let's Encrypt** se free me HTTPS ka lock (SSL certificate) laga dega aur har 60 din me khud renew karta rahega.
+- **Kyun:** Bina SSL ke browser "Not Secure" dikhata hai aur payment gateway chalta hi nahi.
+
+**5. Free port + IP auto-allocation**
+- **Kya hai:** Har VM ko SSH ke liye ek alag port chahiye (sabko 22 nahi de sakte). Panel khud khali port dhundhega, check karega ki conflict na ho, aur VM delete hone pe port wapas pool me daal dega.
+- **Kya dikhega:** Create karte hi "SSH: `ip:22041`" — tumhe kuch sochna nahi.
+
+**6. Guest OS detection (VM ke andar ka haal)**
+- **Kya hai:** VM ke andar ek chhoti si service (`qemu-guest-agent`) chalti hai jo reception ko batati rehti hai — andar kaunsa OS hai, hostname kya hai, andar ki disk kitni bhari hai.
+- **Kyun:** Bina SSH kiye sab pata chal jata hai.
+
+**7. "Ready" probe (spinner forever nahi)**
+- **Kya hai:** VM banne ke baad panel uske SSH/RDP port pe knock karta rehta hai.
+- **Kya dikhega:** `Still booting… ~40s` → phir `SSH ready ✅` ya `RDP ready ✅`. User confuse nahi hoga.
+
+**8. Missing-tool repair**
+- **Kya hai:** VM banane ke liye 4-5 tools chahiye hote hain (`cloud-localds`, `xorriso`, `OVMF`). Panel check karega — missing ho to ek button dabao, install ho jayega (sahi OS ka sahi command khud choose karega).
+
+**9. Template manager (OS image downloader)**
+- **Kya hai:** Ubuntu 24.04 ki ~600MB image download karni padti hai. Panel khud download karega, **checksum** se verify karega (file tooti hui to nahi), net beech me gaya to wahan se resume karega, aur ek hi image dobara download nahi karega (cache).
+- **Kya dikhega:** Admin → OS Templates me progress bar + "Latest Ubuntu/Debian/Fedora releases" auto list.
+
+**10. Capacity guard (sabse important business feature)**
+- **Kya hai:** Panel hamesha ginti rakhega ki server me kitna bacha hai.
+- **Kya dikhega:** *"8 vCPU / 32 GB me se 6 vCPU / 24 GB bech diye. **2 aur 4 GB wale VPS fit honge.**"* — aur agar koi zyada maange to saaf mana kar dega reason ke saath. Isse server hang nahi hoga.
+
+---
+
+## TOPIC 2 — Self-Healing & Protection
+### ("Raat ko 3 baje server gadbad kare to panel khud sambhal le")
+
+| Feature | Aasaan matlab |
+|---|---|
+| **Safety snapshot** | Koi khatarnak kaam (resize/reinstall/migrate) se pehle panel **game ka save point** jaisa save bana leta hai (24 ghante rakhta hai). Kuch gadbad hui → 1 click me pehle jaisa. |
+| **VM watchdog** | VM achanak mar gayi → panel khud restart karega. 10 minute me 3 baar mari → ruk jayega, tumhe alert bhejega + AI se report banwayega. |
+| **Host protection** | Server ki RAM khatam hone wali hai → sabse kam zaroori VMs ko pause. Disk 5% se kam → naye VPS banana band + alert. Isse **poora server crash hone se bach jata hai**. |
+| **Boot ordering** | Server restart hone ke baad saare VPS ek saath on nahi honge (warna disk choke) — thode-thode gap se on honge. |
+| **Auto-update + rollback** | Panel ka naya version aaya → pehle apna backup, phir update, phir health check. Kuch toota → **khud purana version wapas**. |
+| **Panel self-backup** | Panel ka database + settings + secrets khud backup hote rahenge. |
+| **Demo mode** | Ek flag on karo → panel me realistic sample data aa jayega (screenshots/YouTube video ke liye). |
+
+---
+
+## TOPIC 3 — Product Lines (jo tum bechoge) + LXD
+
+### VPS vs VDS vs RDP vs Container — farak kya hai?
+
+| Product | Aasaan matlab | Kisko bechoge |
+|---|---|---|
+| **VPS** | Ek room jisme AC **saare floor ke saath share** hota hai. Sasta. | Normal users, students, bots |
+| **VDS** | Ek room jisme **AC sirf tumhara hai** (dedicated CPU cores, guaranteed RAM). Mehnga, fast, stable. | Business, game servers, database |
+| **RDP (Windows)** | Windows computer jisko tum browser se ya Remote Desktop se chalate ho. | Windows users, trading, software |
+| **Container (LXC/Docker)** | Room nahi, sirf ek **almari ka dabba** — kernel share hota hai, isliye bahut sasta aur 2 second me ready. | Bot hosting, chhoti sites |
+
+**VDS kaise "dedicated" hota hai (2 technical cheezein):**
+- **CPU pinning** = VM ko CPU ke **fix seats** de diye jaate hain (`vcpupin`). Koi dusra VM us seat pe nahi baith sakta → speed kabhi kam nahi hoti.
+- **Hugepages** = RAM ka **reserved parking**. Server busy ho tab bhi tumhari RAM wahi rehti hai.
+
+**RDP (Windows) ke liye panel kya karega:**
+- Windows ki ISO tum upload karoge (license tum/customer ka).
+- Panel khud **virtio drivers** andar daal dega (warna Windows disk hi nahi dekhta).
+- **Unattended install** = Windows khud install ho jayega, koi "Next Next" nahi.
+- RDP khud on, strong password khud banega, alag port milega.
+- **Browser-based RDP** = customer ko kuch install nahi karna — panel ke andar hi Windows khul jayega. Saath me `.rdp` file download bhi.
+- Panel port check karke batayega "RDP ready ✅".
+
+### 🆕 LXD / Bot Hosting (tumhara naya requirement)
+
+**⚠️ Sabse pehle tumhara correction (maine plan me fix kar diya):**
+> Tumne kaha — *"VPS aur VDS jo create hoga wo LXD container NAHI hona chahiye, kyunki LXD container me `lxd init` kaam nahi karta. Mujhe **Proxmox** jaisa chahiye jisme sab kuch supported ho, kuch bhi install kar sakte hain."*
+>
+> **Ab rule ye hai (master prompt me HARD RULE likh diya):**
+> - **VPS aur VDS hamesha asli KVM/QEMU virtual machine honge — kabhi LXC/LXD container nahi.**
+> - Customer ko **asli kernel** milega (Proxmox jaisa): kuch bhi install karo, kernel modules load karo, andar Docker/LXD/chhota KVM chalao, VPN/WireGuard lagao, sysctl badlo — **kuch bhi "unsupported" nahi hoga.**
+> - **Nested virtualization** expose hoga (`-cpu host` + `kvm=on`) agar host allow kare — aur capability report saaf batayega ki available hai ya nahi.
+> - **LXC/LXD containers sirf ek alag saste "Bot Hosting" product me honge**, kabhi "VPS" naam se nahi beche jayenge.
+
+**Ab samjho LXD kya hai:**
+> LXC = Linux containers (ek hi OS ke andar chhote-chhote isolated box).
+> **LXD/Incus** = un boxon ka **manager**. Ek command me box banao, usme bot chalao:
+> `lxc launch ubuntu:22.04 mybot` → `lxc exec mybot bash` → bot start.
+> **Nesting** = box ke **andar** box chalana (isliye `security.nesting=true` chahiye).
+
+**Hum 2 tarike se denge:**
+
+**A. "LXD-ready" VPS/VDS** — customer ko VPS milega jisme **LXD pehle se install + setup ho chuka hoga**.
+- Storage pool ban chuka hoga, bridge (`lxdbr0`) up hoga, user `lxd` group me hoga → **koi `lxd init` ka wizard nahi, koi sudo nahi**. Customer ki pehli command hi chal jayegi.
+- VM card pe badge: **"LXD ready ✅"** + version + kitni jagah khali + **copy-paste quickstart commands**.
+- Panel ye bhi dikha sakta hai ki *"is VPS ke andar 3 containers chal rahe hain"*.
+- **KVM na ho tab bhi LXD chalega** (containers ko KVM ki zaroorat nahi hoti) — panel block nahi karega, ye baat khud bolega.
+
+**B. "Bot Hosting" product** — panel khud host pe LXD containers banayega (sabse sasta plan, ~2 second me ready).
+- **Templates ("eggs")**: Discord.js, Discord.py, Java (JDA), Node.js, Python, n8n, Minecraft — aur **Pterodactyl ke eggs import** bhi ho sakenge.
+- Har bot ke liye: file manager, live console, **crash hone pe auto-restart**, env variables ka sundar form, **GitHub repo se 1-click deploy**, backup.
+- Bot raat ko crash hua → **Discord/Telegram pe message**: *"your bot went down at 3:12 AM, auto-restarted"*.
+
+**Rule:** UI me kabhi words mix nahi honge — KVM VM / VDS / LXC / LXD / Docker alag-alag clearly likhe jayenge.
+
+---
+
+## TOPIC 4 — Selling Engine (paisa kamane wala hissa)
+
+**Plans & pricing**
+- Har product (VPS/VDS/RDP/Bot) ke alag plans. Har plan me limits: CPU, RAM, disk, bandwidth, IP, ports, snapshots.
+- Cycle: hourly / monthly / 3-month / 6-month / yearly — **har cycle ka alag price**.
+- **Custom amount**: admin kisi bhi order pe apni marzi ka price daal sakta hai (2 click me).
+- **Add-ons** alag bikenge: extra IP, extra RAM, extra disk, extra bandwidth, Windows slot, managed backup.
+- INR + USD, **GST invoice PDF** (GSTIN ke saath), tax split.
+
+**Payments**
+- **Razorpay** sabse pehle: UPI, UPI QR, card, netbanking, wallet, **auto-pay (e-mandate)** — matlab renewal khud kat jata hai.
+- Optional: Stripe, crypto, aur **manual/offline** (customer UPI screenshot bheje → admin "Approve" kare), admin "Mark as paid".
+- **Wallet/credits**: customer paisa jama kare, usme se kate. Admin kisi ko free credits de sakta hai.
+- Paisa fail hua → **dunning** (khud 3-4 baar retry). Plan beech me badla → **proration** (sirf farak ka paisa).
+- **Refund** (poora ya aadha, wallet ya gateway se).
+
+**Auto-lifecycle (ye sabse zaroori hai)**
+> Payment nahi aaya → email reminder → **suspend** (band) → grace period (kuch din) → data hold → **delete**.
+> Har step ka time admin set kar sakta hai, har step pe email jayega. Tumhe manually kuch nahi karna.
+
+**🎁 Giveaway & Event Engine (tumhara main point)**
+- **Coupons**: % off, fixed ₹ off, ya **100% free**. Ek baar wala ya baar-baar. Kitne log use kar sakte hain, kab tak, kis plan pe — sab set hoga.
+- **Event scheduler**: *"Diwali Sale — 14 se 18 Nov, 50% off"* → panel khud apply karega, khud band karega, pricing page pe **flash-sale banner + live countdown** dikhega, aur users ko email chala jayega.
+- **Giveaway codes**: 50 codes bana do (Discord/YouTube giveaway ke liye), har code ek baar chalega, kisne kab kahan se use kiya — sab record.
+- Pricing page pe original price ~~₹500~~ cut karke **₹250** dikhega + **"Only 4 slots left"** — ye number **asli** hoga (server ki bachi hui capacity se), jhootha nahi.
+
+**Reseller / White-label**
+- Koi banda tumhara panel **apne naam se** bechega — apna logo, apna domain, apne prices. Tumhe uska commission ledger + payout dikhega.
+
+**Business dashboard (tumhare liye)**
+MRR (monthly income), aaj/is mahine ka revenue, VPS vs VDS vs RDP ka split, kitne active vs suspended, **churn** (kitne chhod ke gaye), top customers, kaunsa coupon kitna chala, **capacity-vs-revenue** chart (server ka kitna hissa bik gaya).
+
+---
+
+## TOPIC 5 — Fraud Control & Support
+### ("Public signup khologe to fraud zaroor aayega — ye sab bachayega")
+
+**Signup fraud rokna**
+- Email verify zaroori, **10-minute-mail (disposable) block**, Cloudflare **Turnstile** captcha.
+- Ek hi IP/device se 20 account nahi ban sakenge. Optional **phone OTP**.
+- Pehle order pe **manual approval queue** (tum dekh ke approve karo) — fraud ka sabse bada rok.
+- VPN/proxy/desh ka flag, device fingerprint, ban list.
+
+**Abuse (galat use) rokna**
+- Panel khud pattern pakdega: bahut zyada outbound traffic, port scanning, crypto-mining jaisa CPU pattern → owner ko alert.
+- Har suspension ke saath **reason** + customer ke liye **"unsuspend request" form**.
+- ToS/AUP signup pe accept hoga (version ke saath record) — baad me jhagda ho to proof.
+
+**Support tickets (in-panel)**
+- Customer ticket kholega, tum reply karoge — status, priority, attachment, **canned responses** (banaye-banaye jawab), SLA timer.
+- Ticket ke saath uska VPS juda hoga → admin ko turant dikhega ki kaunsa server hai.
+- Email notification + public **knowledge base** (FAQ) + announcements.
+
+**Affiliate / Referral**
+- Har user ka apna link. Dost ne kharida → usko commission. Payout ledger admin ke paas.
+
+---
+
+## TOPIC 6 — Animations & "Tagdi Feel" 🎨 (tumne manga)
+
+Panel mehnga lagna chahiye. Ye sab hoga:
+
+- **Page transition**: har page fade + 8px upar slide hoke aayega.
+- **Cards**: hover pe thoda upar uthega + border chamkega + soft glow. Click pe halka sa dabega.
+- **Numbers count-up**: dashboard pe `0 → 24 VMs` aise ginti badhti hui dikhegi.
+- **Charts**: line left-to-right draw hogi, bars neeche se ughenge.
+- **Tables**: rows ek-ek karke (30ms gap se) aayengi, load hote waqt **shimmer skeleton**.
+- **Toasts**: upar-dahine se spring ke saath aayenge, neeche patli progress line.
+- **Modals**: background blur hoke panel scale-up hoga.
+- **Tabs**: underline ek tab se dusre tab **slide** karega.
+- **Status dot**: running wali green dot **pulse** karegi. VM start/stop pe card pe glow ring.
+- **Login page**: mouse ke saath hilne wala grid background, floating icons, galat password pe **shake**, sahi hone pe card zoom hoke dashboard.
+- **Ambient background**: bahut dheere chalne wala mesh gradient + halka grain + optional particles (tab band ho to ruk jayenge — battery bachegi).
+- **Ctrl+K command palette**: upar se spring ke saath girega.
+- **VM ban gaya / payment success** → glow + **confetti** (admin ke liye off, users ke liye on — owner toggle kar sakta hai).
+- **Real progress bar**: image download → seed → disk → boot → agent — har stage ka naam, **jhootha spinner nahi**.
+- **Copy button** "Copied ✓" me badal jayega, switch spring karega, bell naya notification aane pe ek baar bounce karega.
+
+**Rules:** sirf `transform` + `opacity` animate hoga (60fps guaranteed), `prefers-reduced-motion` respect hoga (jinhe motion se dikkat hai unke liye sab off), koi jQuery nahi, aur animation kabhi kaam ko slow nahi karega — button turant kaam karega.
+
+---
+
+## 🌿 GitHub pe branch kyun nahi dikh raha tha? (solved ✅)
+
+**Problem kya thi:** `git branch -a` chalaya to pata chala branch `arena/fea5e512-all-vm-panel` **sirf is sandbox ke computer me tha, GitHub pe gaya hi nahi tha**. Aur `git status` me `?? docs/` tha — matlab meri banayi hui files **commit hi nahi hui thi**. GitHub sirf wahi dikhata hai jo **push** hua ho.
+
+**Verify:** `git ls-remote --heads origin` (ye seedha GitHub se poochta hai) → pehle sirf ek line aa rahi thi:
+```
+0a958d2...  refs/heads/main          ← sirf main tha
+```
+
+**Fix kiya (2 step):**
+1. `git add docs` + `git commit` → commit `81d81cd` bana (4 files, 882 lines).
+2. `git push -u origin arena/fea5e512-all-vm-panel`
+
+**Ab verify:**
+```
+81d81cd...  refs/heads/arena/fea5e512-all-vm-panel   ← ab GitHub pe hai ✅
+0a958d2...  refs/heads/main
+```
+
+**Tum kaise dekhoge:**
+- Repo kholo: `github.com/kingslayer76/All-vm-panel`
+- Upar-left me branch dropdown (`main` likha hoga) → usme `arena/fea5e512-all-vm-panel` select karo
+- Ya direct: `github.com/kingslayer76/All-vm-panel/tree/arena/fea5e512-all-vm-panel/docs`
+- Branch ka naam `/` wala hai (`arena/fea5e512-...`) isliye GitHub use **folder jaisa** dikhata hai — dropdown me `arena/` ke andar milega. Ye normal hai.
+- Agar `main` me merge karna ho: `github.com/kingslayer76/All-vm-panel/pull/new/arena/fea5e512-all-vm-panel` → PR banao → merge.
+
+---
+
+## 📌 Ek nazar me — kya-kya banega
+
+1. Capability engine (KVM auto-detect) 2. Login/2FA/Owner tier 3. VPS engine 4. File manager + backup 5. VDS + Windows RDP + Containers 5b. **LXD + Bot Hosting** 6. Networking + API + CLI 7. **Paisa** (Razorpay + coupons + giveaway + reseller) 8. **AI Assistant** 9. Tickets + notifications + status page 10. Installer + Docker + docs 11. (baad me) multi-node cluster.
+
+---
+
+# 📦 Tumhare NAYE 7 files (aaj GitHub pe upload kiye) — maine sab khol ke padhe
+
+| File | Kya hai | Hum kya lenge |
+|---|---|---|
+| **`apanel-main.zip`** | **AKVM Panel v1.0** — Python Flask, `akvm.py` = **4742 lines**, HKVM jaisi dark UI | Bahut saare killer features (neeche poori list) |
+| **`vpanel-pro-main.zip`** (naya, 8.9 MB) | **vpanel-pro v3.1.1** — pehle wala chhota tha, ye **poora upgraded** hai: **23 services**, 12 admin route files | **Architecture donor** — isme billing, AI logs, audit, plugins, auto-update, MongoDB manager sab already hai |
+| **`XRDP-main.zip`** | Ubuntu 22.04 + XFCE + **XRDP** + Chrome + Discord (Docker) | **"Linux RDP / Cloud PC"** product — par `root/root` default password hai, wo **hata ke** strong auto-password banayenge |
+| **`Template-main.zip`** | Convoy/Proxmox **OS template manager** + `images.json` | **16 ready OS templates**: AlmaLinux 8/9/10, Debian 11/12/13, Rocky 8/9/10, Ubuntu 22.04/24.04/25.10/26.04, **Windows Server 2019/2022/2025** |
+| **`hosting-website-main.zip`** | Next.js + Tailwind + **framer-motion** + react-confetti + snowfall + 3D globe | **Marketing site donor** — pages: `/vps` `/dedicated` `/webhosting` `/discord` `/privacy-policy` `/terms` |
+| **`nobitahost-wab-main.zip`** | Node+EJS hosting website — blog, Cloudflare/GitHub/YouTube integration, wallpapers, 2FA | Blog + settings + integrations ka pattern |
+| **`Thame-main.zip`** | "Obsidian" hosting theme (Laravel/PHP) | Cookie banner, anti-adblock, Trustpilot stars, blog/about editor — **ideas** lenge, code nahi |
+| **`free-claude-code-main.zip`** | Python — **50 free AI providers**, ek catalog, **automatic failover** | Humare **AI Assistant** ka provider system isi pattern pe banega (free tokens + auto-failover) |
+
+## 🔍 apanel (AKVM) me kya-kya hai — decide karo kya rakhna hai
+
+Tumne kaha tha *"mujhe bata dena isme kya kya hai taki main hata sakun"*. Ye poori list hai (maine routes padh ke nikali):
+
+| # | Feature | Kya karta hai | Rakhna hai? |
+|---|---|---|---|
+| 1 | **Public IPv4 pool** | Admin public IPs ka pool bharta hai, VM banate waqt ek IP assign ho jata hai | ✅ **Zaroori** (selling ke liye) |
+| 2 | **NAT ya Public mode per VM** | Sasta plan = NAT (shared IP), mehnga = apna public IP | ✅ Zaroori |
+| 3 | **Cloud-init (root + sudo + FS resize)** | VM bante hi user, password, SSH ready + disk poora use | ✅ Zaroori |
+| 4 | **Web terminal (Paramiko)** | Browser me SSH terminal | ✅ (hum xterm.js se behtar banayenge) |
+| 5 | **tmate / sshx share links** | Ek temporary public link jisse koi bhi tumhari terminal dekh sake (support ke liye mast) | ❓ Bolo — support ke liye useful, security ke liye dhyan se |
+| 6 | **Per-VM security scan** | VM ke open ports / weak SSH config check | ✅ |
+| 7 | **Hostname 1-click change** | VM ka naam badalna | ✅ |
+| 8 | **Custom fonts upload** | Admin apne fonts daal sake | ✅ |
+| 9 | **OS icons + sidebar icons upload** | Admin branding | ✅ |
+| 10 | **Discord OAuth + Discord bot page** | Discord se login + bot integration | ✅ |
+| 11 | **Nodes (register + heartbeat)** | Multi-node ka base | ✅ (Phase 11) |
+| 12 | **API v1 (user + admin)** | Bahar se control | ✅ |
+| 13 | **Audit log + notifications** | Sab ka record | ✅ |
+| 14 | **Landing page (panel ke andar)** | Marketing page | ✅ (built-in marketing site banayenge) |
+| 15 | **License system + install ID** | Panel ko license key se activate karna | ❌ **Hata denge** — tumhe khud bechna hai, apne panel pe license ka koi matlab nahi (aur hardcoded license server bad practice hai) |
+| 16 | Python Flask stack | — | ❌ Hum **Node.js** me banayenge (tumne choose kiya) |
+
+**Jo maine OUT kar diya (tumne bola tha):** ❌ Minecraft / game servers.
+**Jo maine OUT rakha (safety):** ❌ hidden backdoor, ❌ default passwords (`root/root`), ❌ LXC ko "VPS" bol ke bechna.
+
+## ✅ Animation wala jawab: **haan, sab ho sakta hai**
+
+Tumne poocha *"kya yah sab ho sakta hai?"* — **haan, 100%.** Plan me ye likh diya:
+- **Default = Premium subtle** (smooth transitions, glow, count-up, stagger) — clean aur expensive feel.
+- **Settings me "Fun Mode" toggle** — on karte hi confetti, particles, 3D tilt cards, animated gradients, typing effects, subtle sounds.
+- Har user apna Fun Mode khud on/off karega. Admin/owner dashboards pe default off (kaam karte waqt distraction na ho).
+- Rule: sirf `transform` + `opacity` animate hoga → **60fps guaranteed**, aur `prefers-reduced-motion` respect hoga.
+
+---
+
+# 🌐 IPv4 kaise doge? (tumhara sawaal — Pterodactyl jaisa)
+
+Pehle ek baat samajh lo: **IPv4 free nahi hota.** Ek server ko provider ek (ya do) public IP deta hai. Baaki IPs **kharidne padte hain**. Isliye 4 tarike hain:
+
+| Tarika | Aasaan matlab | Kharcha | Kisko dena |
+|---|---|---|---|
+| **A. NAT + Port Forwarding** ⭐ (default) | Poori building ka **ek hi main gate** hai. Har flat (VM) ko alag **gate number** milta hai. Customer connect karega `1.2.3.4:22041` pe. | **₹0** | Saste plans, bot hosting — 90% customers |
+| **B. Dedicated IPv4 (bridge)** | Har VM ko **apna asli public IP**. Provider se extra IPs kharidne padte hain (Contabo/Hetzner/OVH dete hain). | ₹ per IP | Premium plans, Windows RDP, mail server (rDNS chahiye) |
+| **C. Routed subnet / 1:1 NAT** | Provider tumhe ek **poora range** (jaise 8 IPs ka `/29`) tumhare server pe route kar deta hai. Panel us range me se baant deta hai. | Ek saath range ka | Jab tumne subnet kharida ho |
+| **D. IPv6** | Naya protocol — provider usually **free me `/64`** deta hai (arab-kharab IPs). Har VM ko asli IPv6 mil sakta hai. | **₹0** | Sabko free me "asli IP" dene ke liye |
+
+**Panel me ye kaise dikhega (admin side):**
+`Admin → IP Pool` page — tum IP ya CIDR daaloge + gateway + netmask + bridge. Har IP ka status dikhega: `free` / `assigned` / `reserved`. VM banate waqt panel **khud** ek free IP uthayega, VM delete hone pe **khud wapas** daal dega. Duplicate IP detection (`arping`), CSV import, aur plan rule ("is plan me dedicated IP milega"). Har IP pe **rDNS/PTR** edit kar sakte ho.
+
+**Customer ko kya dikhega:** VM page pe `IPv4: 1.2.3.4` (ya NAT mode me `1.2.3.4:22041`), `IPv6`, `Gateway`, `Netmask`, ready-made `ssh` command, `.rdp` file, copy buttons. NAT mode me ek **port-forward table** bhi hoga — "Add port" button (plan ki limit ke andar).
+
+**Meri salaah (business ke liye):**
+1. Shuru me **NAT + port forwarding + free IPv6** se start karo — zero extra kharcha, unlimited customers.
+2. Jab paise aane lagein, provider se **5-10 extra IPs** kharido aur "Dedicated IP" ko **₹150-300/month add-on** bana do. Ye sabse aasan upsell hai.
+3. Windows RDP plans me dedicated IP default rakho (RDP users ko IP:port pasand nahi aata).
+
+---
+
+# 💰 Kitne products becho? (tumne kaha — jitna zyada bechun, utni income)
+
+Ek hi host pe ye sab **honestly** bech sakte ho (maine plan me sab add kar diya):
+
+| # | Product | Kyun bikta hai | Margin |
+|---|---|---|---|
+| 1 | **Linux VPS (KVM)** | Core product, sabse zyada demand | Medium |
+| 2 | **Windows VPS / RDP** | Trading, software, browsing — India me bahut bikta hai | **High** ⭐ |
+| 3 | **Linux Cloud PC (XRDP)** | Sasta desktop — Ubuntu + Chrome, browser se | **High** (kam resource) |
+| 4 | **VDS (dedicated)** | Serious users, game/db servers | **High** |
+| 5 | **Bot Hosting (LXD)** | Discord bots — sasta, volume me bikta hai | High per GB |
+| 6 | **Storage VPS / Backup Storage** | Kam CPU, zyada disk — purani HDD pe bhi chalega | **Best** (idle hardware) |
+| 7 | **Database Hosting (MongoDB/MySQL)** | Developers ko chahiye; vpanel-pro v3.1.1 me already pattern hai | High |
+| 8 | **One-Click Apps** (n8n, Nextcloud, WordPress, Uptime Kuma) | Ready-made service, user ko setup nahi karna | High |
+| 9 | **Add-ons** | Dedicated IP, extra RAM/disk/bandwidth, managed backup, DDoS, priority support | **Sabse easy upsell** |
+| 10 | **Reseller accounts** | Dusre log tumhara panel bechenge | Passive |
+
+**Rule jo maine lagaya:** har product pe **asli** capacity dikhegi ("4 slots left"), aur capacity guard se zyada kabhi nahi bikega. Jhootha "unlimited" nahi — isse refunds aur bad reviews aate hain.
+
+**Upgrade path:** koi bhi customer kisi bhi product se dusre pe upgrade kar sakta hai (proration ke saath) — customer jaata nahi, badhta hai.
+
+---
+
+# 🔗 Terminal share link (tmate vs sshx) — tumhara doubt
+
+Tumne kaha *"tmate abhi kaam nahi kar raha, sshx theek hai"*. Tum sahi ho — `tmate.io` ka public relay aksar down rehta hai.
+
+**Maine is sandbox se test nahi kiya** (yahan se sirf github/npm/pypi khulte hain, tmate.io/sshx.io nahi) — isliye jhooth nahi bolunga ki "test kar liya".
+
+**Iska engineering solution (plan me likh diya):**
+- **sshx primary** rahega, tmate secondary.
+- Admin settings me ek **"Test providers" button** hoga — panel dono ko live ping karega.
+- Jo service **dead** hai, uska button UI se **khud gayab** ho jayega. Kabhi dead link customer ko nahi dikhega.
+- Link hoga: customer ki marzi se, time-boxed (5/15/60 min), live banner ke saath, 1-click revoke, aur audit log me record.
+
+
+========================================================================
+PART 3 — COMPLETE FEATURE LIST WITH PRIORITIES (P0/P1/P2)
+========================================================================
+// Poora feature inventory — kuch bhi miss na ho isliye.
+
+
+Priority: **P0** = pehle phase me zaroori · **P1** = doosre phase · **P2** = baad me / bonus
+
+---
+
+## A. Core VPS Management (base — HKVM + HVM-8 se)
+
+| Feature | Kya karega | Priority |
+|---|---|---|
+| VM Create Wizard (5 steps) | OS template → Hardware (presets + dual sliders) → Network → Review (live blueprint) → Deploy with live progress log | P0 |
+| Power ops | start / stop / force-stop / restart / kill / power-button (ACPI) | P0 |
+| Live metrics | CPU / RAM / Disk IO / Network IO graphs, 1s refresh, Socket.IO | P0 |
+| noVNC graphical console | GUI VMs ke liye, auto-reconnect | P0 |
+| xterm SSH web terminal | multi-tab, copy/paste, themes, session recording | P0 |
+| Serial/boot log viewer | QEMU serial + cloud-init progress, dual tab | P0 |
+| Resize | RAM/CPU hot-plug + disk grow (qemu-img resize), cold reboot if needed | P0 |
+| Reinstall / Rebuild | same IP+data ya fresh, with confirmation | P0 |
+| Snapshots | create / restore / rollback / delete / size / description + **auto snapshot schedule** | P0 |
+| ISO attach/detach | boot-order control, ISO library upload by URL or file | P0 |
+| Suspend / Unsuspend | billing-driven auto suspend on expiry | P1 |
+| Advanced QEMU knobs | CPU topology, cpu_model, **SMBIOS spoofing**, machine type, ACPI/KVM toggles, extra_args, BIOS/UEFI (OVMF) | P1 |
+| Guest agent | Python agent in VM: files, metrics, exec, agent auto-install via cloud-init | P0 |
+| Start-on-boot + startup command | panel restart hone pe VMs wapas up | P1 |
+
+## B. File Manager (NKVM/vpanel se, but better)
+
+Web file explorer, code editor (Monaco/CodeMirror + syntax highlight + search/replace), upload (drag-drop, multi, chunked, resume), download, mkdir, rename, delete, chmod/chown, **zip/unzip in place**, file search (recursive), disk usage tree, permissions UI, SFTP access, **file transfer progress bar**. → **P0**
+
+## C. Backups & Disaster Recovery
+
+Full + incremental backups, retention policy (keep last N), **offsite backup (S3/Wasabi/Backblaze/Dropbox)**, encrypted backups (AES-256), scheduled backups (cron), one-click restore, download, **point-in-time recovery from snapshots**, backup size quota per plan. → **P1**
+
+## D. Multi-Node / Cluster (HVM-8 + NKVM se)
+
+Node agent (Python/Go, systemd), add node with token + QR, node health & live stats, **circuit breaker + auto-reconnect**, allocation pools (IP/port ranges), **live migration between nodes with progress bar**, auto-failover (node down → restart VMs elsewhere), per-node resource limits & over-allocation ratio, node maintenance mode, node console (remote root shell), **scheduler: "least loaded node" auto-placement**. → **P1**
+
+## E. Networking (sabse zyada demand wala)
+
+Port forward manager (visual), public IP allocation, IPv6 subnet per VM, **rDNS / PTR record editor**, firewall manager per VM (iptables/nftables UI: allow/deny port + IP), **Cloudflare Tunnel / Playit.gg / Tailscale** one-click (port kholne ke bina public access), VLAN/private network between VMs, bandwidth metering + quota + auto-throttle, DDoS protection toggle (provider integration). → **P1**
+
+## F. Automation & Developer API
+
+Cron schedules (power/backup/snapshot/command/restart), **task chains** (if backup ok → delete old), **webhooks** (VM started/stopped/crashed → Discord/Telegram/URL), **Pterodactyl-style API** (`/api/client/*` + `/api/application/*`) with scoped API keys, **OpenAPI docs page + Postman collection**, official **CLI** (`star vm create ...`), Terraform provider (P2), GitHub Actions example. → **P1**
+
+## G. 🤖 Built-in AI (tumhara main USP — kisi panel me nahi hai)
+
+ZORIN ka pipeline use karo: `intent → planner → executor → verifier + risk + confirmation`.
+
+1. **AI Ops Assistant (chat)** — Hindi/Hinglish/English: "ek 4GB Ubuntu VM bana do", "node-2 ke sare VMs band karo", "is VM ka console kholo".
+2. **Tool-calling with role allowlist** — user ke AI ke paas sirf uske VMs; admin ke paas sab; **destructive tools (delete/migrate/stop-all) sirf OWNER** ke liye.
+3. **Risk gate + confirmation** — har destructive action pe AI pehle plan dikhayega → user "Confirm" kare → tabhi execute. (ZORIN `risk.py` + `confirmation.py`)
+4. **AI Log Doctor** — VM crash/boot fail ka reason bataye: serial log + kernel log + cloud-init log analyse karke fix suggest kare.
+5. **AI Capacity Planner** — "mere paas 128GB RAM hai, kitne aur VMs chal sakte hain?" + over-allocation advice + node purchase suggestion.
+6. **AI Security Scan** — open ports, weak SSH config, failed login patterns, exposed panels → report + one-click fix.
+7. **AI Cost/Billing Assistant** — "is mahine ka bill breakdown do", plan suggest kare.
+8. **AI Auto-heal** — VM hang detect → auto restart; disk full → alert + auto log rotate; node down → auto migrate.
+9. **AI Command Palette (Ctrl+K)** — natural language se koi bhi page/action.
+10. **Voice mode (P2)** — Gemini Live style, "StarCloud, node 3 ka status bolo".
+11. **Model abstraction** — Gemini (free) / OpenAI / Groq / **Ollama local (100% private)** switch; streaming tokens; **AI cost + token tracking dashboard**; **full AI action audit log**; AI **default OFF**, owner on kare.
+
+## H. Owner Tier + Admin Power (tumhara requirement — honest design)
+
+- **Single OWNER** account: install ke waqt `.env` / first-run wizard se banega. Role hierarchy: `owner > admin > user`.
+- Owner **kabhi delete/suspend/demote nahi ho sakta** — kisi se bhi (vpanel ka `countAdmins() <= 1` guard iska base).
+- Owner **normal user list me by default dikhega nahi** (ek `is_visible` flag) — but DB aur docs me clearly documented (niche §"Important" padho).
+- **Owner Console** (`/owner`): live "sab kuch" view — sab nodes, sab VMs, sab users, sab AI actions, sab payments, sab logs, kill-switch (emergency stop-all), maintenance mode, license/deployment list (kaun-kis ne install kiya hai), AI tool permissions.
+- **Support Mode (time-boxed)**: customer explicitly "Allow support for 2 hours" kare → tabhi owner access; auto-expire; sab audit log me.
+- **Deployment telemetry (disclosed, opt-out possible)**: panel version, uptime, VM count — **kabhi bhi user data/VM content nahi**.
+- **Second admin toggle**: install pe basic admin optional (`CREATE_DEFAULT_ADMIN=false`), owner jab chahe enable/disable kare.
+
+> ### ⚠️ Important (ek baar padh lo)
+> "Source code me pata na chale" wala hidden backdoor main **nahi banaunga** — aur tum bhi mat karna. Reason:
+> 1. Wo technically **unauthorized access** hai (customer ke VPS me bina permission) → legally criminal, aur panel ki reputation khatam.
+> 2. Source distribute karne ke baad obfuscation **kabhi kaam nahi karti** — koi bhi `sqlite3 panel.db` chala ke ya network traffic dekh ke pakad lega. "Undetectable" = illusion.
+> 3. Iska **legal aur powerful alternative** upar wala hai: Owner tier + Support Mode + disclosed telemetry + license check. Same control, zero risk, aur tum customer ko bhi "24/7 owner-monitored" bol sakte ho — ye selling point banta hai, scandal nahi.
+
+## I. Billing & Business (kisi panel me nahi hai — P1/P2)
+
+Plans (vCPU/RAM/Disk/Bandwidth/Ports limits), monthly-quarterly-yearly pricing, **Razorpay (UPI/cards/netbanking)** + Stripe + Crypto, coupon codes, credits/coins wallet, auto-invoice (PDF + GST), auto-suspend on expiry → grace period → delete, renewal reminders (email/Discord/Telegram), **reseller/white-label mode** (apna logo/domain/branding), affiliate links, free-trial plans, upgrade/downgrade with proration, tax settings, revenue dashboard (MRR, churn). → **P2** (agar tum sell karoge to P0)
+
+## J. Notifications & Communication
+
+In-app notification center (HKVM jaisa dropdown), email (SMTP + templates), **Discord webhook + bot**, **Telegram bot**, **WhatsApp (P2)**, PWA push notifications, maintenance announcements, **public status page** (`status.yourdomain.com`) with uptime graphs + incident timeline, per-user notification preferences. → **P1**
+
+## K. Security & Hardening
+
+Argon2id password hashing, 2FA TOTP + backup codes, email verification + captcha/Turnstile on signup, login attempt lockout + IP ban, session/device list with remote revoke, CSRF + Helmet + strict CORS allowlist, rate limiting per route, secrets encrypted at rest (VM passwords bhi — abhi hkvm plaintext store karta hai), audit log (immutable, exportable), fail2ban integration, automatic Let's Encrypt TLS + auto-renew, security headers score page, 2FA enforce-for-admins toggle, **panel access via VPN/Tailscale option**. → **P0/P1**
+
+## L. UX Polish (HKVM theme ke saath)
+
+Dark/light toggle + **blur/transparency sliders** (NKVM), wallpaper browser, command palette **Ctrl+K**, global search (VMs/users/nodes/settings), keyboard shortcuts (`?` pe list), favorites/pin VMs, tags & groups, bulk select + bulk actions, saved filters/views, configurable table columns, skeleton loaders, toast notifications, empty states with CTA, activity timeline per VM, onboarding wizard (first login), **i18n: English + हिंदी + Hinglish**, mobile-responsive + PWA install, sound/music option, custom branding from admin (logo/favicon/bg image/bg **video**/accent color), 404/403/500/maintenance pages. → **P0**
+
+## M. Extras jo panel ko "product" banate hain
+
+One-click **App Marketplace** (WordPress, Docker, n8n, Nextcloud, Minecraft, GitLab, Jellyfin…), DNS zone manager, SSL manager, object storage buckets, WireGuard/VPN provisioning, container (LXC/Docker) product line alongside KVM, **template store** (share/import VM templates), import from other panels (Proxmox/Pterodactyl importer), **mobile app (PWA + Capacitor)**, dark-mode email templates, changelog page, docs site. → **P2**
+
+## N. DevOps quality (panels me ye missing hai)
+
+`install.sh` one-liner installer + first-run wizard, Docker + docker-compose + Dockerfile, systemd/PM2, **auto-updater** (version check + safe update + rollback), DB migrations (idempotent), panel self-backup (DB + config), **test suite** (Vitest + Supertest, coverage), **GitHub Actions CI** (lint + test + build — ALTEX pack jaisa), `.env.example`, structured logs (pino) + log viewer in admin, error tracking (Sentry optional), OpenAPI spec, seed/demo mode. → **P1**
+
+---
+
+# ✅ Tumhare answers (lock ho gaye — master prompt me bhar diye)
+
+| Cheez | Answer |
+|---|---|
+| Naam | **StarCloud** — tagline *"Your Cloud, Your Rules"* (logo + banner repo me already hain) |
+| Stack | **Node.js 20 + Express + EJS + better-sqlite3 + Socket.IO + xterm.js + noVNC** |
+| Scale | **Single host** — par **KVM auto-detect**: KVM ho to KVM, na ho to QEMU/TCG, ya LXC/Docker. Installer kabhi fail nahi hoga. |
+| Business | **Selling business**: VPS + VDS + RDP (Windows), Razorpay/UPI, coupons, **giveaway (100% free) + half-price events + custom amounts**, reseller option |
+| AI | Multi-switch (Gemini free / OpenAI / Groq / Ollama local) |
+| Users | Public signup (paying customers) → fraud controls zaroori |
+| UI | English + हिंदी |
+
+---
+
+# 🆕 Aur naye features (tumne poocha — "KVM wale jaisa aur batao")
+
+## O. Smart auto-detect family (panel khud figure out kare)
+
+| Auto-detect | Kya karta hai |
+|---|---|
+| **KVM / TCG / LXC / Docker** | `/dev/kvm`, `vmx/svm` flags, nested virt, cgroup version → mode decide, UI me badge, wizard adapt |
+| **Host capability report** | CPU model/cores/NUMA, RAM+hugepages, disk pools (SSD/NVMe), bridges/MTU/IPv6, distro+package manager, qemu/OVMF/virtio versions — ek page pe |
+| **Nested-virt warning** | Panel khud ek VPS ke andar chal raha hai? → warning + expected speed |
+| **Public IP + base URL** | Outbound probe se detect, manual override, TLS auto (Let's Encrypt + renew) |
+| **Free port + free IP allocation** | SSH/RDP/VNC ports aur IPs pool se auto, conflict pehle detect, delete pe release |
+| **Guest OS detection** | qemu-guest-agent / cloudbase-init se guest ka OS, hostname, kernel, in-guest disk usage — bina SSH |
+| **Readiness probe** | SSH/RDP/VNC port TCP probe → "SSH ready / RDP ready / still booting" + boot ETA (spinner forever nahi) |
+| **Missing-tool repair** | `cloud-localds`/`xorriso`/OVMF/bridge missing → ek click me install (sahi package manager) ya exact fix command |
+| **Template manager** | OS cloud-image URL se download + **checksum verify** + mirror fallback + resume + cache + latest releases auto-list |
+| **Capacity guard** | "8 vCPU/32GB me se 6 vCPU/24GB sold — **2 aur 4GB VM fit honge**" + over-allocation limit |
+
+## P. Self-healing & protection
+
+Safety snapshot before risky ops · VM watchdog + crash-loop detect (3× in 10 min → stop + AI report) · host RAM/disk critical → auto-pause lowest priority VMs / block new creates · boot ordering after host reboot (staggered, no IO storm) · auto-update with pre-backup + auto-rollback · panel self-backup (DB+config+secrets) · demo/seed mode for screenshots.
+
+## Q. Product lines (bechne ke liye)
+
+- **VPS** — shared cores, over-allocatable, sasta.
+- **VDS** — **CPU pinning** (physical cores), guaranteed RAM (no ballooning, hugepages), dedicated IO, `host-passthrough`, NUMA-aware. Card pe "4 Dedicated Cores" clearly.
+- **RDP (Windows)** — Windows Server 2016/2019/2022/2025, **virtio drivers auto-inject**, unattended install (`autounattend.xml`) / cloudbase-init, auto RDP+NLA enable, strong random password, per-VM RDP port, **browser-based RDP client** (Guacamole/Myrtille style — user ko client install nahi karna padega), `.rdp` file download, RDP-ready probe. *(Windows license customer khud laye — panel me note store hoga.)*
+- **Containers (LXC/Docker)** — sasta, instant, kernel-shared warning honestly.
+
+## R. Selling / business features (kisi panel me nahi hain)
+
+**Pricing:** hourly→yearly cycles, per-cycle price, **custom amount per order (admin override)**, add-ons (extra IP/RAM/disk/bandwidth/Windows slot), INR+USD, GST invoice PDF, proration, refunds.
+
+**Payments:** **Razorpay** (UPI, UPI QR, cards, netbanking, auto-pay e-mandate, webhook verify) · Stripe · crypto · **manual/offline** (screenshot upload → admin approve) · admin "mark as paid" · wallet/credits + admin-granted credits · dunning retries.
+
+**Giveaway & event engine (tumhara main point):**
+- Coupons: % / fixed / **100% free**, reusable ya one-time, usage limit, expiry, plan-specific, first-order-only, minimum amount, stackable toggle.
+- **Event scheduler**: "Diwali Sale 14–18 Nov, 50% off" → auto-apply + auto-expire + **flash-sale banner with live countdown** + auto-email to users.
+- **Giveaway codes**: N codes generate (Discord/YouTube giveaway ke liye), ek baar redeem, plan-bound, claim tracking (kaun/kab/IP).
+- Admin kisi bhi invoice pe **custom price 2 clicks me**, ya kisi user ko free period grant (reason logged).
+- Pricing page pe original vs discounted (strikethrough) + **real "slots left" counter** (host capacity se compute — fake nahi).
+
+**Lifecycle:** unpaid → reminder → suspend → grace → data-hold → purge (timings configurable, sab emailed).
+
+**Business dashboard:** MRR/ARR, aaj/is mahine ka revenue, product-wise split (VPS/VDS/RDP), plan-wise sales, active vs suspended, churn, top spenders, coupon performance, gateway fees, **capacity-vs-revenue** chart.
+
+**Fraud control:** email verify, disposable-email block, Turnstile captcha, per-IP/device signup limit, optional phone OTP, first-order manual approval queue, VPN/proxy/geo flags, device fingerprint, ban lists, abuse heuristics (flood/port-scan/mining CPU pattern) → owner alert.
+
+**Support & growth:** in-panel **tickets** (assign/priority/SLA/canned replies/VM-linked), knowledge base, announcements, ToS/AUP versioned acceptance, suspension reason + unsuspend request form, **affiliate/referral program** with commission ledger, reseller white-label.
+
+---
+
+# ❓ Ab bhi open (jab chaaho bata dena, zaroori nahi)
+
+1. **Domain** kya hoga (`{{DOMAIN}}`) aur **owner email** (`{{OWNER_EMAIL}}`)? — installer bhi pooch lega.
+2. Windows RDP ke liye **ISO tumhare paas hai** ya user apna upload karega? (license note kaise dikhana hai)
+3. Razorpay account ready hai ya test-mode se start karein?
+4. Signup **open** rahega ya **invite/approval** wala?
+5. Hindi UI me kitna translate karna hai — sirf menu ya pura panel?
+
+
+========================================================================
+PART 4 — REFERENCE PACK ANALYSIS (verified facts about the 20 packs in this repo)
+========================================================================
+// Repo me jo 20 zips hain, unka verified analysis — kis pack se kya lena hai.
+
+
+> Ye file maine **actually har zip ko extract karke, code padh ke** banayi hai.
+> Neeche har number ek command ka output hai, guess nahi.
+
+---
+
+## 0. Repo me abhi kya hai (as-is)
+
+`git ls-files` = **13 files**. Repo me abhi **ek bhi line of source code nahi hai** — sirf 11 reference zips + 2 brand images:
+
+| # | File | Kya hai | Stack | Size |
+|---|------|---------|-------|------|
+| 1 | `(Nissalop22)hkvm-2.zip` | **HKVM Panel v2.0.0-free** — tumhara THEME reference | Node.js + Express + EJS + sqlite3 | 11 MB (31 MB extracted, 2952 files incl. node_modules) |
+| 2 | `vpanel-pro-main.zip` | **VPanel Pro** — sabse clean architecture | Node 18 + Express + EJS + better-sqlite3 + Socket.IO | 203 KB |
+| 3 | `(Nissalop22)NKVM_Panel_v1.zip` | **Nkvm v1.0** — vpanel ka upgraded fork (multi-node) | same as vpanel + 3 extra services | 277 KB |
+| 4 | `(Nissalop22)HVM-8.zip` | **HVM Panel v2.0-PRO-ULTIMATE** — sabse zyada features | Python Flask + LXC node agent | 1.8 MB |
+| 5 | `(PapiaGamerz)HVM-V8.zip` | HVM ka purana version (HVM-8 ka **subset** — verified) | Python Flask | 1.1 MB |
+| 6 | `(Nissalop22)Svm-v6.zip` | SVM Panel v6 — HVM jaisa, chhota | Python Flask | 1 MB |
+| 7 | `(Nissalop22)NR-PROTECTION-V1.0.zip` | Chhota Flask app — license + maintenance mode | Flask + SQLAlchemy | 48 KB |
+| 8 | `(Nissalop22)Hex-Mc-main.zip` | **Hex-Mc** — game server panel (Pterodactyl-style API, node daemon, Docker) | Node 22 + `node:sqlite` | 821 KB |
+| 9 | `MYRAA-Source-Code-1.5.2.zip` | **MYRAA** — 3D AI companion (Gemini Live voice, screen vision, PC control) | Electron + TS + Python agent | 7.9 MB |
+| 10 | `ZORIN-M4-source.zip` | **ZORIN** — voice assistant (intent→planner→executor→verifier→risk pipeline) | Python + Gemini Live | 199 KB |
+| 11 | `ALTEX-CODE-main.zip` | Repo pack + GitHub Actions CI example | — | 3.8 MB |
+| 12 | `StarCloud-Logo.png` | **Tumhara brand logo** | — | 2.7 MB |
+| 13 | `StarCloud-Banner.png` | **Tumhara brand banner** | — | 2.9 MB |
+
+**Matlab:** tumne 6 alag-alag VPS panels + 2 AI projects + 1 game panel collect kiye hain.
+Tumhara naya panel = in sabka **best-of merge**, HKVM ke theme ke saath, StarCloud branding ke saath.
+
+---
+
+## 1. HKVM (theme donor) — exact design DNA
+
+`hkvm-2/Hkvm/public/css/admin.css` (87 KB) ke `:root` tokens — **ye exact values use karni hain**:
+
+```css
+--bg-primary:   #000000;                       /* pure black */
+--bg-secondary: #0a0a0a;
+--bg-card:      rgba(18, 18, 18, 0.85);        /* glassmorphism */
+--bg-sidebar:   rgba(10, 10, 10, 0.95);
+--bg-header:    rgba(0, 0, 0, 0.85);
+--bg-input:     rgba(20, 20, 20, 0.8);
+--bg-modal:     rgba(15, 15, 15, 0.98);
+--bg-overlay:   rgba(0, 0, 0, 0.85);
+
+--accent-primary:   #ffffff;                   /* white accent, no blue! */
+--accent-secondary: #e5e5e5;
+--accent-green:     #00ff00;
+--accent-red:       #ff0000;
+--accent-orange:    #ff8800;
+--accent-blue:      #0088ff;
+
+--color-indigo:  #6366F1;   --color-emerald: #10B981;
+--color-amber:   #F59E0B;   --color-red:     #EF4444;
+--color-violet:  #8B5CF6;   --color-cyan:    #06B6D4;
+--color-gray:    #9CA3AF;
+
+--border-color:  rgba(255,255,255,0.12);
+--border-subtle: rgba(255,255,255,0.06);
+--text-primary:  #ffffff;  --text-secondary: #cccccc;  --text-muted: #999999;
+
+--shadow-sm: 0 2px 8px rgba(0,0,0,.6);
+--shadow-lg: 0 8px 40px rgba(0,0,0,.8);
+
+font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+/* code / terminal / numbers: */ font-family: 'JetBrains Mono', monospace;
+```
+
+**Layout components jo HKVM me already hain (inhe copy karna hai):**
+`admin-wrapper` → `admin-sidebar` (collapsible, `sidebarToggle`) + `admin-main` + `admin-header`.
+Header me: **breadcrumb** (icon → panel name → page), **global search box**, **live "Online" status dot**, **dark/light theme switcher**, **notification dropdown with dot**, **fullscreen toggle**, **user avatar dropdown**.
+Login page: `login-bg` + `login-bg-grid` (animated grid), floating emoji icons (`loginFloat` keyframes), glass `login-card`, shake animation on wrong password, password show/hide eye.
+Badges: `badge-running / badge-stopped / badge-pending / badge-error / badge-admin / badge-user`.
+Buttons: `btn-primary / btn-success / btn-danger / btn-warning / btn-outline / btn-ghost / btn-icon / btn-sm / btn-lg`.
+
+**HKVM tech:** express 4.18, ejs, express-session, bcryptjs, sqlite3, ssh2, ws, passport-discord, uuid, dotenv. `app.js` = **4912 lines** (single file — isko hum modular banayenge).
+**HKVM routes = 87** (`app.get/post/put/delete`).
+
+**HKVM DB tables (8):** `users`, `vms`, `vm_logs`, `vm_snapshots`, `os_templates`, `settings`, `discord_settings`, `user_discord_accounts`.
+
+**HKVM ke VM-create ke advanced options (ye killer features hain, keep karo):**
+`cpu_sockets / cpu_cores / cpu_threads` (topology), `cpu_model` + `custom_cpu_name`, `machine_type`, SMBIOS spoofing (`smbios_manufacturer`, `smbios_product`, `board_name`, `product_name`), `enable_kvm`, `enable_acpi`, `extra_args`, network: `bridge_device` / NAT / static IPv4 (`ipv4_address`, `netmask`, `gateway`) / IPv6, `mac_address`, `dns_servers` (DNS providers), `ssh_port`, port forwarding, ISO attach, memory presets (512MB→16GB), disk size num+unit, live config preview + step wizard (prev/next/review).
+
+**HKVM me kya NAHI hai (verified by grep — 0 hits):**
+❌ 2FA/TOTP (0) ❌ File manager (0) ❌ Schedules/cron (0) ❌ Multi-node (0) ❌ Real backups (sirf log-rotation `.bak`, VM backup feature nahi) ❌ Billing ❌ AI.
+
+---
+
+## 2. VPanel Pro (architecture donor) — sabse clean structure
+
+```
+src/server.js → src/app.js
+src/lib/{config,db,logger}.js
+src/middleware/{auth,upload}.js
+src/routes/{api,webAdmin,webAuth,webUser}.js      (api.js = 48 endpoints)
+src/services/{auth,vm,ssh,vnc,backup,schedule,agent,mail,activity}Service.js
+views/{admin,user,auth,error,partials}/*.ejs      (36 EJS files)
+public/{css/panel.css, js/panel.js, vendor/xterm*}
+scripts/{build.js, createuser.js, vpanel-agent.py}
+```
+
+**DB (10 tables):** `users` (role, **root_admin**, tfa_enabled/secret, verified, suspended, language, avatar, last_login_at/ip), `login_attempts`, `reset_tokens`, `vms`, `subusers` (per-VM permissions), `backups`, `schedules`, `activity_logs`, `settings`, `notifications`.
+
+**Features:** QEMU/KVM create-start-stop-restart-resize, noVNC console, xterm SSH, in-guest **Python agent** (`scripts/vpanel-agent.py`) with SSH fallback file manager (list/read/write/mkdir/delete/rename/chmod/upload 200MB/download), cloud-init provisioning, backups+restore, cron schedules, sub-users, 2FA (speakeasy+qrcode), nodemailer (verify/forgot/reset), activity logs, panel branding settings (logo/favicon/bg color/image/**video**/overlay/**music**).
+
+**⚠️ Important — `root_admin` already exists:** `src/middleware/auth.js:43` → `if (user.role !== 'admin' && !user.root_admin)` aur `webAdmin.js:133` → *"last admin ko suspend/demote nahi kar sakte"*. Ye tumhare "owner" concept ka ready-made base hai.
+
+---
+
+## 3. Nkvm v1.0 (UI/UX donor)
+
+vpanel ka hi structure + **3 extra services**: `bootLogService.js`, `nodeService.js` (multi-node!), `wallpaperService.js`.
+Extra UX: 4K wallpaper browser (15+ categories, search/preview/favorite/apply), **real-time backdrop-blur slider (0–40px) + transparency slider (0–100%)** (`--panel-blur`, `--panel-transparency`, `--glass`, `--accent-glow`), hardware sizing presets (Starter/Standard/Compute/Powerhouse), dual synced sliders (vCPU + RAM), live "Deployment Blueprint" sticky summary card with cost calc, dual-tab boot logs (QEMU serial + kernel/cloud-init), Docker support (`docker-compose.kvm.yml`), `install.sh`, PM2 `ecosystem.config.js`.
+
+---
+
+## 4. HVM-8 (feature donor) — sabse zyada endpoints
+
+`api.py` = **94 routes**, `hvm.py` = **165 routes**, 17 tables:
+`users, vps, nodes, backups, vps_snapshots, snapshot_schedules, vps_metrics, port_allocations, port_forwards, api_keys, api_keys(toggle), notifications, activity_logs, os_icons, settings, sessions, password_reset_tokens, license`.
+
+**Unique features jo kisi aur panel me nahi:**
+- **Multi-node LXC agent** (`node.py`, Flask agent with PTY root-shell relay) + node add/edit/delete/test-connection/regenerate-key/**circuit-breaker reset**/failure reset/health check/remote execute.
+- **VM migration** (`/vps/<id>/migrate` + `/migration-progress`) — node-to-node live migration.
+- **Emergency ops**: `/emergency/stop-all`, `/reboot-all`, `/clear-suspensions`, `/reset-ports`.
+- **Port management**: allocation pool + custom ports + per-VM forwards.
+- **Expiration & renew**: `/vps/<id>/renew`, `/expiration`, `/vps_expiring` admin page, IP whitelist.
+- **API keys** (create/toggle/delete/regenerate) + **webhooks** + `/docs` + `/endpoints` (self-documenting API).
+- **System tools**: `/system/vacuum`, `/test-smtp`, `/resource-check`, `/live-stats` (live_stats_manager.py), bandwidth metering, `vps_metrics` history.
+- **OS icon manager** (upload/delete per-OS icons), OS templates, suspend/unsuspend + `suspended.html` page, maintenance mode, notifications, 2FA, search, activity log.
+- Templates: `vps_installing / vps_migrating / vps_reinstalling / vps_suspended / vps_ipconfig / ports / live_stats / node_console / os_icons / api`.
+
+⚠️ HVM-8 me license system hai aur `license_server.txt` me ek hardcoded IP (`http://18.176.215.109:3200`) — **aisa mat karna**, ye bad practice hai.
+
+---
+
+## 5. Hex-Mc (API/security donor)
+
+Node 22 + embedded `node:sqlite` (no native addon). **Pterodactyl-style API split**: `/api/client/*` (user, bearer API keys) + `/api/application/*` (admin-only). Node daemon w/ FQDN + bearer token + auto allocation pool + SFTP port. GitHub + Discord OAuth (one-time state codes, secrets never reach browser). Strict 32+ char `JWT_SECRET` enforcement in prod. IP rate limiting on auth. Owner-assignment RBAC. Anti-`0o777` POSIX file modes. 2GB upload protection w/ HTTP 413. CORS `ALLOWED_ORIGINS`. Encrypted DB passwords. `update.sh` self-update. Playit.gg tunnels (public access without opening router ports).
+
+## 6. MYRAA + ZORIN (AI donor)
+
+- **MYRAA**: Gemini Live voice, screen vision, desktop control, memory; API key **encrypted (DPAPI)**, never in project; `server_memory.ts`, `server_screenVision.ts`.
+- **ZORIN** — **ye AI agent ka blueprint hai** jo hum panel me use karenge:
+  `intent.py → router.py → planner.py → executor.py → verifier.py` + **`risk.py` + `confirmation.py`** (destructive action pe user confirm) + `state_machine.py`, `orchestrator.py`, `personality.py`, `proactive.py`, `manager.py`, local STT fallback + VAD + cloud fallback with cooldown + 5s timeout.
+  Hindi/Hinglish support built-in ("Chrome kholo", "यूट्यूब खोलो") — **exact jo tumhe chahiye**.
+
+## 7. Verified gaps (jo kisi bhi panel me NAHI hai = tumhara naya feature)
+
+Maine grep karke confirm kiya — **11 packs me se kisi me bhi**:
+- ❌ **Billing / payment gateway** (razorpay/stripe/paypal/whmcs/coins) — 0 hits. Sirf ek UI label "billing period" mila.
+- ❌ **AI** (openai/gemini/claude/ollama) in any VPS panel — 0 hits.
+- ❌ Public status page, uptime monitoring, incident timeline — nahi hai.
+- ❌ One-click app marketplace (WordPress/Docker/n8n) — nahi hai.
+- ❌ DNS manager / SSL (Let's Encrypt) manager / rDNS-PTR — nahi hai.
+- ❌ Prometheus/Grafana metrics export, alert rules — nahi hai.
+- ❌ Reseller / white-label multi-tenant — nahi hai.
+- ❌ i18n (Hindi UI) — nahi hai (`users.language` column hai par koi translation file nahi).
+- ❌ Mobile app / PWA — nahi hai.
+- ❌ Test suite / CI — sirf ALTEX pack me CI example hai, panels me tests nahi.
+
+---
+
+# 8. UPDATE (2026-10-10) — 7 naye packs GitHub pe aaye, repo ab 20 files
+
+`git ls-files` ab **25** (20 packs/assets + 5 docs). Naye packs (verified by extracting each):
+
+| Pack | Verified contents |
+|---|---|
+| `apanel-main.zip` | **AKVM Panel v1.0**, Flask, `akvm.py` **4742 lines** + `node.py` 149 + `show_license.py` 49; 25 templates incl. `landing.html`, `installing.html`, `license.html`; ~80 routes. Unique: `/admin/public-ips`, `/vm/<id>/tmate`, `/vm/<id>/sshx`, `/vm/<id>/security-scan`, `/vm/<id>/hostname`, `/admin/fonts`, `/admin/icons`, `/admin/discord-bot`, `/api/node/register`, `/api/node/heartbeat`, `/api/v1/{user,admin}/*` |
+| `vpanel-pro-main.zip` **(replaced, 8.9 MB)** | **vpanel-pro v3.1.1** — deps incl. **mongodb**; **23 services**: activity, agent, **aiLog**, **apiManager**, **audit**, auth, backup, **billing**, bootLog, **cache**, mail, **mongoManager**, **network**, node, **resource**, schedule, ssh, **storage**, **template**, **update**, vm, vnc, wallpaper; **12 route files** incl. `webAdminBilling`, `webAdminPlugins`, `webAdminMongo`, `webAdminNetwork`, `webAdminStorage`, `webAdminUpdates`, `webAdminAudit`, `webAdminApiManager`; Docker + devcontainer + `.github` + install.sh. **Ye ab architecture donor hai** (pehle wala chhota vpanel nahi). |
+| `XRDP-main.zip` | Ubuntu 22.04 + `xrdp` + `xfce4` + Chrome + Discord(+Canary) + Snap Store; `AllowRootLogin=true`; default `root/root` → **must be hardened** |
+| `Template-main.zip` | `images.json` = **16 templates**: AlmaLinux 8/9/10 · Debian 11/12/13 · Rocky 8/9/10 · Ubuntu 22.04/24.04/25.10/26.04 · **Windows Server 2019/2022/2025 Datacenter** (Convoy CDN `.vma.zst` links + vmids) |
+| `hosting-website-main.zip` | Next.js + Tailwind + shadcn (`components.json`); deps: **framer-motion, react-confetti, react-snowfall, @zachleat/snow-fall, cobe (3D globe), dotted-map, next-themes, lucide-react**; pages `/`, `/vps`, `/dedicated`, `/webhosting`, `/games`, `/discord`, `/privacy-policy`, `/terms-of-services`, `/admin`, `/api`; 187 files |
+| `nobitahost-wab-main.zip` | Node+EJS hosting site; `src/`: blog, cloudflare, github, youtube, social, wallpapers, obsidian, markdown, mailer, settings, system, validate, commands, db; deps incl. **otplib** (2FA), qrcode, better-sqlite3 |
+| `Thame-main.zip` | "Obsidian" Laravel/Livewire hosting theme (builtbybit): `thame.zip` 127 files (`theme.php` 47 KB), `pages.zip` 77 files (About page editor etc.), `Extras.zip` 324 files (**AntiAdblock, CookieBanner, Credit, Blog**), Trustpilot star SVGs |
+| `free-claude-code-main.zip` | Python 3.14 + `uv`; "50 ToS-friendly providers, 1.3B+ free tokens/month", one model catalog, 10 coding-agent clients, **automatic failover to next configured model**; pytest + e2e + smoke tests + ruff + ty |
+
+**Naya decision (owner se confirm hoke):**
+- VPS/VDS = **hamesha KVM VM (Proxmox-jaisa)**, kabhi LXC/LXD container nahi → sab kuch installable, nested virt exposed.
+- LXC/LXD sirf **Bot Hosting** product me (sasta).
+- Marketing site **built-in** (alag project nahi).
+- Products: **VPS + VDS + RDP (Windows + Linux XRDP) + Bot Hosting**. **Minecraft/game servers OUT.**
+- Animations: **Premium subtle default + user-toggle "Fun Mode"** (confetti/particles/3D tilt/sounds).
+
+
+=== PROMPT END ===
+
+
+## 📌 Iske baad wale chats me ye chhote prompts use karna
+
+**Phase continue karne ke liye:**
+> "Continue with Phase N of the StarCloud build. Follow the master spec exactly. Don't repeat earlier phases. Output files, endpoints, migration, verification steps, tests."
+
+**Bug fix ke liye:**
+> "In StarCloud, `<file>` me `<problem>` aa raha hai. Ye error log hai: `<paste>`. Root cause batao, fix karo, aur test add karo jo is bug ko dobara pakde."
+
+**Naya feature add karne ke liye:**
+> "Add `<feature>` to StarCloud. Follow the existing service-layer architecture, HKVM theme tokens, role/RBAC rules (owner-only for destructive ops), activity logging, validation, and add Vitest tests. Output files changed + verification steps."
+
