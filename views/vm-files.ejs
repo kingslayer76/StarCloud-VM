@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <link rel="icon" href="<%= siteLogo %>" type="image/png">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/admin.css">
+  <style>
+    .fm-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+    .fm-path { flex:1; min-width:220px; font-family: ui-monospace, monospace; }
+    .fm-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .fm-table th, .fm-table td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border-subtle); }
+    .fm-table tr:hover td { background: rgba(255,255,255,0.03); }
+    .fm-name { cursor:pointer; color: var(--text-primary); }
+    .fm-name.dir { color:#7dd3fc; font-weight:600; }
+    .fm-actions button { margin-right:4px; }
+    .fm-msg { margin:8px 0; padding:10px 12px; border-radius:8px; display:none; font-size:13px; }
+    .fm-msg.err { display:block; background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.4); }
+    .fm-msg.ok { display:block; background:rgba(34,197,94,.12); border:1px solid rgba(34,197,94,.4); }
+    .fm-modal { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; z-index:50; padding:16px; }
+    .fm-modal.open { display:flex; }
+    .fm-modal-box { width:min(900px,100%); max-height:90vh; display:flex; flex-direction:column; gap:10px; background:var(--bg-card,#14141c); border:1px solid var(--border-subtle); border-radius:12px; padding:16px; }
+    .fm-modal textarea { width:100%; min-height:50vh; font-family: ui-monospace, monospace; font-size:13px; }
+    .fm-hint { font-size:12px; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+<div class="admin-wrapper">
+  <% if (isAdmin) { %><%- include('partials/admin/sidebar') %><% } else { %><%- include('partials/users/sidebar') %><% } %>
+
+  <div class="admin-main">
+    <%- include('partials/admin/header') %>
+
+    <div class="admin-content">
+      <div class="page-header">
+        <div class="page-title-section">
+          <h1 class="page-title">File Manager</h1>
+          <p class="page-subtitle">VM <strong>#<%= vm.vm_id %></strong> — <%= vm.vm_name %> (status: <%= vm.status %>). Files are read and written over SFTP (secure file transfer) using the VM's own SSH login.</p>
+        </div>
+        <div class="page-actions">
+          <a href="<%= backUrl %>" class="btn btn-outline">Back to VM</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="fm-toolbar">
+          <button class="btn btn-ghost btn-sm" id="fmUp" title="Go to parent folder">Up</button>
+          <input class="input fm-path" id="fmPath" value="<%= defaultPath %>" aria-label="Current folder path">
+          <button class="btn btn-outline btn-sm" id="fmGo">Open</button>
+          <button class="btn btn-outline btn-sm" id="fmRefresh">Refresh</button>
+          <button class="btn btn-outline btn-sm" id="fmMkdir">New folder</button>
+          <label class="btn btn-primary btn-sm" style="cursor:pointer;">
+            Upload file
+            <input type="file" id="fmUpload" style="display:none;">
+          </label>
+        </div>
+        <div class="fm-hint">Upload limit: <%= maxUploadMb %> MB per file. Text files up to <%= maxEditKb %> KB can be edited in the browser; other files download as-is.</div>
+        <div class="fm-msg" id="fmMsg"></div>
+        <div id="fmStatus" class="fm-hint" style="margin-top:8px;"></div>
+        <div style="overflow-x:auto; margin-top:8px;">
+          <table class="fm-table">
+            <thead><tr><th>Name</th><th>Size</th><th>Permissions</th><th>Modified</th><th>Actions</th></tr></thead>
+            <tbody id="fmRows"><tr><td colspan="5">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <%- include('partials/admin/footer') %>
+  </div>
+</div>
+
+<div class="fm-modal" id="fmEditor">
+  <div class="fm-modal-box">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+      <strong id="fmEditTitle">Edit file</strong>
+      <span class="fm-hint" id="fmEditInfo"></span>
+    </div>
+    <textarea id="fmEditText" spellcheck="false"></textarea>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button class="btn btn-ghost" id="fmEditCancel">Cancel</button>
+      <button class="btn btn-primary" id="fmEditSave">Save file</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const VM_ID = <%- JSON.stringify(vm.vm_id) %>;
+const DEFAULT_PATH = <%- JSON.stringify(defaultPath).replace(/</g, '\\u003c') %>;
+const API = `/api/vms/${VM_ID}/files`;
+let currentPath = DEFAULT_PATH;
+let editingPath = null;
+
+const $ = (id) => document.getElementById(id);
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function fmtSize(n) {
+  if (n === null || n === undefined) return '';
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
+  if (n < 1073741824) return (n / 1048576).toFixed(1) + ' MB';
+  return (n / 1073741824).toFixed(2) + ' GB';
+}
+function msg(text, kind) {
+  const el = $('fmMsg');
+  el.textContent = text;
+  el.className = 'fm-msg ' + (kind === 'ok' ? 'ok' : 'err');
+  if (kind === 'ok') setTimeout(() => { el.className = 'fm-msg'; }, 3000);
+}
+function joinPath(dir, name) { return (dir.endsWith('/') ? dir : dir + '/') + name; }
+function parentOf(p) {
+  const parts = p.split('/').filter(Boolean); parts.pop();
+  return '/' + parts.join('/');
+}
+
+async function api(method, url, body) {
+  const opts = { method, credentials: 'same-origin', headers: {} };
+  if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const res = await fetch(url, opts);
+  let data = {};
+  try { data = await res.json(); } catch (e) { /* non-JSON */ }
+  if (!res.ok) throw new Error(data.error || ('Request failed (' + res.status + ')'));
+  return data;
+}
+
+async function load(path) {
+  $('fmStatus').textContent = 'Loading ' + path + ' …';
+  try {
+    const data = await api('GET', `${API}/list?path=${encodeURIComponent(path)}`);
+    currentPath = data.path;
+    $('fmPath').value = currentPath;
+    $('fmStatus').textContent = data.entries.length + ' item(s) in ' + currentPath;
+    renderRows(data.entries);
+  } catch (e) {
+    $('fmRows').innerHTML = '<tr><td colspan="5">Cannot show this folder.</td></tr>';
+    $('fmStatus').textContent = '';
+    msg(e.message, 'err');
+  }
+}
+
+function renderRows(entries) {
+  if (!entries.length) { $('fmRows').innerHTML = '<tr><td colspan="5">This folder is empty.</td></tr>'; return; }
+  $('fmRows').innerHTML = entries.map(e => {
+    const full = joinPath(currentPath, e.name);
+    const isDir = e.type === 'dir';
+    const icon = isDir ? '📁 ' : (e.type === 'link' ? '🔗 ' : '📄 ');
+    const nameAttr = encodeURIComponent(full);
+    return `<tr>
+      <td><span class="fm-name ${isDir ? 'dir' : ''}" data-path="${nameAttr}" data-type="${e.type}">${icon}${esc(e.name)}</span></td>
+      <td>${isDir ? '—' : fmtSize(e.size)}</td>
+      <td>${esc(e.mode)}</td>
+      <td>${e.mtime ? esc(new Date(e.mtime).toLocaleString()) : ''}</td>
+      <td class="fm-actions">
+        ${isDir ? '' : `<a class="btn btn-ghost btn-sm" href="${API}/download?path=${nameAttr}">Download</a>`}
+        <button class="btn btn-ghost btn-sm" data-act="rename" data-path="${nameAttr}">Rename</button>
+        <button class="btn btn-ghost btn-sm" data-act="chmod" data-path="${nameAttr}" data-mode="${esc(e.mode)}">Permissions</button>
+        <button class="btn btn-danger btn-sm" data-act="delete" data-path="${nameAttr}">Delete</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+$('fmRows').addEventListener('click', async (ev) => {
+  const nameEl = ev.target.closest('.fm-name');
+  if (nameEl) {
+    const p = decodeURIComponent(nameEl.dataset.path);
+    if (nameEl.dataset.type === 'dir') return load(p);
+    return openEditor(p);
+  }
+  const btn = ev.target.closest('button[data-act]');
+  if (!btn) return;
+  const p = decodeURIComponent(btn.dataset.path);
+  try {
+    if (btn.dataset.act === 'rename') {
+      const to = prompt('New full path for this item:', p);
+      if (!to || to === p) return;
+      await api('POST', `${API}/rename`, { from: p, to });
+      msg('Renamed.', 'ok');
+    } else if (btn.dataset.act === 'chmod') {
+      const mode = prompt('Permissions in octal (for example 644 for files, 755 for folders):', btn.dataset.mode);
+      if (!mode) return;
+      await api('POST', `${API}/chmod`, { path: p, mode });
+      msg('Permissions changed to ' + mode + '.', 'ok');
+    } else if (btn.dataset.act === 'delete') {
+      if (!confirm('Delete ' + p + ' ?\nFolders are deleted with everything inside. This cannot be undone.')) return;
+      await api('POST', `${API}/delete`, { path: p });
+      msg('Deleted.', 'ok');
+    }
+    load(currentPath);
+  } catch (e) { msg(e.message, 'err'); }
+});
+
+async function openEditor(p) {
+  try {
+    const data = await api('GET', `${API}/read?path=${encodeURIComponent(p)}`);
+    editingPath = data.path;
+    $('fmEditTitle').textContent = 'Edit: ' + data.path;
+    $('fmEditInfo').textContent = '';
+    $('fmEditText').value = data.content;
+    $('fmEditor').classList.add('open');
+  } catch (e) {
+    msg(e.message + ' — use Download to get this file.', 'err');
+  }
+}
+$('fmEditCancel').onclick = () => $('fmEditor').classList.remove('open');
+$('fmEditSave').onclick = async () => {
+  try {
+    await api('PUT', `${API}/write`, { path: editingPath, content: $('fmEditText').value });
+    $('fmEditor').classList.remove('open');
+    msg('Saved ' + editingPath, 'ok');
+    load(currentPath);
+  } catch (e) { $('fmEditInfo').textContent = e.message; }
+};
+
+$('fmGo').onclick = () => load($('fmPath').value.trim() || '/');
+$('fmPath').addEventListener('keydown', (e) => { if (e.key === 'Enter') load($('fmPath').value.trim() || '/'); });
+$('fmUp').onclick = () => load(parentOf(currentPath));
+$('fmRefresh').onclick = () => load(currentPath);
+$('fmMkdir').onclick = async () => {
+  const name = prompt('New folder name (created inside ' + currentPath + '):');
+  if (!name) return;
+  try {
+    await api('POST', `${API}/mkdir`, { path: joinPath(currentPath, name.trim()) });
+    msg('Folder created.', 'ok');
+    load(currentPath);
+  } catch (e) { msg(e.message, 'err'); }
+};
+$('fmUpload').addEventListener('change', async (ev) => {
+  const file = ev.target.files[0];
+  ev.target.value = '';
+  if (!file) return;
+  if (file.size > <%= maxUploadMb %> * 1048576) { msg('File is larger than <%= maxUploadMb %> MB', 'err'); return; }
+  $('fmStatus').textContent = 'Uploading ' + file.name + ' (' + fmtSize(file.size) + ') …';
+  try {
+    const target = joinPath(currentPath, file.name);
+    const res = await fetch(`${API}/upload?path=${encodeURIComponent(target)}`, {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/octet-stream' }, body: file
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+    msg('Uploaded ' + file.name, 'ok');
+    load(currentPath);
+  } catch (e) { msg(e.message, 'err'); $('fmStatus').textContent = ''; }
+});
+
+load(currentPath);
+</script>
+</body>
+</html>

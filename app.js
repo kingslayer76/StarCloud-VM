@@ -20,6 +20,9 @@ function toggleFlag(value, defaultValue = 1) {
   return value ? 1 : 0;
 }
 const { Client } = require('ssh2');
+const { detectKvm } = require('./services/capabilities');
+const { checkCapacity } = require('./services/capacity');
+const { initAuditTable } = require('./services/audit');
 require('dotenv').config();
 const licenses = require("./licenses");
 
@@ -366,6 +369,40 @@ app.use(session({
   }
 }));
 
+// ---- Maintenance mode (admins keep full access; everyone else sees a notice) ----
+let maintenanceState = { enabled: false, message: '' };
+const getMaintenance = () => ({ ...maintenanceState });
+function loadMaintenanceState() {
+  db.all(`SELECT setting_key, setting_value FROM settings WHERE setting_key IN ('maintenance_mode', 'maintenance_message')`, (err, rows) => {
+    if (err || !rows) return;
+    const map = Object.fromEntries(rows.map(r => [r.setting_key, r.setting_value]));
+    maintenanceState = { enabled: map.maintenance_mode === '1', message: map.maintenance_message || '' };
+  });
+}
+function setMaintenance(enabled, message) {
+  maintenanceState = { enabled: !!enabled, message: message || '' };
+  const upsert = `INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)
+    ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = CURRENT_TIMESTAMP`;
+  return new Promise((resolve, reject) => {
+    db.run(upsert, ['maintenance_mode', enabled ? '1' : '0'], (e1) => {
+      if (e1) return reject(e1);
+      db.run(upsert, ['maintenance_message', maintenanceState.message], (e2) => (e2 ? reject(e2) : resolve()));
+    });
+  });
+}
+const MAINTENANCE_OPEN_PATHS = ['/login', '/api/login', '/api/logout', '/logout', '/favicon.ico'];
+app.use((req, res, next) => {
+  if (!maintenanceState.enabled) return next();
+  const p = req.path;
+  if (p.startsWith('/images/') || p.startsWith('/css/') || p.startsWith('/js/') || MAINTENANCE_OPEN_PATHS.includes(p)) return next();
+  if (req.session && req.session.role === 'admin') return next();
+  const msg = maintenanceState.message || 'StarCloud is under maintenance. Please try again shortly.';
+  if (p.startsWith('/api/')) return res.status(503).json({ error: 'Maintenance mode', message: msg });
+  res.status(503).send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Maintenance - StarCloud</title>
+<style>body{font-family:system-ui,sans-serif;background:#0a0a0f;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}h1{font-size:28px}p{color:#aaa;max-width:520px}</style>
+</head><body><div><h1>Under maintenance</h1><p>${String(msg).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</p></div></body></html>`);
+});
+
 // Initialize License Middleware
 licenses.initLicenseMiddleware(app);
 
@@ -379,6 +416,24 @@ const vmProcesses = new Map();
 const qemuStdins = new Map();
 
 // Initialize Database
+// After the first admin is created, remove the plain-text initial password from .env
+// (the account keeps only a bcrypt hash).
+function scrubAdminPasswordFromEnv() {
+  const envFile = path.join(__dirname, '.env');
+  try {
+    delete process.env.STARCLOUD_ADMIN_PASSWORD;
+    if (!fs.existsSync(envFile)) return;
+    const lines = fs.readFileSync(envFile, 'utf8').split('\n');
+    const kept = lines.filter(l => !/^\s*STARCLOUD_ADMIN_PASSWORD\s*=/.test(l));
+    if (kept.length !== lines.length) {
+      fs.writeFileSync(envFile, kept.join('\n'), { mode: 0o600 });
+      console.log('✓ Removed initial admin password from .env (kept only as a hash in the database)');
+    }
+  } catch (e) {
+    console.warn('Could not clean .env:', e.message);
+  }
+}
+
 function initializeDatabase() {
   // Enable WAL mode to reduce locking issues
   db.run('PRAGMA journal_mode = WAL', (err) => {
@@ -482,7 +537,8 @@ function initializeDatabase() {
       { name: 'dns_secondary', def: "TEXT DEFAULT '8.8.4.4'" },
       { name: 'iso_attached', def: 'TEXT' },
       { name: 'boot_from_iso', def: 'BOOLEAN DEFAULT 0' },
-      { name: 'bridge_device', def: "TEXT DEFAULT 'vmbr0'" }
+      { name: 'bridge_device', def: "TEXT DEFAULT 'vmbr0'" },
+      { name: 'nested_kvm', def: 'BOOLEAN DEFAULT 0' }
     ];
 
     missingColumns.forEach(col => {
@@ -598,12 +654,22 @@ function initializeDatabase() {
       }
     });
 
-    db.get(`SELECT * FROM users WHERE username = 'admin'`, (err, row) => {
+    // First-run admin account: installer may set STARCLOUD_ADMIN_USER / STARCLOUD_ADMIN_PASSWORD.
+    // If not set, the default account is admin / admin (change it right after install).
+    const initialAdminUser = (process.env.STARCLOUD_ADMIN_USER || 'admin').trim() || 'admin';
+    const initialAdminPass = process.env.STARCLOUD_ADMIN_PASSWORD || 'admin';
+    db.get(`SELECT * FROM users WHERE role = 'admin' LIMIT 1`, (err, row) => {
       if (!row) {
-        const hashedPassword = bcrypt.hashSync('admin', 10);
+        const hashedPassword = bcrypt.hashSync(initialAdminPass, 10);
         db.run(`INSERT INTO users (username, password, email, role) VALUES (?, ?, ?, ?)`,
-          ['admin', hashedPassword, 'admin@starcloud.local', 'admin']);
-        console.log('✓ Default admin created: admin/admin (role: admin)');
+          [initialAdminUser, hashedPassword, 'admin@starcloud.local', 'admin'], (insErr) => {
+            if (insErr) return console.error('Admin account creation failed:', insErr.message);
+            console.log(`✓ Admin account created: ${initialAdminUser} (role: admin)`);
+            if (initialAdminPass === 'admin') {
+              console.warn('⚠ Default password "admin" is in use. Change it from the Profile page now.');
+            }
+            if (process.env.STARCLOUD_ADMIN_PASSWORD) scrubAdminPasswordFromEnv();
+          });
       } else {
         console.log(`✓ Admin user exists: ${row.username} (role: ${row.role})`);
       }
@@ -2187,7 +2253,7 @@ app.put('/api/vms/:vm_id/edit', checkAuth, (req, res) => {
   const {
     vm_name, hostname, memory, cpus, cpu_sockets, cpu_cores, cpu_threads, cpu_model,
     custom_cpu_name, username, password,
-    disk_size, enable_acpi, enable_kvm, extra_args,
+    disk_size, enable_acpi, enable_kvm, nested_kvm, extra_args,
     network_type, ipv4_address, ipv4_gateway, ipv4_netmask, bridge_device,
     dns_primary, dns_secondary, ipv6_address, ipv6_gateway, mac_address, vlan_id,
     machine_type, board_name, product_name, custom_smbios_manufacturer,
@@ -2252,7 +2318,14 @@ app.put('/api/vms/:vm_id/edit', checkAuth, (req, res) => {
     if (username) { updates.push('username = ?'); values.push(username); }
     if (password) { updates.push('password = ?'); values.push(password); }
     if (enable_acpi !== undefined) { updates.push('enable_acpi = ?'); values.push(toggleFlag(enable_acpi, 1)); }
-    if (enable_kvm !== undefined) { updates.push('enable_kvm = ?'); values.push(toggleFlag(enable_kvm, 1)); }
+    if (enable_kvm !== undefined) {
+      const hostKvm = detectKvm().kvmAvailable;
+      updates.push('enable_kvm = ?'); values.push(hostKvm ? toggleFlag(enable_kvm, 1) : 0);
+    }
+    if (nested_kvm !== undefined) {
+      const caps = detectKvm();
+      updates.push('nested_kvm = ?'); values.push(caps.nestedAvailable ? toggleFlag(nested_kvm, 0) : 0);
+    }
     if (extra_args !== undefined) { updates.push('extra_args = ?'); values.push(extra_args || ''); }
     if (network_type) { updates.push('network_type = ?'); values.push(network_type); }
     if (ipv4_address !== undefined) { updates.push('ipv4_address = ?'); values.push(ipv4_address); }
@@ -2657,7 +2730,7 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
     cpu_sockets, cpu_cores, cpu_threads, cpu_model, custom_cpu_name,
     machine_type, board_name, product_name, custom_smbios_manufacturer,
     smbios_manufacturer, smbios_product, smbios_version, smbios_serial,
-    enable_acpi, enable_kvm, extra_args,
+    enable_acpi, enable_kvm, nested_kvm, extra_args,
     network_type, ipv4_address, gateway, netmask, bridge_device,
     dns_servers, ssh_port, ssh_port_static, http_port,
     ipv6_address, ipv6_gateway, mac_address, vlan_id, owner_id
@@ -2750,6 +2823,18 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
   const netType = network_type || 'nat';
   const macAddr = mac_address || generateMACAddress();
   const vmOwner = owner_id || req.session.userId; // Use selected owner if provided, else current user
+
+  // KVM / nested KVM: only when the host really has KVM; otherwise forced OFF
+  const hostCaps = detectKvm();
+  const kvmOn = hostCaps.kvmAvailable ? toggleFlag(enable_kvm, 1) : 0;
+  const nestedOn = hostCaps.nestedAvailable && kvmOn ? toggleFlag(nested_kvm, 0) : 0;
+  if (!hostCaps.kvmAvailable && (toggleFlag(enable_kvm, 1) || toggleFlag(nested_kvm, 0))) {
+    console.warn('[Create] KVM requested but host has no KVM; created with KVM OFF (software emulation)');
+  }
+
+  // Capacity guard: refuse if the host cannot hold this VM's RAM / vCPUs
+  const capacityError = await checkCapacity(db, { memoryMb: memory, vcpus: cpuCount });
+  if (capacityError) return res.status(409).json({ error: capacityError, code: 'CAPACITY' });
   
   // Handle SSH port - prefer ssh_port_static if provided, else use ssh_port
   const sshPortVal = ssh_port_static || ssh_port || 22;
@@ -2763,11 +2848,11 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
       disk_size, img_file, seed_file, disk_file,
       status, uptime, node_name,
       smbios_manufacturer, smbios_product, smbios_version, smbios_serial,
-      extra_args, enable_acpi, enable_kvm,
+      extra_args, enable_acpi, enable_kvm, nested_kvm,
       network_type, ipv4_address, ipv4_gateway, ipv4_netmask,
       dns_servers, dns_primary, dns_secondary, ssh_port, ssh_port_static, http_port,
       ipv6_address, ipv6_gateway, mac_address, bridge_device, vlan_id, owner_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       vm_name, templateName, os_template || (isCloudInit ? 'cloud-init' : 'iso-installer'), hostname, 
       username, password, memory, cpuCount, sockets, cores, threads, cpuModelToUse, custom_cpu_name || null,
@@ -2776,7 +2861,7 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
       'stopped', 0, 'localhost',
       smbios_manufacturer || 'QEMU', smbios_product || 'KVM Virtual Machine',
       smbios_version || '1.0', smbios_serial || `vm-${Date.now()}`,
-      extra_args || '', toggleFlag(enable_acpi, 1), toggleFlag(enable_kvm, 1),
+      extra_args || '', toggleFlag(enable_acpi, 1), kvmOn, nestedOn,
       netType, ipv4_address || null, ipv4_gateway || null, ipv4_netmask || '255.255.255.0',
       dns_servers || '8.8.8.8,8.8.4.4', dns_primary || '8.8.8.8', dns_secondary || '8.8.4.4', null, sshPortVal, http_port || 80,
       ipv6_address || null, ipv6_gateway || null,
@@ -3061,31 +3146,7 @@ app.post('/api/vms/:vm_id/stop', checkAuth, (req, res) => {
 
     try {
       console.log(`[API] Stopping VM ${vm.vm_id} (${vm.vm_name}) by user ${userId}`);
-      const pidFile = path.join(VM_DIR, `vm-${vm.vm_id}.pid`);
-      if (fs.existsSync(pidFile)) {
-        const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim());
-        try {
-          // On Windows, use taskkill; on Unix, use process group kill
-          if (isWindows) {
-            execFile('taskkill', ['/F', '/PID', String(pid)], (err) => { if (err) console.warn(`[VM-${vm.vm_id}] taskkill failed:`, err.message); });
-          } else {
-            // Kill entire process group (- prefix means pgid)
-            process.kill(-pid, 'SIGTERM');
-            setTimeout(() => {
-              try {
-                process.kill(-pid, 'SIGKILL');
-              } catch (e) {}
-            }, 3000);
-          }
-        } catch (e) {
-          // Process may already be dead
-        }
-      }
-
-      vmProcesses.delete(vm.vm_id);
-      qemuStdins.delete(vm.vm_id);
-      db.run(`UPDATE vms SET status = 'stopped' WHERE vm_id = ?`, [vm.vm_id]);
-      logVMAction(vm.vm_id, 'stop', 'stopped', `VM stopped`);
+      stopVmProcess(vm);
       console.log(`[API Success] VM ${vm.vm_id} stopped successfully`);
       res.json({ success: true, message: `VM ${vm.vm_name} (ID:${vm.vm_id}) stopped` });
     } catch (error) {
@@ -3376,6 +3437,35 @@ app.get('/api/admin/dashboard', checkAuth, checkAdmin, (req, res) => {
 });
 
 // HELPER FUNCTIONS
+
+// Stop a VM's QEMU process group and mark it stopped (used by the stop button and emergency stop)
+function stopVmProcess(vm) {
+  const pidFile = path.join(VM_DIR, `vm-${vm.vm_id}.pid`);
+  if (fs.existsSync(pidFile)) {
+    const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim());
+    try {
+      if (isWindows) {
+        execFile('taskkill', ['/F', '/PID', String(pid)], (err) => { if (err) console.warn(`[VM-${vm.vm_id}] taskkill failed:`, err.message); });
+      } else {
+        process.kill(-pid, 'SIGTERM');
+        setTimeout(() => { try { process.kill(-pid, 'SIGKILL'); } catch (e) {} }, 3000);
+      }
+    } catch (e) { /* process may already be dead */ }
+  }
+  vmProcesses.delete(vm.vm_id);
+  qemuStdins.delete(vm.vm_id);
+  db.run(`UPDATE vms SET status = 'stopped' WHERE vm_id = ?`, [vm.vm_id]);
+  logVMAction(vm.vm_id, 'stop', 'stopped', `VM stopped`);
+  return true;
+}
+
+// Start a VM for host operations (reboot-all); mirrors the start route's status update
+async function startVmForOps(vm) {
+  const result = await startQemuVM(vm);
+  if (result && result.success === false) throw new Error(result.error || 'VM failed to start');
+  db.run(`UPDATE vms SET status = 'running', uptime = 0 WHERE vm_id = ?`, [vm.vm_id]);
+  return true;
+}
 
 function logVMAction(vm_id, action, status, message) {
   db.run(
@@ -4026,8 +4116,15 @@ async function startQemuVM(vm) {
       
       // Build QEMU command line as array (safer than string concatenation).
       // Honour the "KVM Acceleration" toggle instead of always forcing KVM.
-      const kvmAccelEnabled = toggleFlag(vm.enable_kvm, 1) === 1;
-      const effectiveCpu = kvmAccelEnabled ? cpuToUse : (cpuToUse === 'host' ? 'qemu64' : cpuToUse);
+      // KVM is only used when the host really has it (see services/capabilities.js)
+      const hostCaps = detectKvm();
+      const kvmAccelEnabled = hostCaps.kvmAvailable && toggleFlag(vm.enable_kvm, 1) === 1;
+      let effectiveCpu = kvmAccelEnabled ? cpuToUse : (cpuToUse === 'host' ? 'qemu64' : cpuToUse);
+      // Nested KVM: lets the guest run its own KVM (+vmx on Intel, +svm on AMD)
+      if (kvmAccelEnabled && toggleFlag(vm.nested_kvm, 0) === 1 && hostCaps.nestedFlag) {
+        effectiveCpu = `${effectiveCpu},${hostCaps.nestedFlag}`;
+        console.log(`[VM-${vm.vm_id}] Nested KVM: enabled (${hostCaps.nestedFlag})`);
+      }
       const args = [
         `-m`, `${vm.memory}`,
         `-smp`, `cores=${vm.cpu_cores},threads=${vm.cpu_threads},sockets=${vm.cpu_sockets}`,
@@ -4630,6 +4727,14 @@ app.post('/api/ssh/command', checkAuth, (req, res) => {
 });
 
 // ============= 404 HANDLER =============
+// Feature modules
+require('./routes/files')(app, { db });
+require('./routes/ops')(app, {
+  db, checkAdmin,
+  stopVmProcess, startVm: startVmForOps,
+  getMaintenance, setMaintenance
+});
+
 app.use((req, res) => {
   res.status(404).render('users/404', {
     title: 'Page Not Found - StarCloud Panel',
@@ -4639,6 +4744,8 @@ app.use((req, res) => {
 
 // START SERVER
 initializeDatabase();
+initAuditTable(db).catch(e => console.error('[Audit] table init failed:', e.message));
+loadMaintenanceState();
 
 // WebSocket handler for VM console
 const vmConsoles = new Map();

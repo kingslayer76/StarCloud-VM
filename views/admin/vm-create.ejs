@@ -649,10 +649,20 @@
                     <input type="checkbox" class="toggle-input" name="enable_kvm" id="enable_kvm" value="1" checked>
                     <div class="toggle-track"><div class="toggle-thumb"></div></div>
                     <div style="flex: 1;">
-                      <div class="toggle-label" style="font-size: 13px; color: var(--text-primary);">KVM Acceleration</div>
-                      <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Use hardware virtualization (if available)</div>
+                      <div class="toggle-label" style="font-size: 13px; color: var(--text-primary);">KVM On / Off</div>
+                      <div id="kvmHint" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">KVM = hardware virtualization for fast VMs. Checking this host...</div>
                     </div>
                   </label>
+
+                  <label class="toggle-switch">
+                    <input type="checkbox" class="toggle-input" name="nested_kvm" id="enable_nested" value="1">
+                    <div class="toggle-track"><div class="toggle-thumb"></div></div>
+                    <div style="flex: 1;">
+                      <div class="toggle-label" style="font-size: 13px; color: var(--text-primary);">Nested KVM On / Off</div>
+                      <div id="nestedHint" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Lets software inside this VM run its own VMs. Needs host KVM and KVM On.</div>
+                    </div>
+                  </label>
+                  <div id="kvmHostBanner" style="display: none; font-size: 12px; padding: 10px; border-radius: 8px; background: rgba(234,179,8,.12); border: 1px solid rgba(234,179,8,.4);"></div>
                 </div>
               </div>
             </div>
@@ -1113,6 +1123,7 @@ function buildReview() {
           ${reviewRow('Manufacturer', data.smbios_manufacturer)}
           ${reviewRow('Product', data.smbios_product)}
           ${reviewRow('ACPI', data.enable_acpi ? 'Enabled' : 'Disabled')}
+          ${reviewRow('Nested KVM', data.nested_kvm ? 'On' : 'Off')}
         </div>
       </div>`;
   }
@@ -1132,6 +1143,36 @@ function getOwnerName(ownerId) {
   return option?.textContent || '—';
 }
 
+// Read host KVM capability from the server and lock the KVM options when the host has no KVM
+(async function initKvmHostState() {
+  const kvm = document.getElementById('enable_kvm');
+  const nested = document.getElementById('enable_nested');
+  const kvmHint = document.getElementById('kvmHint');
+  const nestedHint = document.getElementById('nestedHint');
+  const banner = document.getElementById('kvmHostBanner');
+  try {
+    const res = await fetch('/api/admin/operations', { credentials: 'same-origin' });
+    const d = await res.json();
+    const caps = d.capabilities || {};
+    if (!caps.kvmAvailable) {
+      kvm.checked = false; kvm.disabled = true;
+      nested.checked = false; nested.disabled = true;
+      kvmHint.textContent = 'Locked OFF: this host has no KVM. VMs will run with slow software emulation.';
+      nestedHint.textContent = 'Locked OFF: nested KVM needs host KVM.';
+      banner.style.display = 'block';
+      banner.textContent = 'This host does not support KVM. ' + (caps.reasons || []).join(' ');
+    } else {
+      kvmHint.textContent = 'Hardware virtualization (' + (caps.virtFlag === 'svm' ? 'AMD-V' : 'Intel VT-x') + ') is available on this host.';
+      if (!caps.hostNestedOn) {
+        banner.style.display = 'block';
+        banner.textContent = 'Host nested KVM module is OFF. Nested KVM VMs will not work until the installer or admin enables nested mode on the host.';
+      }
+    }
+  } catch (e) {
+    kvmHint.textContent = 'Could not check host KVM status (' + e.message + ').';
+  }
+})();
+
 function collectFormData() {
   const form = document.getElementById('createVMForm');
   const fd = new FormData(form);
@@ -1142,6 +1183,7 @@ function collectFormData() {
   if (osTemplateInput && osTemplateInput.value) data.os_template = osTemplateInput.value;
   
   data.enable_kvm = document.getElementById('enable_kvm')?.checked ? 1 : 0;
+  data.nested_kvm = document.getElementById('enable_nested')?.checked ? 1 : 0;
   data.enable_acpi = document.getElementById('enable_acpi')?.checked ? 1 : 0;
   
   if (!data.custom_password || String(data.custom_password).length < 8) {

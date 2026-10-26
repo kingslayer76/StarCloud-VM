@@ -8,3 +8,6 @@ data/session_secret
 data/*.key
 backups/
 .env.local
+
+# Local secrets: never commit (installer writes admin password here)
+.env

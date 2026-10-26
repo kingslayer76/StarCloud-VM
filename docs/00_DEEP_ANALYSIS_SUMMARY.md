@@ -489,3 +489,87 @@ unzip -l Analyse-File/*.zip              → 12 archives; HVM-1.rar = ZIP magic
 ---
 
 *Is file ko padhne ke baad aapko pura feature map, sari galtiyan aur aage ka plan ek hi jagah mil jata hai. Agla kadam: Section 12 ke jawaab → Batch 1 start.*
+
+---
+
+## 14. Section 12 ke jawab (user ne 26 Oct 2026 ko diye)
+
+| # | Sawaal | Jawab / ab kya kiya |
+|---|---|---|
+| 1 | KVM server | "Baad mein dunga" — abhi real VM test nahi. Sandbox mein `/dev/kvm` nahi hai, isliye VM boot test pending. |
+| 3 | KVM-less host | Installer detect karega; panel ka **KVM On / Off** option hamesha OFF/locked rahega; **Nested KVM On / Off** bhi locked. VM tab bhi banega (software emulation, slow). Server side par bhi forced OFF. |
+| 4 | File manager scope | **Sabhi users** (admin + customer, jinka VM hai). Guest agent nahi; SFTP (Secure File Transfer Protocol) VM ke SSH login se. |
+| 6 | Build order | Batch 1 + pehle 3 deep features (file manager, nested KVM, CPU model) + aur features dhoondhna. Analysis ke baad build. |
+| 8 | Default admin | Installer par account setup (Pterodactyl jaisa): Enter = `admin` / `admin`; kuch likhoge to wahi account banega. |
+| 5 | Discord bot | Poori explanation Section 16 mein. Bot abhi build nahi hua (Batch 4). |
+
+---
+
+## 15. Build status (is round mein kya bana)
+
+### 15.1 Naye files
+| File | Kaam |
+|---|---|
+| `services/capabilities.js` | Host KVM detect: `/dev/kvm`, CPU flag (`vmx` Intel / `svm` AMD), nested module flag. 10 sec cache. |
+| `services/capacity.js` | Capacity guard: VM ki RAM host RAM - 1024 MB (host ke liye) - sab VMs ki RAM se zyada nahi; vCPU limit = logical CPU x 4. |
+| `services/audit.js` | Audit log table `audit_logs`; kaun, kya, kab, IP, result. CSV export. |
+| `services/files.js` | File manager ka SFTP backend (list, read, write, mkdir, rename, chmod, delete, upload, download). Edit limit 2 MB, upload limit 2 GB, binary file edit refuse. |
+| `routes/files.js` | `/api/vms/:vm_id/files/...` + pages `/vm/:id/files` (customer) aur `/admin/vm/:id/files` (admin). Owner ya admin hi access kar sakta hai. VM chal raha ho tabhi. |
+| `routes/ops.js` | Operations APIs: host report, maintenance ON/OFF, emergency stop-all / reboot-all (typed confirm), audit list + CSV. Page `/admin/operations`. |
+| `views/vm-files.ejs` | File manager UI (browse, open, edit text, upload, download, rename, permissions, delete). |
+| `views/admin/operations.ejs` | Operations UI (KVM report, maintenance, emergency, audit). |
+| `install.sh` | Installer: KVM check, nested KVM config (modprobe), packages, Node 20, admin account prompt, `.env` (mode 600), npm, systemd service. |
+
+### 15.2 Badli hui purani files
+- `app.js`: KVM forced OFF agar host par KVM nahi; nested KVM flag (`+vmx`/`+svm`) QEMU command mein; `nested_kvm` column (migration); create form mein KVM + nested save; capacity guard; stop logic `stopVmProcess()` mein refactor; maintenance gate (503 page / JSON); first-run admin `STARCLOUD_ADMIN_USER` / `STARCLOUD_ADMIN_PASSWORD` se; install ke baad plain password `.env` se hata diya jata hai.
+- `views/admin/vm-create.ejs`: "KVM On / Off" label, "Nested KVM On / Off" toggle, host check (no KVM = locked OFF + banner), review mein nested.
+- `views/admin/vm-edit.ejs`: label rename + nested toggle (VM band ho tab tak lock).
+- `views/admin/vm-detail.ejs`, `views/users/vm-detail.ejs`: "Files" button.
+- `views/partials/admin/sidebar.ejs`: "Operations" menu item.
+- `.gitignore`: `.env` add. `.env` ko git se untrack kiya (installer usme admin password likhta hai; file disk par rahegi).
+
+### 15.3 Test kya hua (live, sandbox, fake SSH VM ke saath)
+- KVM detect: sandbox mein KVM nahi, report sahi (`kvmAvailable: false`).
+- Maintenance: ON par anon `/dashboard` 503, `/api/vms` 503 JSON; `/login` 200; admin 200; OFF par wapas 302.
+- Emergency: galat confirm text par 400; sahi text par chala + audit entry; reboot-all (0 running) OK.
+- Capacity guard: 999999 MB request par 409 `CAPACITY` + breakdown message.
+- No-KVM host: edit route par `enable_kvm=1, nested_kvm=1` bheja, DB mein dono `0`.
+- File manager (SFTP test server asyncssh chroot ke saath): list, read, write, mkdir, rename, chmod, download, upload (disk par bytes verify), delete (root refuse), relative path 400, binary read 415, upload bina Content-Length 411, customer ko dusre ka VM 404, apna stopped VM 409, anon 401.
+- Pages: admin operations 200, admin file manager 200, customer file manager 200, customer admin page 302. Inline JS `node --check` clean.
+- Installer: temp copy mein `--skip-system --admin-user ... --admin-pass ...` chala; `.env` mode 600, admin keys likhe gaye.
+- NOT tested: real QEMU VM boot, nested KVM guest, browser click-through (UI sirf compile + JS syntax check), `install.sh` ka apt/systemd part (root + Debian chahiye).
+
+### 15.4 Abhi baaki (next batches)
+- Batch 1 bache: per-VM security scan, webhook field (Discord), LICENSE file (MIT ke liye), CPU model select ko VPS/VDS dono ke liye HKVM-style animation ke saath (abhi ek hi create form hai, usme CPU select pehle se hai).
+- Batch 2: boot log viewer, expiry/renew/suspend, coupons (sirf usage count), giveaway codes, shared IPv4 + auto port block, snapshots, backup/restore, status page, referral, flash sale.
+- Batch 3–6: automation, Discord bot (Python), premium UI + 2FA, AI (Gemini, default OFF).
+- Owner remote support aur telemetry: NAHI (user ka standing decision). Custom price per order / order table: NAHI. Tmate: NAHI. sshx: haan. RDP/XRDP: NAHI.
+
+---
+
+## 16. Discord bot — poori samajh (short forms ke bina)
+
+**Discord bot kya hai?**
+Discord ek chat app hai jahan log server (group) banate hain, aur us server mein channels (alag-alag chat rooms) hote hain. **Bot** ek program hai jo Discord par ek "robot user" ki tarah login karta hai. Ye program automatically messages padh sakta hai, jawab de sakta hai, aur kaam kar sakta hai (jaise naya channel banana, kisi ko private message bhejna).
+
+**Iski zarurat kyun hai?**
+Aapka VM selling panel customers ko Discord par bulata hai. Bot ye kaam automatic karega:
+- customer ke liye ticket channel banana (kharidari ke liye support),
+- payment ka tareeqa dikhana (UPI — Unified Payments Interface, jo India ka instant payment system hai),
+- VM ki login details private message (DM) mein bhejna,
+- admin ko naye orders ki alert dena.
+Bina bot ke ye sab aapko haath se karna padega.
+
+**Bot "chalta" kaise hai?**
+1. Discord Developer Portal (discord.com/developers) par ek "Application" banao, usme "Bot" section se **token** copy karo. Token ek lamba secret password hai — ise kisi ko na do.
+2. Bot ko apne server mein invite karo (permissions ke saath: channel banana, message bhejna).
+3. Bot ka code Python mein hoga, library `discord.py` use karke (ye Discord se baat karne ka ready-made code hai).
+4. Token aap website ke **Settings page** par daaloge; panel use database mein save karega.
+
+**"Download" ka matlab kya hai?**
+Aapne poocha tha ki "download" kya hai — yahan iska matlab hai `discord.py` library ko internet se install karna. Ye Python ka `pip install discord.py` command se hota hai: Python ke package server (PyPI — Python Package Index) se library ka code aapke server par aa jaata hai. Aapko koi file manually download karne ki zaroorat nahi; installer ye step kar dega (ya ek command se). Iske baad bot ek alag service ke roop mein chalega (systemd service), jo website se alag process hai.
+
+**Webhook kya hai (dusri cheez jo aapne bataya tha)?**
+Discord webhook ek URL hai jispar panel seedha ek message bhej deta hai (bot login ke bina). Jaise "naya VM bana" ki alert. Ye settings mein ek field hai; default khaali hai — khaali hone par kuch nahi bheja jayega.
+
+**Abhi status:** Bot abhi build nahi hua. Ye Batch 4 mein aayega. Pehle Batch 1 aur 2 poore honge.
