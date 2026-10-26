@@ -1,5 +1,9 @@
 # StarCloud — Final Feature List (2026-10-17, user decisions ke baad)
 
+> ℹ️ **UPDATED 2026-10-26:** Ye list abhi bhi kaam ki hai, lekin iske "Pending" sawaalon ke jawaab mil chuke hain:
+> webhook (D-16), file manager (D-17), "Pi S" drop (D-23), Gemini free key (D-20), XRDP remove (D-26),
+> password 8 chars (D-24), Python discord.py bot (D-25). Naye sawaal `docs/00_DEEP_ANALYSIS_SUMMARY.md` Section 12 me hain.
+
 Ye list user ke latest decisions ke hisaab se hai. Har feature ka status aur source file likha hai.
 Terms ka full form likha hai (short form nahi).
 

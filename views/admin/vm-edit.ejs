@@ -842,7 +842,7 @@ async function saveChanges(e) {
     fd.forEach((v, k) => { data[k] = v; });
     
     // Handle checkboxes
-    data.enable_kvm = 1; // Always enable KVM (removed toggle)
+    data.enable_kvm = document.getElementById('edit_kvm')?.checked ? 1 : 0;
     data.enable_acpi = document.getElementById('edit_acpi')?.checked ? 1 : 0;
     
     // Handle custom Manufacturer - override from select field

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <link rel="icon" href="<%= siteLogo %>" type="image/png">
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body class="login-page">
+  <div class="login-bg"><div class="login-bg-grid"></div></div>
+
+  <div class="login-card" style="max-width: 460px;">
+    <img src="<%= siteLogo %>" alt="<%= siteName %>" style="width:72px;height:72px;border-radius:16px;margin:0 auto 16px;display:block;">
+    <h1 style="text-align:center;font-size:22px;margin:0 0 8px;">Discord account</h1>
+    <p style="text-align:center;color:var(--text-muted);font-size:13px;line-height:1.6;">
+      You are signed in to Discord as
+      <strong style="color:var(--text-primary);"><%= pending.discordUsername %></strong>.
+    </p>
+
+    <div id="msg" class="alert" style="display:none;margin:16px 0;"></div>
+
+    <% if (pending.action === 'create') { %>
+      <p style="color:var(--text-secondary);font-size:13px;line-height:1.6;">
+        No local account exists for this Discord identity. Create one to continue.
+        <% if (!pending.discordEmail) { %>
+          Discord did not provide a verified email, so this account will not have an email address.
+        <% } %>
+      </p>
+      <button type="button" id="createBtn" class="btn btn-primary w-100">Create my account</button>
+    <% } else { %>
+      <p style="color:var(--text-secondary);font-size:13px;line-height:1.6;">
+        An account already uses your verified Discord email. Log in with your
+        <%= siteName %> password first, then link this Discord account.
+      </p>
+
+      <% if (!isLoggedIn) { %>
+        <form id="loginForm" style="margin:16px 0;">
+          <div class="form-group">
+            <label class="form-label" for="da_username">Username</label>
+            <input class="form-control" id="da_username" name="username" autocomplete="username" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="da_password">Password</label>
+            <input type="password" class="form-control" id="da_password" name="password" autocomplete="current-password" required>
+          </div>
+          <button type="submit" class="btn btn-outline w-100" id="loginBtn">Log in</button>
+        </form>
+      <% } else { %>
+        <p style="color:var(--accent-green);font-size:13px;">You are already logged in.</p>
+      <% } %>
+
+      <button type="button" id="linkBtn" class="btn btn-primary w-100" <%= isLoggedIn ? '' : 'disabled' %>>
+        Link Discord account
+      </button>
+    <% } %>
+
+    <p style="text-align:center;margin-top:18px;">
+      <a href="/login" style="color:var(--text-muted);font-size:12px;">Back to login</a>
+    </p>
+  </div>
+
+  <script>
+    (function () {
+      var msg = document.getElementById('msg');
+      function show(text, isError) {
+        msg.textContent = text;
+        msg.style.display = 'flex';
+        msg.className = 'alert ' + (isError ? 'alert-danger' : 'alert-success');
+      }
+      async function postJson(url, body) {
+        return fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body || {})
+        });
+      }
+
+      var createBtn = document.getElementById('createBtn');
+      if (createBtn) {
+        createBtn.addEventListener('click', async function () {
+          createBtn.disabled = true;
+          try {
+            var res = await postJson('/api/discord-create-account');
+            // createDiscordUser redirects to /dashboard (or /login?error=... on failure).
+            if (res.url && res.url.indexOf('/login') !== -1) {
+              show('Could not create the account. Please try again.', true);
+              createBtn.disabled = false;
+              return;
+            }
+            window.location.href = '/dashboard';
+          } catch (e) {
+            show(e.message || 'Network error', true);
+            createBtn.disabled = false;
+          }
+        });
+      }
+
+      var loginForm = document.getElementById('loginForm');
+      if (loginForm) {
+        loginForm.addEventListener('submit', async function (e) {
+          e.preventDefault();
+          var btn = document.getElementById('loginBtn');
+          btn.disabled = true;
+          try {
+            var res = await postJson('/api/login', {
+              username: document.getElementById('da_username').value,
+              password: document.getElementById('da_password').value
+            });
+            var data = await res.json().catch(function () { return {}; });
+            if (!res.ok) {
+              show(data.error || 'Invalid credentials', true);
+              btn.disabled = false;
+              return;
+            }
+            show('Logged in. Now click "Link Discord account".', false);
+            document.getElementById('linkBtn').disabled = false;
+            btn.textContent = 'Logged in';
+          } catch (err) {
+            show(err.message || 'Network error', true);
+            btn.disabled = false;
+          }
+        });
+      }
+
+      var linkBtn = document.getElementById('linkBtn');
+      if (linkBtn) {
+        linkBtn.addEventListener('click', async function () {
+          linkBtn.disabled = true;
+          try {
+            var res = await postJson('/api/link-discord-account');
+            var data = await res.json().catch(function () { return {}; });
+            if (!res.ok) {
+              show(data.error || 'Could not link the account', true);
+              linkBtn.disabled = false;
+              return;
+            }
+            window.location.href = '/dashboard';
+          } catch (err) {
+            show(err.message || 'Network error', true);
+            linkBtn.disabled = false;
+          }
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

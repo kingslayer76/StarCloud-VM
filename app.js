@@ -7,10 +7,18 @@ const session = require('express-session');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
-const { spawn, exec, execSync } = require('child_process');
+const { spawn, execFile, execFileSync } = require('child_process');
+const crypto = require('crypto');
 const os = require('os');
 const util = require('util');
-const execPromise = util.promisify(exec);
+const execFilePromise = util.promisify(execFile);
+
+// Convert UI checkbox / API values ("1", 1, true, "true", "0", false) into a 1/0 DB flag.
+function toggleFlag(value, defaultValue = 1) {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  if (typeof value === 'string') return ['1', 'true', 'on', 'yes'].includes(value.toLowerCase()) ? 1 : 0;
+  return value ? 1 : 0;
+}
 const { Client } = require('ssh2');
 require('dotenv').config();
 const licenses = require("./licenses");
@@ -69,6 +77,30 @@ try {
   console.error('[Init] Failed to create database directory:', dbDir, error.message);
   process.exit(1);
 }
+
+// Session secret: never hardcode. Prefer SESSION_SECRET from the environment;
+// otherwise generate one and persist it (0600) so sessions survive restarts.
+function loadSessionSecret() {
+  const fromEnv = process.env.SESSION_SECRET;
+  if (fromEnv && fromEnv.length >= 32) return fromEnv;
+  const secretFile = path.join(dbDir, 'session_secret');
+  try {
+    if (fs.existsSync(secretFile)) {
+      const saved = fs.readFileSync(secretFile, 'utf8').trim();
+      if (saved.length >= 32) return saved;
+    }
+  } catch (e) { /* fall through to generation */ }
+  const generated = crypto.randomBytes(48).toString('hex');
+  try {
+    fs.writeFileSync(secretFile, generated, { mode: 0o600 });
+  } catch (e) {
+    console.warn('[Security] Could not persist session secret; sessions reset on restart:', e.message);
+  }
+  if (fromEnv) console.warn('[Security] SESSION_SECRET shorter than 32 characters; using generated secret.');
+  else console.warn('[Security] SESSION_SECRET not set; generated a local secret at', secretFile);
+  return generated;
+}
+const SESSION_SECRET = loadSessionSecret();
 
 const db = new sqlite3.Database(dbPath);
 
@@ -323,10 +355,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(session({
-  secret: 'KingSlayer-secret-key-change-in-production',
+  secret: SESSION_SECRET,
   resave: false,
-  saveUninitialized: true,
-  cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 }
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
+    maxAge: 24 * 60 * 60 * 1000
+  }
 }));
 
 // Initialize License Middleware
@@ -565,7 +602,7 @@ function initializeDatabase() {
       if (!row) {
         const hashedPassword = bcrypt.hashSync('admin', 10);
         db.run(`INSERT INTO users (username, password, email, role) VALUES (?, ?, ?, ?)`,
-          ['admin', hashedPassword, 'admin@KingSlayer.local', 'admin']);
+          ['admin', hashedPassword, 'admin@starcloud.local', 'admin']);
         console.log('✓ Default admin created: admin/admin (role: admin)');
       } else {
         console.log(`✓ Admin user exists: ${row.username} (role: ${row.role})`);
@@ -739,8 +776,14 @@ app.get('/auth/discord/callback', async (req, res) => {
     const discordUser = userResponse.data;
     const discordId = discordUser.id;
     const discordUsername = discordUser.username;
-    const discordEmail = discordUser.email;
+    // SECURITY: an unverified Discord email must never auto-match / auto-link
+    // an existing local account (that would allow account takeover).
+    const emailVerified = discordUser.verified === true;
+    const discordEmail = emailVerified ? (discordUser.email || null) : null;
     const discordAvatar = discordUser.avatar;
+    if (!emailVerified && discordUser.email) {
+      console.warn(`[Discord Auth] Ignoring unverified email for ${discordUsername} (${discordId})`);
+    }
 
     console.log(`[Discord Auth] User ${discordUsername} (${discordId}) authenticated`);
 
@@ -855,6 +898,32 @@ function createDiscordUser(discordId, discordUsername, discordEmail, discordAvat
     }
   );
 }
+
+// Discord OAuth hand-off pages (these two redirects used to end in a 404).
+function renderDiscordHandoff(req, res) {
+  if (!req.session.pendingDiscordAuth) {
+    return res.redirect('/login?error=' + encodeURIComponent('Discord session expired. Please try again.'));
+  }
+  return res.render('discord-account', {
+    title: 'Discord Account - StarCloud Panel',
+    siteName: res.locals.siteName || 'StarCloud',
+    siteLogo: res.locals.siteLogo || '/images/logo.png',
+    pending: req.session.pendingDiscordAuth,
+    isLoggedIn: !!req.session.userId
+  });
+}
+app.get('/link-discord-account', renderDiscordHandoff);
+app.get('/create-account-discord', renderDiscordHandoff);
+
+// Create a local account from a verified Discord identity (no-email case).
+app.post('/api/discord-create-account', (req, res) => {
+  const pending = req.session.pendingDiscordAuth;
+  if (!pending || pending.action !== 'create') {
+    return res.status(400).json({ error: 'No pending Discord account creation' });
+  }
+  delete req.session.pendingDiscordAuth;
+  createDiscordUser(pending.discordId, pending.discordUsername, pending.discordEmail, pending.discordAvatar, res, req);
+});
 
 // Link Discord to existing account (requires login first)
 app.post('/api/link-discord-account', checkAuth, (req, res) => {
@@ -1404,7 +1473,7 @@ app.get('/api/iso-list', (req, res) => {
 
 // Favicon endpoint
 app.get('/favicon.ico', (req, res) => {
-  res.redirect('/public/images/logo.png');
+  res.redirect('/images/logo.png');
 });
 
 // Middleware to pass user and settings to all views
@@ -2056,7 +2125,7 @@ async function resizeDisk(vm_id, diskFilePath, newSize) {
       // Get current disk size from qemu-img (not file size, but virtual size)
       let currentSize;
       try {
-        const infoOutput = execSync(`qemu-img info "${diskFilePath}" --output=json`, { stdio: 'pipe', encoding: 'utf8' });
+        const infoOutput = execFileSync('qemu-img', ['info', diskFilePath, '--output=json'], { stdio: 'pipe', encoding: 'utf8' });
         const imageInfo = JSON.parse(infoOutput);
         currentSize = imageInfo['virtual-size'] || imageInfo['VirtualSize'] || 0;
         console.log(`[DISK-${vm_id}] Detected via qemu-img: Virtual size = ${(currentSize / (1024**3)).toFixed(2)}GB`);
@@ -2077,21 +2146,16 @@ async function resizeDisk(vm_id, diskFilePath, newSize) {
       const operation = isShrink ? 'shrink' : 'expand';
 
       // Use qemu-img to resize - always use +SIZE syntax for expand, =SIZE for shrink
-      let resizeCmd;
-      if (isShrink) {
-        // Shrinking requires --shrink flag and = syntax
-        resizeCmd = `qemu-img resize --shrink "${diskFilePath}" ${newSize}`;
-      } else {
-        // Expanding - use = syntax (not + syntax)
-        resizeCmd = `qemu-img resize "${diskFilePath}" ${newSize}`;
-      }
+      const resizeArgs = isShrink
+        ? ['resize', '--shrink', diskFilePath, newSize]
+        : ['resize', diskFilePath, newSize];
 
-      console.log(`[DISK-${vm_id}] ${operation.toUpperCase()}: Executing: ${resizeCmd}`);
+      console.log(`[DISK-${vm_id}] ${operation.toUpperCase()}: Executing: qemu-img ${resizeArgs.join(' ')}`);
       
-      // Execute and capture both stdout and stderr
+      // Execute and capture both stdout and stderr (argv array, no shell)
       let output;
       try {
-        output = execSync(resizeCmd, { stdio: 'pipe', encoding: 'utf8', shell: true });
+        output = execFileSync('qemu-img', resizeArgs, { stdio: 'pipe', encoding: 'utf8' });
         console.log(`[DISK-${vm_id}] Command output: ${output}`);
       } catch (execErr) {
         // Check if it's just a warning
@@ -2167,6 +2231,11 @@ app.put('/api/vms/:vm_id/edit', checkAuth, (req, res) => {
     const validatedCores = cpu_cores && cpu_cores >= 1 ? cpu_cores : undefined;
     const validatedThreads = cpu_threads && cpu_threads >= 1 ? cpu_threads : undefined;
 
+    // Never allow a weak password through the edit API either.
+    if (password !== undefined && String(password).length > 0 && String(password).length < 8) {
+      return res.status(400).json({ error: 'VM password must be at least 8 characters' });
+    }
+
     // Build update query dynamically
     const updates = [];
     const values = [];
@@ -2182,8 +2251,8 @@ app.put('/api/vms/:vm_id/edit', checkAuth, (req, res) => {
     if (disk_size) { updates.push('disk_size = ?'); values.push(disk_size); }
     if (username) { updates.push('username = ?'); values.push(username); }
     if (password) { updates.push('password = ?'); values.push(password); }
-    if (enable_acpi !== undefined) { updates.push('enable_acpi = ?'); values.push(enable_acpi ? 1 : 0); }
-    if (enable_kvm !== undefined) { updates.push('enable_kvm = ?'); values.push(enable_kvm ? 1 : 0); }
+    if (enable_acpi !== undefined) { updates.push('enable_acpi = ?'); values.push(toggleFlag(enable_acpi, 1)); }
+    if (enable_kvm !== undefined) { updates.push('enable_kvm = ?'); values.push(toggleFlag(enable_kvm, 1)); }
     if (extra_args !== undefined) { updates.push('extra_args = ?'); values.push(extra_args || ''); }
     if (network_type) { updates.push('network_type = ?'); values.push(network_type); }
     if (ipv4_address !== undefined) { updates.push('ipv4_address = ?'); values.push(ipv4_address); }
@@ -2306,7 +2375,7 @@ app.get('/api/vms/:vm_id/stats', checkAuth, async (req, res) => {
         try {
           if (fs.existsSync(pidFile)) {
             const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim());
-            const { stdout } = await execPromise(`ps -p ${pid} -o %cpu,%mem,etime 2>nul || echo "0 0 0:00"`, { shell: 'cmd' });
+            const { stdout } = await execFilePromise('ps', ['-p', String(pid), '-o', '%cpu,%mem,etime']);
             const lines = stdout.trim().split('\n');
             if (lines.length > 0) {
               const data = lines[0].trim().split(/\s+/);
@@ -2378,8 +2447,12 @@ app.post('/api/vms/:vm_id/reinstall', checkAuth, async (req, res) => {
         let template = null;
         let isCloudInit = false;
         let templateName = 'Custom OS';
+        if (new_password && String(new_password).length < 8) {
+          return res.status(400).json({ error: 'New password must be at least 8 characters' });
+        }
+        const fallbackPassword = vm.password || crypto.randomBytes(12).toString('base64url');
         let username = new_username || 'root';
-        let password = new_password || 'password';
+        let password = new_password || fallbackPassword;
 
         if (OS_TEMPLATES[new_os_template]) {
           // Built-in template
@@ -2387,7 +2460,7 @@ app.post('/api/vms/:vm_id/reinstall', checkAuth, async (req, res) => {
           isCloudInit = true;
           templateName = template.name;
           username = new_username || template.username;
-          password = new_password || template.password;
+          password = new_password || fallbackPassword || template.password;
           console.log(`[VM-${vm_id}] Using built-in template: ${templateName}`);
         } else {
           // Check database for custom template
@@ -2409,7 +2482,7 @@ app.post('/api/vms/:vm_id/reinstall', checkAuth, async (req, res) => {
           isCloudInit = customTemplate.template_type === 'cloud-init';
           templateName = customTemplate.template_name;
           username = new_username || customTemplate.username || 'ubuntu';
-          password = new_password || customTemplate.password || 'password';
+          password = new_password || fallbackPassword || customTemplate.password;
           console.log(`[VM-${vm_id}] Using custom template: ${templateName}`);
         }
 
@@ -2510,19 +2583,11 @@ app.post('/api/vms/:vm_id/reinstall', checkAuth, async (req, res) => {
                     
                     try {
                       // Copy template to disk file
-                      const copyCommand = process.platform === 'win32'
-                        ? `Copy-Item -Path "${imgSourcePath}" -Destination "${updatedVm.disk_file}" -Force`
-                        : `cp "${imgSourcePath}" "${updatedVm.disk_file}"`;
-
-                      execSync(copyCommand, { shell: process.platform === 'win32' ? 'powershell' : '/bin/bash' });
+                      fs.copyFileSync(imgSourcePath, updatedVm.disk_file);
                       console.log(`[VM-${vm_id}] ✓ Disk file created`);
 
                       // Resize disk to specified size
-                      const resizeCommand = process.platform === 'win32'
-                        ? `qemu-img resize "${updatedVm.disk_file}" ${diskSizeVal}`
-                        : `qemu-img resize "${updatedVm.disk_file}" ${diskSizeVal}`;
-
-                      execSync(resizeCommand, { stdio: 'pipe' });
+                      execFileSync('qemu-img', ['resize', updatedVm.disk_file, diskSizeVal], { stdio: 'pipe' });
                       console.log(`[VM-${vm_id}] ✓ Disk resized to ${diskSizeVal}`);
 
                       // Create new cloud-init seed
@@ -2609,6 +2674,12 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
   // Either os_template or iso_file must be provided
   if (!os_template && !iso_file) {
     return res.status(400).json({ error: 'Please select a template or upload ISO' });
+  }
+
+  // Owner decision D-15 / D-24: the admin must set a VM password (>= 8 chars).
+  // Weak template defaults (ubuntu/ubuntu, debian/debian, 'password') are never used.
+  if (typeof custom_password !== 'string' || custom_password.length < 8) {
+    return res.status(400).json({ error: 'VM password is required and must be at least 8 characters' });
   }
 
   // Validate memory - remove strict limits, allow any positive value
@@ -2705,7 +2776,7 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
       'stopped', 0, 'localhost',
       smbios_manufacturer || 'QEMU', smbios_product || 'KVM Virtual Machine',
       smbios_version || '1.0', smbios_serial || `vm-${Date.now()}`,
-      extra_args || '', enable_acpi !== false ? 1 : 0, enable_kvm !== false ? 1 : 0,
+      extra_args || '', toggleFlag(enable_acpi, 1), toggleFlag(enable_kvm, 1),
       netType, ipv4_address || null, ipv4_gateway || null, ipv4_netmask || '255.255.255.0',
       dns_servers || '8.8.8.8,8.8.4.4', dns_primary || '8.8.8.8', dns_secondary || '8.8.4.4', null, sshPortVal, http_port || 80,
       ipv6_address || null, ipv6_gateway || null,
@@ -2825,15 +2896,8 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
                 // Copy template to VM's image file
                 if (templateSourcePath) {
                   try {
-                    const copyCmd = process.platform === 'win32' 
-                      ? `copy "${templateSourcePath}" "${img_file}"`
-                      : `cp "${templateSourcePath}" "${img_file}"`;
-                    
                     console.log(`[VM-${vm_id}] Copying template to: ${img_file}`);
-                    await execPromise(copyCmd, { 
-                      shell: process.platform === 'win32' ? 'cmd' : '/bin/bash',
-                      stdio: 'pipe'
-                    });
+                    await fs.promises.copyFile(templateSourcePath, img_file);
                     console.log(`[VM-${vm_id}] ✓ Copied template to ${img_file}`);
                   } catch (copyErr) {
                     console.error(`[VM-${vm_id}] Failed to copy template:`, copyErr.message);
@@ -2865,11 +2929,8 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
                 console.log(`[VM-${vm_id}] Creating and resizing disk to ${diskSizeVal}...`);
                 try {
                   // Copy template to disk file and resize in one step
-                  const resizeDiskCmd = `qemu-img convert -O qcow2 "${img_file}" "${disk_file}" && qemu-img resize "${disk_file}" ${diskSizeVal}`;
-                  await execPromise(resizeDiskCmd, { 
-                    shell: isWindows ? 'cmd' : '/bin/bash',
-                    stdio: 'pipe'
-                  });
+                  await execFilePromise('qemu-img', ['convert', '-O', 'qcow2', img_file, disk_file]);
+                  await execFilePromise('qemu-img', ['resize', disk_file, diskSizeVal]);
                   
                   console.log(`[VM-${vm_id}] ✓ Disk created and resized to: ${diskSizeVal}`);
                 } catch (diskError) {
@@ -2880,12 +2941,7 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
                 // ISO mode: Create a new disk from scratch with specified size
                 console.log(`[VM-${vm_id}] Creating disk: ${disk_file} (size: ${diskSizeVal})`);
                 try {
-                  const createDiskCmd = `qemu-img create -f qcow2 "${disk_file}" ${diskSizeVal}`;
-                  
-                  await execPromise(createDiskCmd, { 
-                    shell: isWindows ? 'cmd' : '/bin/bash',
-                    stdio: 'pipe'
-                  });
+                  await execFilePromise('qemu-img', ['create', '-f', 'qcow2', disk_file, diskSizeVal]);
                   console.log(`[VM-${vm_id}] ✓ Disk created: ${diskSizeVal}`);
                 } catch (diskError) {
                   logError('DISK', vm_id, 'creation', diskError);
@@ -3011,7 +3067,7 @@ app.post('/api/vms/:vm_id/stop', checkAuth, (req, res) => {
         try {
           // On Windows, use taskkill; on Unix, use process group kill
           if (isWindows) {
-            exec(`taskkill /F /PID ${pid}`, { shell: 'cmd' });
+            execFile('taskkill', ['/F', '/PID', String(pid)], (err) => { if (err) console.warn(`[VM-${vm.vm_id}] taskkill failed:`, err.message); });
           } else {
             // Kill entire process group (- prefix means pgid)
             process.kill(-pid, 'SIGTERM');
@@ -3888,31 +3944,21 @@ local-hostname: ${vm.hostname}
 
       // Create ISO from seed files
       // Use platform-appropriate tool
-      let isoCommand;
       try {
-        if (isWindows) {
-          // On Windows, try mkisofs first
+        // Use argv arrays (no shell) so paths cannot inject extra commands.
+        const seedArgs = ['-output', seedIso, '-volid', 'cidata', '-joliet', '-rock', seedDir];
+        const isoTools = isWindows ? ['mkisofs'] : ['genisoimage', 'mkisofs'];
+        let isoCreated = false;
+        for (const tool of isoTools) {
           try {
-            isoCommand = `mkisofs -output "${seedIso}" -volid cidata -joliet -rock "${seedDir}"`;
-            execSync(isoCommand, { stdio: 'pipe', shell: 'cmd' });
-          } catch (e) {
-            console.error(`[CLOUDINIT-${vm_id}] mkisofs not found on Windows`);
-            throw new Error('ISO creation tool not available - install mkisofs');
-          }
-        } else {
-          // On Linux, prefer genisoimage or mkisofs
-          try {
-            isoCommand = `genisoimage -output "${seedIso}" -volid cidata -joliet -rock "${seedDir}"`;
-            execSync(isoCommand, { stdio: 'pipe', shell: '/bin/bash' });
-          } catch (e) {
-            try {
-              isoCommand = `mkisofs -output "${seedIso}" -volid cidata -joliet -rock "${seedDir}"`;
-              execSync(isoCommand, { stdio: 'pipe', shell: '/bin/bash' });
-            } catch (e2) {
-              console.error(`[CLOUDINIT-${vm_id}] Neither genisoimage nor mkisofs available`);
-              throw new Error('ISO creation tool not available - install genisoimage or mkisofs');
-            }
-          }
+            execFileSync(tool, seedArgs, { stdio: 'pipe' });
+            isoCreated = true;
+            break;
+          } catch (e) { /* try the next available tool */ }
+        }
+        if (!isoCreated) {
+          console.error(`[CLOUDINIT-${vm_id}] Neither genisoimage nor mkisofs available`);
+          throw new Error('ISO creation tool not available - install genisoimage or mkisofs');
         }
         
         console.log(`[CLOUDINIT-${vm_id}] ✓ ISO seed created: ${seedIso}`);
@@ -3978,16 +4024,24 @@ async function startQemuVM(vm) {
         });
       }
       
-      // Build QEMU command line as array (safer than string concatenation)
+      // Build QEMU command line as array (safer than string concatenation).
+      // Honour the "KVM Acceleration" toggle instead of always forcing KVM.
+      const kvmAccelEnabled = toggleFlag(vm.enable_kvm, 1) === 1;
+      const effectiveCpu = kvmAccelEnabled ? cpuToUse : (cpuToUse === 'host' ? 'qemu64' : cpuToUse);
       const args = [
         `-m`, `${vm.memory}`,
         `-smp`, `cores=${vm.cpu_cores},threads=${vm.cpu_threads},sockets=${vm.cpu_sockets}`,
-        `-cpu`, cpuToUse,
+        `-cpu`, effectiveCpu,
         `-name`, `vm-${vm.vm_id}`,
-        `-machine`, `${vm.machine_type || 'pc'},accel=kvm:tcg`,
-        `-enable-kvm`,
+        `-machine`, `${vm.machine_type || 'pc'},accel=${kvmAccelEnabled ? 'kvm:tcg' : 'tcg'}`,
         `-nographic`
       ];
+      if (kvmAccelEnabled) {
+        args.push(`-enable-kvm`);
+        console.log(`[VM-${vm.vm_id}] KVM acceleration: enabled`);
+      } else {
+        console.log(`[VM-${vm.vm_id}] KVM acceleration: disabled (QEMU TCG software mode, CPU ${effectiveCpu})`);
+      }
       
       // SMBIOS Configuration
       const smbiosManufacturer = vm.smbios_manufacturer || vm.custom_smbios_manufacturer || 'QEMU';
@@ -4208,6 +4262,8 @@ app.get('/api/settings', (req, res) => {
     // Override with DB values
     if (rows && rows.length > 0) {
       rows.forEach(row => {
+        // Never expose secrets through the public settings endpoint.
+        if (/(secret|token|password|api_key|apikey|webhook|private)/i.test(row.setting_key)) return;
         settings[row.setting_key] = row.setting_value;
       });
     }
@@ -4897,7 +4953,7 @@ server.listen(PORT, async () => {
 
   console.log(`
 ╔════════════════════════════════════════════════════════════╗
-║           KingSlayer VM MANAGEMENT PANEL V1.0              ║
+║             StarCloud VM MANAGEMENT PANEL V2.0            ║
 ║          Advanced VM Management & Control Panel            ║
 ╚════════════════════════════════════════════════════════════╝
 

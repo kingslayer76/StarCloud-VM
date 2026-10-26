@@ -1,5 +1,9 @@
 # StarCloud — Analysis & 7-Day Plan
 
+> ⚠️ **UPDATED 2026-10-26:** Ye **purana 7-din wala plan** hai (branch `arena/410d8fbd-...`, October 15).
+> User ke D-1 faisle ke baad ab "MVP split" nahi — saari features ek hi build me aayengi.
+> Naya plan aur naye packs: `docs/00_DEEP_ANALYSIS_SUMMARY.md` (Section 11).
+
 > Status: **Analysis complete — build abhi start nahi hua.**
 > Date: 2026-10-15 · Target: 7 din (~21/22 Oct 2026) · Branch: `arena/410d8fbd-all-vm-panel`
 

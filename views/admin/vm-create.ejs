@@ -196,12 +196,15 @@
                   </div>
                 </div>
                 <div class="form-group">
-                  <label class="form-label">Password</label>
+                  <label class="form-label">Password <span class="required">*</span></label>
                   <div style="position: relative;">
-                    <input type="password" class="form-control" id="custom_password" name="custom_password" placeholder="Default from template" style="padding-right: 40px;">
+                    <input type="password" class="form-control" id="custom_password" name="custom_password" placeholder="Minimum 8 characters (required)" minlength="8" required style="padding-right: 40px;">
                     <button type="button" onclick="togglePw('custom_password', this)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; display:inline-flex;">
                       <svg width="16" height="16"><use href="#i-eye"/></svg>
                     </button>
+                  </div>
+                  <div class="form-hint" style="color: var(--text-muted); font-size: 12px; margin-top: 6px;">
+                    Required. Minimum 8 characters. Used for the VM's cloud-init login.
                   </div>
                 </div>
               </div>
@@ -1138,8 +1141,12 @@ function collectFormData() {
   const osTemplateInput = document.getElementById('os_template');
   if (osTemplateInput && osTemplateInput.value) data.os_template = osTemplateInput.value;
   
-  data.enable_kvm = 1;
+  data.enable_kvm = document.getElementById('enable_kvm')?.checked ? 1 : 0;
   data.enable_acpi = document.getElementById('enable_acpi')?.checked ? 1 : 0;
+  
+  if (!data.custom_password || String(data.custom_password).length < 8) {
+    return { __error: 'VM password is required and must be at least 8 characters' };
+  }
   
   const customCPUCheckbox = document.getElementById('enable_custom_cpu_name');
   const customCPUInput = document.getElementById('custom_cpu_name');
@@ -1184,6 +1191,7 @@ async function submitCreate() {
   try {
     const data = collectFormData();
     if (data === null) throw new Error('Please fill in the custom CPU name field');
+    if (data.__error) throw new Error(data.__error);
     if (!data.os_template && !data.iso_file) throw new Error('Please select an OS template or ISO file');
     
     progressText.textContent = 'Creating VM...';

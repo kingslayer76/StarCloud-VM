@@ -1,5 +1,10 @@
 # HKVM — Verified Feature Inventory (kya hai, kya nahi hai)
 
+> ℹ️ **UPDATED 2026-10-26:** Ye inventory abhi bhi sach hai, lekin code aaj badal gaya hai.
+> Aaj ke fixes ke baad `app.js` = 4,968 lines / **90 routes**, KVM Acceleration toggle ab sach me kaam karta hai,
+> VM password min 8 required hai, aur Discord ke 2 missing GET routes add hue.
+> Poora update: `docs/00_DEEP_ANALYSIS_SUMMARY.md`.
+
 > Ye document `app.js`, `views/` aur `public/` ko line-by-line grep/read karke banaya gaya hai.
 > Jo cheez verify nahi hui, wo yahan nahi likhi.
 > Legend: ✅ = poori tarah kaam karta hai · ⚠️ = UI hai lekin backend adhoora / sirf settings form · ❌ = nahi hai

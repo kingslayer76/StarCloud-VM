@@ -1,5 +1,12 @@
 # StarCloud — Feature Gap Analysis (verified)
 
+> ⚠️ **UPDATED 2026-10-26 — IS FILE ME GALTIYAN HAIN.** **Pehle `docs/00_DEEP_ANALYSIS_SUMMARY.md` padhein.**
+> Code-level re-check me ye claims **galat** nikle:
+> - "HKVM me File manager / SFTP ⚠️ UI hai" → ❌ HKVM me koi file manager route/view nahi.
+> - "Command palette ✅ 4 hits", "Font upload ✅ 4 hits", "Public IP pool ✅ basic" → ❌ HKVM me inme se koi nahi.
+> - "Cloudflare DNS ✅ 14 hits" → ⚠️ sirf DNS dropdown (1.1.1.1), koi API integration nahi.
+> In keywords ka source `analyse VM Website detail.txt` tha, HKVM ka code nahi.
+
 > Base: **HKVM (`hkvm-2`, MIT)** · Model: **Sales + support Discord par, admin VPS/VDS/RDP website se create karega**
 > Method: saari reference zips `/tmp` mein extract karke keyword + file-level check kiya gaya. Koi file change nahi hui (`Analyse-File/` untouched).
 

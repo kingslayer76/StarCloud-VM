@@ -3,3 +3,8 @@ data/*.db
 data/*.db-wal
 data/*.db-shm
 uploads/
+# Generated secrets / runtime data
+data/session_secret
+data/*.key
+backups/
+.env.local

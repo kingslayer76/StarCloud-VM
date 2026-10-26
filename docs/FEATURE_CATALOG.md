@@ -1,5 +1,10 @@
 # StarCloud — Feature Catalog (HKVM base par)
 
+> ⚠️ **UPDATED 2026-10-26:** Ye purana catalog hai. **Pehle `docs/00_DEEP_ANALYSIS_SUMMARY.md` padhein.**
+> Is file me abhi bhi **RDP/Windows** ko scope me likha hai — wo D-3/D-26 se **bahar** ho chuka hai.
+> Iski kai "source" entries (apanel, Hex-Mc, Template-main, free-claude-code) `Analyse-File/` me maujood nahi hain;
+> unka zikr sirf text report se aaya hai. Naye verified packs: **Mpanel, Nobita-Cloud, SKVM, lvm-panel, HVM-1.rar (=ZIP)**.
+
 > **Base:** repo root (HKVM Panel v2.0.0-free, MIT, Node.js + Express + EJS + SQLite). Sab changes isi repo mein honge (HKVM ke files ab root par hain; `HKVM/` folder hata diya gaya hai).
 > **Sales/support:** Discord par. **Website:** admin VPS / VDS / RDP create + manage karega. Look: HKVM premium dark.
 > **Source:** `Analyse-File/` ki zips (untouched) + spec `StarCloud VM MAKER WEBSITE MASTER-PROMPT.txt` + analysis `analyse VM Website detail.txt`.
