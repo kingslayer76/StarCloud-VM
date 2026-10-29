@@ -591,3 +591,5 @@ Discord webhook ek URL hai jispar panel seedha ek message bhej deta hai (bot log
 Code: `public/js/kvm-lock.js` (shared lock), `services/capabilities.js` (`KVM_BLOCK_MESSAGE`, installer report read), `app.js` (create/edit 409 block), `views/admin/vm-create.ejs` aur `views/admin/vm-edit.ejs` (lock call).
 
 Pending: Discord bot (Batch 4) abhi build nahi hua; user confirmation ke baad agle round mein.
+
+**Live test (29 Oct 2026, commit `276759e`):** no-KVM host par `POST /api/vms` mein `enable_kvm=1` ya `nested_kvm=1` → HTTP 409 `KVM_BLOCKED` ✅; field na dene par KVM check pass ✅. `PUT /api/vms/:id/edit` mein `enable_kvm=1` / `nested_kvm=1` → 409 ✅; `0` → 200 ✅, DB mein `0`. `/api/admin/operations` mein `capabilities.kvmAvailable` key maujood ✅. Browser click test abhi pending (Codespaces par). Batch-wise status: `docs/01_FEATURE_STATUS_AND_BATCHES.md`.
