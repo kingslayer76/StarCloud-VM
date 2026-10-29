@@ -257,7 +257,8 @@ Installer admin username/password puchega. Enter dabane par `admin` / `admin` ra
 
 ## 13. Questions jo user se pending hain
 
-| # | Sawaal | Kyon |
-|---|---|---|
-| Q1 | Invoices / GST chahiye? | Master spec §9 |
-| Q2 | Bot Hosting product (LXD container, customer apne bot chalata hai) mein ready templates (Discord.py, Discord.js, Node.js, Python) rakhein? | Ye panel ka Discord bot nahi hai. Customer ke apne bot chalane ka environment hai. Details: `docs/` mein Q4 ka explanation chat mein diya gaya hai |
+| # | Sawaal | Kyon | Jawab (user, 2026-10-29) |
+|---|---|---|---|
+| Q1 | Invoices / GST chahiye? | Master spec §9 | **Abhi nahi.** Invoice page skip. Baad mein (Phase 7 ke saath) decide. Note: GST invoice ke liye sale record chahiye, jo "order record table NAHI" rule se takrata hai. Woh tab decide hoga. |
+| Q2 | Bot Hosting product mein ready templates (Discord.py, Discord.js, Node.js, Python)? | Ye panel ka Discord bot nahi. Customer ke apne bot ka environment hai. | **Koi template nahi.** Customer khud setup karega. |
+| Q3 | Bot Hosting (LXD containers) ka poora product build karna hai? | Master spec §1.1B, scope confirm nahi tha | **Baad mein.** Pehle VPS/VDS poora karein. Bot Hosting scope abhi pending list mein rahega. |
