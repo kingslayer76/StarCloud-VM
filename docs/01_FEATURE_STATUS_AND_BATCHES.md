@@ -73,6 +73,9 @@ Test ka level:
 | Audit log (table + page + CSV export) | ✅ | Live: JSON + CSV OK; anon 401 |
 | File manager — admin aur customer (sabhi users, D-17) | 🟡 | Live vs test SSH server (chroot): list/read/write/mkdir/rename/chmod/upload/download/delete; permission (customer sirf apna VM) ✅. **Real VM par test pending** |
 | Installer admin account setup (Enter = `admin`/`admin`, D-14 — security note) | ✅ | `install.sh` test: exit 0, `.env` mode 600 |
+| Installer terminal: sirf StarCloud logo + step status (spinner, ✔/✖); raw output `logs/install.log` mein; `--verbose` se screen par | ✅ | Local test: `script` (TTY) + fake apt-get, `--skip-system` aur full run; failure path: ✖ + log tail + exit code |
+| Installer preflight (root, OS, RAM/disk/CPU, KVM, systemd, internet, port 8080 check) + final summary box | ✅ | Sandbox run; real Codespaces/Debian run pending |
+| Installer systemd service (unit file) / background fallback (`start-panel.sh`) | 🟡 | Background path ✅ (sandbox). Unit file verify ✅ (`systemd-analyze`), real `systemctl` start pending (real server) |
 | `STARCLOUD_DATA_DIR` installer `.env` mein (DB project ke andar) | ✅ | Code + dry run |
 | Live: `/api/admin/operations` JSON shape | ✅ | `capabilities`, `maintenance`, `vms` keys |
 
@@ -237,8 +240,10 @@ Multi-node cluster + node agent + circuit breaker + live migration + auto-placem
 ```bash
 git clone -b arena/1bed8e0c-starcloud-vm https://github.com/kingslayer76/StarCloud-VM.git
 cd StarCloud-VM
-bash install.sh
+sudo bash install.sh
 ```
+
+Installer terminal par sirf StarCloud logo aur step ka status dikhayega (raw output `logs/install.log` mein jayega; `--verbose` se sab screen par). Last mein summary box mein Panel URL aayega (Codespaces mein `https://<codespace>-8080.app.github.dev/login`). Ports tab mein port 8080 ko Public karein agar browser se khulna band ho.
 
 Installer admin username/password puchega. Enter dabane par `admin` / `admin` rahega (test ke liye). Phir:
 
