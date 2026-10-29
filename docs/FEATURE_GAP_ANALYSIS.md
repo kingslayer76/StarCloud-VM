@@ -37,7 +37,6 @@
 | sshx / tmate share link | ❌ | |
 | Customer API keys | ❌ | sirf internal Bearer (agent) |
 | Coupons / billing | ❌ | |
-| Discord bot admin page | ❌ | |
 
 ## B. Features jo dusre packs mein hain aur HKVM mein nahi (aapki website ke hisaab se)
 
@@ -52,7 +51,6 @@ Recommendation: **ADD** = MVP / next, **LATER** = baad mein, **SKIP** = aapki we
 | 5 | **Scheduled power + backup + snapshot** (cron) | NKVM (schedules), vpanel (scheduleService), HVM-8 (snapshot_schedules) | Auto-restart, nightly backup | **ADD** |
 | 6 | **Real backup + restore** | HVM-8 (backups), vpanel (backupService) | Customer data safety | **ADD** |
 | 7 | **Discord webhook alerts** (embeds) | vpanel (pluginManager – Discord rich embeds, signed webhooks) | Naya order, VM down, capacity low | **ADD** |
-| 8 | **Discord bot admin page** | apanel-main (`admin/discord_bot.html`, `akvm.py`) | Bot control website se | **ADD** |
 | 9 | **Shareable terminal link (sshx / tmate)** | apanel (sshx primary, tmate), HVM-8 (tmate) | Discord ticket mein support — admin link bhejega. Opt-in + time-limit + audit zaroori | **ADD** |
 | 10 | **Security scan per VM** | apanel (`/vm/<id>/security-scan`) | Abuse aur open-port check | **ADD** |
 | 11 | **Boot log viewer** (serial + cloud-init tabs) | NKVM (boot logs), vpanel (bootLogService) | VM na boot ho to support | **ADD** |
@@ -92,7 +90,7 @@ Recommendation: **ADD** = MVP / next, **LATER** = baad mein, **SKIP** = aapki we
 - **Customer side kam**: customers Discord par aayenge. Website par customer checkout / ticket / payment nahi chahiye.
 - **Admin side zyada**: VPS/VDS/RDP create, order record (Discord ticket ID ke saath), coupon apply, custom price, expiry, renew, VM ops, alerts.
 - **Coupon redemption**: customer Discord mein code bataega → admin order banate waqt coupon apply karega. *(Assumption — agar aap chahein to customer self-redeem ka link bhi ban sakta hai.)*
-- **Discord integration**: webhook (alerts) + bot (ticket channel, role, status updates) — bot admin page se configure.
+- **Discord integration**: webhook (alerts) — sales/support Discord par manual chalega.
 - **Public website**: landing + pricing page (HKVM style, premium), status page. Ye light rahega.
 
 ## E. Recommended MVP order (7 din)
@@ -103,7 +101,7 @@ Recommendation: **ADD** = MVP / next, **LATER** = baad mein, **SKIP** = aapki we
 4. VPS/VDS/RDP create + VM ops (start/stop/restart) + boot log + console
 5. Coupons + giveaway codes + custom price per order + order record (Discord ticket ID)
 6. Expiry + renew + maintenance mode + emergency ops
-7. Discord webhook alerts + Discord bot admin page + sshx/tmate support link + security scan
+7. Discord webhook alerts + sshx/tmate support link + security scan
 8. Backup/schedules/public IP pool — MVP ke andar jitna time mile
 
 > Note: 7 din mein ye sab (ADD list ~16 items) tight hai. Priority: 1–6 pehle, 7 aur 8 agar time bache.

@@ -29,8 +29,8 @@ Test ka level:
 | 1 | Host safety + security | 🟡 | KVM detect + lock, nested KVM, capacity guard, maintenance, emergency, audit log, installer, file manager, nested KVM toggle, CPU model (pehle 3 deep features: 1 poora, 2 partial). Neeche pending list dekho |
 | 2 | VM lifecycle + monitoring + promo | ⬜ | Boot log, expiry/renew/suspend, coupons, giveaway, shared IPv4 + auto port block, snapshots, backup/restore, status page, referral, flash sale |
 | 3 | Auth, accounts, guest agent | ⬜ | 2FA, lockout, password reset, sessions, owner tier, API keys, sub-users, impersonation, guest agent, sshx, noVNC |
-| 4 | Discord bot + commerce basics | ⬜ | Python discord.py bot, webhook alerts, plans/add-ons, UPI manual confirm, email verify |
-| 5 | Product lines + networking + API | ⬜ | VDS (CPU pinning, guaranteed RAM), LXD Bot Hosting (Linux only), port-forward manager, rDNS, firewall, bandwidth, public API + CLI |
+| 4 | Commerce + support | ⬜ | Plans/add-ons, UPI manual confirm, email verify, invoices (pending) |
+| 5 | Product lines + networking + API | ⬜ | VDS (CPU pinning, guaranteed RAM), LXD Bot Hosting (Linux only), **Create RDP option** (Windows, same panel), port-forward manager, rDNS, firewall, bandwidth, public API + CLI |
 | 6 | AI + site + UX + deploy | ⬜ | AI assistant (owner/admin poora, customer limited), marketing site, Hindi/English, dashboards, Fun Mode, Docker, auto-update |
 | Later | Roadmap | ⬜ | Multi-node cluster, storage VPS, managed DB hosting, one-click apps, reseller |
 
@@ -144,23 +144,17 @@ Note: Batch 1 pending #7 (edit 200 par seed fail) bhi yahin fix hoga.
 
 ---
 
-## 6. Batch 4 — Discord bot + commerce basics (⬜)
+## 6. Batch 4 — Commerce + support (⬜)
 
 | # | Feature | Faisla |
 |---|---|---|
-| 4.1 | Discord bot **Python discord.py** mein (Node.js nahi). Ticket, UPI ticket, credentials DM | D-2, D-25; section 16 of doc 00 mein poori samajh |
-| 4.2 | Bot token website ke Settings page se | D-2 |
-| 4.3 | Bot admin page (status / start / stop) | Analysis |
-| 4.4 | Discord webhook alerts (sirf jab URL set ho) | D-16 |
-| 4.5 | Plans (VPS / VDS), billing cycles, add-ons (dedicated IPv4, extra RAM/CPU/disk, ports) | Master §9 |
-| 4.6 | UPI manual confirmation (bot payment verify nahi karta) | Analysis |
-| 4.7 | Email verification (Brevo SMTP, toggle) | Master §2 |
-| 4.8 | Support: Discord ticket hi record (website order table nahi) | D-6 |
-| 4.9 | Invoices / GST | Master §9 — **user se poochhna hai** (Q4) |
+| 4.1 | Plans (VPS / VDS / RDP), billing cycles, add-ons (dedicated IPv4, extra RAM/CPU/disk, ports) | Master §9 |
+| 4.2 | UPI manual confirmation (admin confirm karega; website par payment gateway nahi) | User ka faisla: manual UPI |
+| 4.3 | Support: Discord par manual (website par ticket system nahi) | User ka faisla (29 Oct) |
+| 4.4 | Email verification (Brevo SMTP, toggle) | Master §2 |
+| 4.5 | Invoices / GST | Master §9 — user se poochhna hai (Q1) |
 
-Hata diya gaya: custom price per order (D-5), order record table (D-6), Razorpay / website payment (user ka faisla — doc 00 Section 6-K).
-
----
+Hata diya gaya: custom price per order (D-5), order record table (D-6), Razorpay / website payment gateway.
 
 ## 7. Batch 5 — Product lines, networking, API (⬜)
 
@@ -182,6 +176,10 @@ Hata diya gaya: custom price per order (D-5), order record table (D-6), Razorpay
 **RDP / Windows / XRDP: 🚫 (D-3, D-26).** Master spec ke product list mein ye hai, par user ne bahar kiya hai.
 
 ---
+| 5.13 | **Create RDP option** — Create VM ke neeche same panel mein; custom CPU model select ke saath | User ne 29 Oct ko maanga. **Feasible: haan, same panel mein.** Shart: (a) Windows ISO admin upload karega (bring-your-own license), (b) virtio drivers ISO, (c) KVM host zaroori (Windows software emulation par bahut slow) |
+| 5.14 | RDP access: auto port (3389 → unique host port) + `.rdp` file download | Batch 2 ke auto port block par depend |
+| 5.15 | Browser RDP client (web se connect) | Apache Guacamole alag service maangta hai — optional, baad mein |
+| 5.16 | Windows unattended install + virtio driver injection | Sandbox mein test nahi ho sakta; Codespaces / real host par |
 
 ## 8. Batch 6 — AI, marketing site, UX, deploy (⬜)
 
@@ -215,7 +213,8 @@ Multi-node cluster + node agent + circuit breaker + live migration + auto-placem
 
 | Cheez | Faisla |
 |---|---|
-| RDP, Windows VPS, XRDP / Linux Cloud PC | D-3, D-26 |
+| Linux XRDP / Cloud PC (desktop in browser) | D-26 (abhi bahar) |
+| Windows RDP | ✅ wapas scope mein (user ne 29 Oct ko "Create RDP" option maanga) — Batch 5, 5.13–5.16 |
 | tmate | D-4 (sshx rakha hai) |
 | Custom price per order | D-5 |
 | Order record table | D-6 (Discord ticket hi record) |
@@ -259,8 +258,7 @@ Installer admin username/password puchega. Enter dabane par `admin` / `admin` ra
 
 | # | Sawaal | Kyon |
 |---|---|---|
-| Q1 | Discord bot is round mein chahiye ya Batch 4 mein? | Abhi Batch 4 plan hai |
-| Q2 | Website par support ticket system chahiye, ya sirf Discord ticket? | D-6 ke hisaab se Discord hi record |
-| Q3 | Razorpay / website payment abhi bhi nahi chahiye? | Doc 00 mein "website par payment nahi" likha hai |
-| Q4 | Invoices / GST chahiye? | Master spec §9 mein hai |
-| Q5 | Windows RDP ko master spec ke product list se hata dein (D-3 ke hisaab se)? | Master spec mein Windows RDP likha hai, user ne RDP bahar kiya |
+| Q1 | Invoices / GST chahiye? | Master spec §9 |
+| Q2 | Create RDP ke liye Windows ISO aap upload karenge (bring-your-own license)? | Feasibility shart |
+| Q3 | Browser RDP (Guacamole, extra service) abhi chahiye, ya sirf `.rdp` file download kaafi hai? | Batch 5, 5.15 |
+| Q4 | Bot Hosting product (customer ke apne bots, LXD) mein Discord.js / Discord.py jaise ready templates rakhein? | Master spec §1.1B — ye customer product hai, panel ka Discord bot nahi |

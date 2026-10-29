@@ -300,7 +300,6 @@ Ye sab LXC par hai; StarCloud me KVM/QEMU ke liye alag implementation hogi (`-cp
 |---|---|
 | OS templates (built-in + custom + download + cache) | ✅ |
 | Admin settings (General/Branding/Security/System/Discord/About) | ✅ |
-| Settings me Discord bot token/guild/auto-role | ⚠️ (save hota hai, bot nahi chalta) |
 | Discord webhook field (optional, khali default) | ❌ |
 | Audit log page | ❌ |
 | Per-VM security scan (miner/failed logins/cron) | ❌ |
@@ -330,10 +329,8 @@ Ye sab LXC par hai; StarCloud me KVM/QEMU ke liye alag implementation hogi (`-cp
 | Referral, flash-sale/event banner + countdown | ❌ |
 | Plans (VPS/VDS), cycles, add-ons, custom price per order | ❌ (custom price **D-5 se hata diya gaya**) |
 | Order record table | ❌ (**D-6 se hata diya gaya** — Discord ticket hi record) |
-| Discord bot (Python discord.py): ticket, UPI ticket, credentials DM | ❌ |
-| Discord bot admin page (status/start/stop) | ❌ |
 | Discord webhook alerts | ❌ |
-| UPI manual confirmation (bot payment verify nahi kar sakta) | ❌ |
+| UPI manual confirmation (admin Discord ticket se confirm karega) | ❌ |
 | Email verification (Brevo free SMTP, toggle) | ❌ |
 | Revenue dashboard (MRR/ARR, churn) | ❌ |
 | Marketing site (landing, pricing, blog, ToS, status, SEO) | ❌ |
@@ -362,7 +359,6 @@ Multi-node cluster + circuit breaker + live migration · auto-placement · plugi
 | # | Faisla |
 |---|---|
 | D-1 | Saari features ek hi install me; P0/P1/MVP ka split nahi |
-| D-2 | Discord **bot** banega; token website ke Settings page se |
 | D-3 | RDP / Windows / Linux XRDP — sab scope se bahar (D-26 me XRDP bhi confirm hata) |
 | D-4 | tmate hatao, **sshx** rakho |
 | D-5 | "Custom price per order" hatao |
@@ -385,7 +381,6 @@ Multi-node cluster + circuit breaker + live migration · auto-placement · plugi
 | D-22 | `public-apis/public-apis` repo AI ka knowledge |
 | D-23 | "Pi S" drop — ab na poochha jaye; owner remote support + telemetry bhi **nahi** |
 | D-24 | VM password minimum 8 characters |
-| D-25 | Discord bot **Python (discord.py)** me, Node.js nahi |
 | D-26 | XRDP / Linux desktop remote bhi hatao |
 
 **Standing rules:** har jawab detail me, har short form ka full form pehle, `Analyse-File/` me kabhi change nahi, code packs se **sirf ideas** (license safe), koi hidden backdoor/magic password/license-bypass nahi.
@@ -449,7 +444,7 @@ Multi-node cluster + circuit breaker + live migration · auto-placement · plugi
 | **1 — Host safety + base** | Capability engine, KVM detect + block, nested KVM toggle, capacity guard, KVM Acceleration (aaj fix), password rule, maintenance, emergency stop/reboot-all, audit log, per-VM security scan, webhook field, installer + systemd, `.env.example`, LICENSE | Master spec §0, SKVM backends, HVM-8 |
 | **2 — VM management** | File manager (Minecraft-style), VDS create form with same CPU model component, boot log viewer, expiry/renew/suspend, coupons, giveaway codes, shared IPv4 + auto port pool + bulk ports, snapshots restore/schedule, real backup/restore, status page, referral, flash sale | Mpanel, HVM-8, SKVM |
 | **3 — Automation** | Scheduled power/backup/snapshot, cron scheduler, metrics history, alerts/incidents, quotas, notifications bell | SKVM, NKVM, vPanel |
-| **4 — Discord + support** | Python discord.py bot (token settings se), ticket + UPI ticket + credentials DM, bot admin page, webhook alerts, sshx link, email verification (SMTP toggle) | User design, D-25 |
+| **4 — Commerce + support** | UPI manual confirm (Discord ticket se), plans/add-ons, webhook alerts, sshx link, email verification (SMTP toggle) | User design |
 | **5 — Premium look + security** | 2FA TOTP + backup codes, login lockout, password reset, Hindi/English i18n, wallpaper + blur/transparency sliders, command palette (Ctrl+K), Fun Mode + reduced-motion, custom branding, landing/pricing page | NKVM, vPanel, Mpanel |
 | **6 — AI** | Gemini free provider + failover, tool allowlist by role, risk gate + 60s confirm, AI Log Doctor, AI action audit, default OFF, public-apis catalog, natural-language command palette | ZORIN, MYRAA, ALTEX |
 | **Later** | Multi-node + migration, plugin system, firewall UI, blog/changelog, currency, template store, reseller | HVM-8, vPanel, Hex-Mc (docs only) |
@@ -462,7 +457,6 @@ Multi-node cluster + circuit breaker + live migration · auto-placement · plugi
 2. **Domain + owner email:** `{{DOMAIN}}` aur `{{OWNER_EMAIL}}` kya honge? Ya pehle placeholder rakhein?
 3. **Nested KVM + KVM-less host:** master spec kehta hai "panel bina KVM ke bhi chale (TCG)", lekin D-12 kehta hai "KVM na ho to VPS create block". Confirm: **panel chalega, par VPS create block rahega** — sahi hai na?
 4. **File manager scope:** kya file manager **customer** ko bhi milega ya sirf admin ko? Aur kya VM ke andar guest agent install karna manzoor hai (SSH fallback ke saath)?
-5. **Discord bot:** Python `discord.py` bot ko website ke saath kaise chalayenge — alag process/service (systemd) ya website se spawn? Aur UPI ID / QR image kaun dega?
 6. **Batch order:** upar wala Batch 1→6 order theek hai, ya pehle **file manager + nested KVM + CPU model** (aapke teen deep features) chahiye?
 7. **Mpanel/Nobita:** pichhle docs ne inhe "drop" kaha tha; ab ye folder me hain. Inhe **reference** rakhein (maine aaj verify kiya), ya phir bhi ignore karein?
 8. **Default admin `admin/admin`:** D-14 ne accept kiya tha. Kya ab bhi waise hi rakhein, ya first-run setup me strong password maangein?
@@ -501,7 +495,6 @@ unzip -l Analyse-File/*.zip              → 12 archives; HVM-1.rar = ZIP magic
 | 4 | File manager scope | **Sabhi users** (admin + customer, jinka VM hai). Guest agent nahi; SFTP (Secure File Transfer Protocol) VM ke SSH login se. |
 | 6 | Build order | Batch 1 + pehle 3 deep features (file manager, nested KVM, CPU model) + aur features dhoondhna. Analysis ke baad build. |
 | 8 | Default admin | Installer par account setup (Pterodactyl jaisa): Enter = `admin` / `admin`; kuch likhoge to wahi account banega. |
-| 5 | Discord bot | Poori explanation Section 16 mein. Bot abhi build nahi hua (Batch 4). |
 
 ---
 
@@ -542,37 +535,8 @@ unzip -l Analyse-File/*.zip              → 12 archives; HVM-1.rar = ZIP magic
 ### 15.4 Abhi baaki (next batches)
 - Batch 1 bache: per-VM security scan, webhook field (Discord), LICENSE file (MIT ke liye), CPU model select ko VPS/VDS dono ke liye HKVM-style animation ke saath (abhi ek hi create form hai, usme CPU select pehle se hai).
 - Batch 2: boot log viewer, expiry/renew/suspend, coupons (sirf usage count), giveaway codes, shared IPv4 + auto port block, snapshots, backup/restore, status page, referral, flash sale.
-- Batch 3–6: automation, Discord bot (Python), premium UI + 2FA, AI (Gemini, default OFF).
+- Batch 3–6: automation, premium UI + 2FA, AI (Gemini, default OFF).
 - Owner remote support aur telemetry: NAHI (user ka standing decision). Custom price per order / order table: NAHI. Tmate: NAHI. sshx: haan. RDP/XRDP: NAHI.
-
----
-
-## 16. Discord bot — poori samajh (short forms ke bina)
-
-**Discord bot kya hai?**
-Discord ek chat app hai jahan log server (group) banate hain, aur us server mein channels (alag-alag chat rooms) hote hain. **Bot** ek program hai jo Discord par ek "robot user" ki tarah login karta hai. Ye program automatically messages padh sakta hai, jawab de sakta hai, aur kaam kar sakta hai (jaise naya channel banana, kisi ko private message bhejna).
-
-**Iski zarurat kyun hai?**
-Aapka VM selling panel customers ko Discord par bulata hai. Bot ye kaam automatic karega:
-- customer ke liye ticket channel banana (kharidari ke liye support),
-- payment ka tareeqa dikhana (UPI — Unified Payments Interface, jo India ka instant payment system hai),
-- VM ki login details private message (DM) mein bhejna,
-- admin ko naye orders ki alert dena.
-Bina bot ke ye sab aapko haath se karna padega.
-
-**Bot "chalta" kaise hai?**
-1. Discord Developer Portal (discord.com/developers) par ek "Application" banao, usme "Bot" section se **token** copy karo. Token ek lamba secret password hai — ise kisi ko na do.
-2. Bot ko apne server mein invite karo (permissions ke saath: channel banana, message bhejna).
-3. Bot ka code Python mein hoga, library `discord.py` use karke (ye Discord se baat karne ka ready-made code hai).
-4. Token aap website ke **Settings page** par daaloge; panel use database mein save karega.
-
-**"Download" ka matlab kya hai?**
-Aapne poocha tha ki "download" kya hai — yahan iska matlab hai `discord.py` library ko internet se install karna. Ye Python ka `pip install discord.py` command se hota hai: Python ke package server (PyPI — Python Package Index) se library ka code aapke server par aa jaata hai. Aapko koi file manually download karne ki zaroorat nahi; installer ye step kar dega (ya ek command se). Iske baad bot ek alag service ke roop mein chalega (systemd service), jo website se alag process hai.
-
-**Webhook kya hai (dusri cheez jo aapne bataya tha)?**
-Discord webhook ek URL hai jispar panel seedha ek message bhej deta hai (bot login ke bina). Jaise "naya VM bana" ki alert. Ye settings mein ek field hai; default khaali hai — khaali hone par kuch nahi bheja jayega.
-
-**Abhi status:** Bot abhi build nahi hua. Ye Batch 4 mein aayega. Pehle Batch 1 aur 2 poore honge.
 
 ---
 
@@ -585,11 +549,10 @@ Discord webhook ek URL hai jispar panel seedha ek message bhej deta hai (bot log
 | Warning ka rule | Har click par warning. Teesri click par strong **PERMANENT BLOCK** notice (kaise unlock karein, steps ke saath). |
 | Block ka rule | KVM ya nested ON maangne par server 409 `KVM_BLOCKED` deta hai (create aur edit dono). KVM OFF wali VM bani rehti hai (software emulation, slow). |
 | Lock kab hatega | Jab host par `/dev/kvm` aur VT-x / AMD-V available ho jaye (BIOS mein enable karke reboot). Lock automatically hat jata hai. |
-| Sidebar | "Create VM" hi rahega. VPS aur VDS alag options nahi, kyunki dono same cheez hain. Default option sahi hai. |
+| Sidebar | "Create VM" default rahega. 29 Oct ko user ne "Create RDP" option Create VM ke neeche maanga — Batch 5 (`docs/01_FEATURE_STATUS_AND_BATCHES.md` 5.13). VPS aur VDS alag options nahi. |
 | Installer ka DB folder | `STARCLOUD_DATA_DIR=./data` `.env` mein likha jaata hai (agar pehle se set nahi), taaki DB project ke andar rahe. |
 
 Code: `public/js/kvm-lock.js` (shared lock), `services/capabilities.js` (`KVM_BLOCK_MESSAGE`, installer report read), `app.js` (create/edit 409 block), `views/admin/vm-create.ejs` aur `views/admin/vm-edit.ejs` (lock call).
 
-Pending: Discord bot (Batch 4) abhi build nahi hua; user confirmation ke baad agle round mein.
 
 **Live test (29 Oct 2026, commit `276759e`):** no-KVM host par `POST /api/vms` mein `enable_kvm=1` ya `nested_kvm=1` → HTTP 409 `KVM_BLOCKED` ✅; field na dene par KVM check pass ✅. `PUT /api/vms/:id/edit` mein `enable_kvm=1` / `nested_kvm=1` → 409 ✅; `0` → 200 ✅, DB mein `0`. `/api/admin/operations` mein `capabilities.kvmAvailable` key maujood ✅. Browser click test abhi pending (Codespaces par). Batch-wise status: `docs/01_FEATURE_STATUS_AND_BATCHES.md`.

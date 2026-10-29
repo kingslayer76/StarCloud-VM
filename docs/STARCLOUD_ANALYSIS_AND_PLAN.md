@@ -194,7 +194,7 @@ Priority: **P0** = MVP mein · **P1** = MVP ke turant baad · **P2** = roadmap
 Short forms ka use mat karo. Har term ka full form likho. (User ko short form samajh nahi aata.)
 
 1. **Scope**: Saari features ek saath install hongi. Koi bhi part chhoda nahi jayega. 7 din ki deadline "zaroori nahi" hai, lekin jaldi karni hai. "MVP" ka matlab = Minimum Viable Product (sabse chhota version jo kaam kare). Priority 0 aur Priority 1 dono isi build mein aayenge.
-2. **Discord**: Discord **bot** banega. Bot token user **website ke settings page** mein dalega. Bot baaki kaam khud karega (ticket, UPI payment ticket, credentials). Webhook ka sawal abhi clear nahi hai. Confirm karna hai.
+2. **Discord**: sales aur support Discord par manual chalega. Webhook ka sawal abhi clear nahi hai. Confirm karna hai.
 3. **RDP / Windows**: User ne RDP hatane ko kaha. Is turn ke baad sirf Virtual Private Server (VPS) aur Virtual Dedicated Server (VDS) par kaam hoga. RDP (Remote Desktop Protocol) aur Windows guest abhi scope se bahar hain. Confirm karna hai.
 4. **"Pi S"**: meaning abhi clear nahi hai. User ne full form maanga hai.
 5. Custom price per order: removed (user ne kaha).

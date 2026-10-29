@@ -609,11 +609,25 @@ function initializeDatabase() {
       client_id TEXT,
       client_secret TEXT,
       redirect_uri TEXT,
-      bot_token TEXT,
-      guild_id TEXT,
-      auto_role_id TEXT,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
+    // Remove leftover bot-only columns from databases created by older builds (bot feature removed)
+    db.all(`PRAGMA table_info(discord_settings)`, (err, cols) => {
+      if (err || !cols) return;
+      const legacy = ['bot_token', 'guild_id', 'auto_role_id'].filter((col) => cols.some((c) => c.name === col));
+      if (legacy.length === 0) return;
+      db.serialize(() => {
+        legacy.forEach((col) => {
+          db.run(`ALTER TABLE discord_settings DROP COLUMN ${col}`, (dropErr) => {
+            if (dropErr) console.warn(`[Migration] Could not drop legacy column ${col}: ${dropErr.message}`);
+          });
+        });
+        // VACUUM so the old values are not left behind in free pages of the database file
+        db.run(`VACUUM`, (vacErr) => {
+          if (vacErr) console.warn(`[Migration] VACUUM after legacy column removal failed: ${vacErr.message}`);
+        });
+      });
+    });
 
     // Discord user accounts linking table
     db.run(`CREATE TABLE IF NOT EXISTS user_discord_accounts (
@@ -4432,23 +4446,19 @@ app.put('/api/settings', checkAuth, checkAdmin, (req, res) => {
   });
 });
 
-// ============= DISCORD SETTINGS API =============
+// ============= DISCORD OAUTH SETTINGS API =============
 
-// Get Discord settings (admin only)
+// Get Discord OAuth settings (admin only). Only explicit columns are read, so no secret leaks.
 app.get('/api/admin/discord-settings', checkAuth, checkAdmin, (req, res) => {
-  db.get(`SELECT * FROM discord_settings LIMIT 1`, (err, settings) => {
+  db.get(`SELECT id, enabled, client_id, client_secret, redirect_uri, updated_at FROM discord_settings LIMIT 1`, (err, settings) => {
     if (err) return res.status(500).json({ error: err.message });
-    
+
     if (!settings) {
-      // Return default empty settings
       return res.json({
         enabled: 0,
         client_id: '',
         client_secret: '',
         redirect_uri: '',
-        bot_token: '',
-        guild_id: '',
-        auto_role_id: '',
         updated_at: null
       });
     }
@@ -4456,14 +4466,13 @@ app.get('/api/admin/discord-settings', checkAuth, checkAdmin, (req, res) => {
     // Don't send client_secret to frontend for security
     const safe = { ...settings };
     safe.client_secret = safe.client_secret ? '••••••••' : '';
-    safe.bot_token = safe.bot_token ? '••••••••' : '';
     res.json(safe);
   });
 });
 
-// Update Discord settings (admin only)
+// Update Discord OAuth settings (admin only)
 app.put('/api/admin/discord-settings', checkAuth, checkAdmin, (req, res) => {
-  const { enabled, client_id, client_secret, redirect_uri, bot_token, guild_id, auto_role_id } = req.body;
+  const { enabled, client_id, client_secret, redirect_uri } = req.body;
 
   if (!client_id || !client_secret || !redirect_uri) {
     if (enabled) {
@@ -4476,20 +4485,17 @@ app.put('/api/admin/discord-settings', checkAuth, checkAdmin, (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
 
     const finalClientSecret = (client_secret && client_secret !== '••••••••') ? client_secret : (current?.client_secret || '');
-    const finalBotToken = (bot_token && bot_token !== '••••••••') ? bot_token : (current?.bot_token || '');
 
     if (current) {
       // Update existing
       db.run(
         `UPDATE discord_settings SET 
-         enabled = ?, client_id = ?, client_secret = ?, redirect_uri = ?, 
-         bot_token = ?, guild_id = ?, auto_role_id = ?, updated_at = datetime('now')
+         enabled = ?, client_id = ?, client_secret = ?, redirect_uri = ?, updated_at = datetime('now')
          WHERE id = ?`,
-        [enabled ? 1 : 0, client_id || '', finalClientSecret, redirect_uri || '', 
-         finalBotToken, guild_id || '', auto_role_id || '', current.id],
+        [enabled ? 1 : 0, client_id || '', finalClientSecret, redirect_uri || '', current.id],
         (err) => {
           if (err) return res.status(500).json({ error: err.message });
-          
+
           const response = { success: true, message: 'Discord settings updated' };
           if (client_secret === '••••••••' || !client_secret) {
             response.message += ' (Client Secret preserved)';
@@ -4500,10 +4506,9 @@ app.put('/api/admin/discord-settings', checkAuth, checkAdmin, (req, res) => {
     } else {
       // Insert new
       db.run(
-        `INSERT INTO discord_settings (enabled, client_id, client_secret, redirect_uri, bot_token, guild_id, auto_role_id) 
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [enabled ? 1 : 0, client_id || '', finalClientSecret, redirect_uri || '', 
-         finalBotToken, guild_id || '', auto_role_id || ''],
+        `INSERT INTO discord_settings (enabled, client_id, client_secret, redirect_uri) 
+         VALUES (?, ?, ?, ?)`,
+        [enabled ? 1 : 0, client_id || '', finalClientSecret, redirect_uri || ''],
         (err) => {
           if (err) return res.status(500).json({ error: err.message });
           res.json({ success: true, message: 'Discord settings created' });

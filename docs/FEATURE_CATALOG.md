@@ -179,8 +179,7 @@ Columns: **Feature** · **Source (pack / file)** · **HKVM status** · **HKVM me
 | **Emergency ops**: stop-all, reboot-all, clear-suspensions, reset-ports | HVM-8 `/emergency/*` | ❌ | `services/emergency.js` + confirm modal | **P0** |
 | Activity / audit log + CSV export | apanel `/admin/audit` + `/api/v1/admin/audit`, vpanel auditService, NKVM | ⚠️ (minimal) | `activity_logs` table + `/admin/audit` | **P0** |
 | Notifications (bell, unread, mark read) | apanel `/notifications/*`, HVM-8 | ⚠️ (HKVM header bell static "No new notifications", backend nahi — verified) | `notifications` table + header bell | P1 |
-| Webhooks (signed, retries) | HVM-8 `/webhooks`, vpanel plugins (Discord/Telegram) | ❌ (HKVM mein webhook code nahi — verified; settings mein sirf Discord *bot* fields hain jo unused hain) | `webhooks` table + HMAC signing | **P0** (Discord alerts) |
-| **Discord bot admin page** (bot token, status, commands) | apanel `/admin/discord-bot` + `/admin/settings/discord-bot/status` (discord.py style, prefix `akvm!`) | ⚠️ (HKVM settings mein Bot Token / Guild ID / Auto Role fields hain, save hote hain, lekin bot connect code nahi — verified) | `views/admin/discord-bot.ejs` + `services/discordBot.js` (discord.js) | **P0** (Discord-centric) |
+| Webhooks (signed, retries) | HVM-8 `/webhooks`, vpanel plugins (Discord/Telegram) | ❌ (HKVM mein webhook code nahi — verified) | `webhooks` table + HMAC signing | **P0** (Discord alerts) |
 | **Security scan per VM** (miner processes, failed logins, suspicious cron) | apanel `vm_security_scan`, `scan_vm_for_threats` | ❌ | `services/securityScan.js` (SSH argv, no shell) | P1 |
 | Branding: logo, favicon, sidebar icon, fonts | apanel `/admin/settings/icon-upload`, `/admin/fonts`; HVM-8 favicon/header icon | ⚠️ (`DEFAULT_LOGO_URL`) | `settings` + upload (multer) | P1 |
 | OS icons manager | HVM-8 `/admin/os-icons/*`, Svm-v6, HVM-V8 | ❌ | `os_icons` table | P2 |
@@ -286,7 +285,7 @@ Columns: **Feature** · **Source (pack / file)** · **HKVM status** · **HKVM me
 3. **Day 3:** capability (KVM detect) + nested KVM toggle + capacity guard + block-without-KVM, OS templates seed (16).
 4. **Day 4:** boot log, expiry/renew/suspend, emergency ops, public IP pool.
 5. **Day 5:** coupons, giveaway codes, plans, orders (Discord ticket ID). (Custom price per order hata diya gaya hai.)
-6. **Day 6:** webhooks + Discord bot page, security scan, sshx/tmate share, branding, i18n en/hi, premium motion/wallpaper sliders.
+6. **Day 6:** webhooks, security scan, sshx/tmate share, branding, i18n en/hi, premium motion/wallpaper sliders.
 7. **Day 7:** tests, CI, install.sh, docs, QA on KVM server.
 
 LATER: multi-node, migration, AI, Windows RDP, XRDP Cloud PC, sub-users, impersonation, referral.

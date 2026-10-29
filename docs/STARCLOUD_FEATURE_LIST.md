@@ -2,7 +2,7 @@
 
 > ℹ️ **UPDATED 2026-10-26:** Ye list abhi bhi kaam ki hai, lekin iske "Pending" sawaalon ke jawaab mil chuke hain:
 > webhook (D-16), file manager (D-17), "Pi S" drop (D-23), Gemini free key (D-20), XRDP remove (D-26),
-> password 8 chars (D-24), Python discord.py bot (D-25). Naye sawaal `docs/00_DEEP_ANALYSIS_SUMMARY.md` Section 12 me hain.
+> password 8 chars (D-24). Naye sawaal `docs/00_DEEP_ANALYSIS_SUMMARY.md` Section 12 me hain.
 
 Ye list user ke latest decisions ke hisaab se hai. Har feature ka status aur source file likha hai.
 Terms ka full form likha hai (short form nahi).
@@ -12,7 +12,6 @@ Terms ka full form likha hai (short form nahi).
 | # | Decision | Matlab |
 |---|---|---|
 | D-1 | Saari features ek saath build hongi | Koi part chhoda nahi jayega |
-| D-2 | Discord bot banega | Bot token **website ke settings page** mein dala jayega. Bot ticket, payment ticket aur credentials ka kaam karega |
 | D-3 | RDP hataya gaya | Windows RDP, Linux Cloud PC (XRDP), Windows templates — sab scope se bahar |
 | D-4 | tmate hataya gaya | Kaam nahi karta. sshx rahega |
 | D-5 | "Custom price per order" hataya gaya | |
@@ -65,12 +64,10 @@ Terms ka full form likha hai (short form nahi).
 | Scheduled snapshot | Cron se snapshot | HVM-8 `/vps/<id>/snapshots/schedule` | ❌ |
 | Real backup and restore | Disk image ka backup, restore, download | HVM-8 `/backups/create|restore|download`, vpanel | ❌ |
 
-## Batch 4 — Discord aur support
+## Batch 4 — Support aur commerce
 
 | Feature | Kya karega | Source | HKVM status |
 |---|---|---|---|
-| Discord bot (token website se) | Ticket channel, UPI payment ticket, credentials DM, auto role | D-2, HKVM `discord_settings` (token columns) | ⚠️ (settings save hote hain, bot code nahi) |
-| Discord bot admin page | Bot status, token (website se), commands on/off | apanel `/admin/discord-bot` | ❌ |
 | Discord webhook alerts | VM crash, expiry, new ticket ki alert | vpanel `pluginManager` | ❌ (confirm pending) |
 | sshx support link | Customer ke terminal ka temporary public link (sshx) | apanel `sshx` code | ❌ |
 | tmate | **Hataya gaya** (D-4) | — | — |
@@ -111,7 +108,6 @@ Terms ka full form likha hai (short form nahi).
 
 ## Pending (user se confirm chahiye)
 
-1. **Discord webhook** Batch 4 mein rakhein ya nahi?
 2. **File manager** (apanel, NKVM ka) — list mein nahi hai. Add karna hai?
 3. **"Pi S"** ka matlab kya hai? Kisi bhi file mein nahi mila.
 4. **Public IPv4**: single IP + port block model (D-9) confirm?

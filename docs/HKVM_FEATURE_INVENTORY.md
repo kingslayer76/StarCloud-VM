@@ -26,7 +26,6 @@
 | OS templates (catalog + custom + cache) | ✅ |
 | Users admin (CRUD, role, Discord info) | ✅ |
 | Discord OAuth login / link / unlink | ✅ |
-| Discord bot settings (token, guild, auto-role) | ⚠️ settings save hote hain, **koi bot nahi chalta** |
 | Discord webhook | ❌ **HKVM mein webhook code nahi hai** |
 | File manager (browse / upload / download / edit) | ❌ **HKVM mein nahi hai** |
 | Notifications (bell) | ⚠️ header mein bell hai, backend nahi |
@@ -65,7 +64,7 @@
 - **Security tab**: Change Admin Password (modal `changePasswordModal`), Active Sessions (button — route nahi ⚠️)
 - **System tab**: live stats block (`systemLiveStats`)
 - Max sessions / session timeout ka server-side enforcement verify karna baaki hai
-- **Discord**: Enable Discord Login, OAuth credentials (Client ID, Secret, Redirect URI), **Bot Settings (Bot Token, Guild ID, Auto Role ID)** ⚠️ — ye values DB mein save hoti hain (`discord_settings`), lekin `app.js` mein inka koi use nahi (bot connect code nahi hai)
+- **Discord**: Enable Discord Login, OAuth credentials (Client ID, Secret, Redirect URI)
 - **Danger Zone**: **Stop All VMs** — `views/admin/settings.ejs` ka `stopAllVMs()` `/api/vms` fetch karke har VM par `/api/vms/:id/stop` POST karta hai ⚠️
 
 ## 3. VM create — advanced options (verified)
@@ -112,7 +111,6 @@
 ## 6. Database (8 tables)
 
 `users`, `vms`, `vm_logs`, `vm_snapshots`, `os_templates`, `settings`, `discord_settings`, `user_discord_accounts`.
-- `discord_settings` mein `bot_token`, `guild_id`, `auto_role_id` columns hain (⚠️ unused).
 - `settings` table key-value hai (columns `setting_key`, `setting_value`). Panel ki settings (title, description, version, site name, icon, session timeout, max sessions) isi mein save hoti hain.
 - `vms` table ke baad ke migrations (app.js ~L430–460): `custom_cpu_name`, `machine_type`, `board_name`, `product_name`, `custom_smbios_manufacturer`, `dns_primary`, `dns_secondary`, `iso_attached`, `boot_from_iso`, `bridge_device`.
 
@@ -134,7 +132,7 @@
 
 | Aapne bataya | Sach (verified) |
 |---|---|
-| "Webhook settings mein milega" | ❌ Webhook code koi nahi. Settings mein **Discord Bot Settings** hai (token/guild/auto-role) jo save hota hai lekin koi bot nahi chalta. Real webhook (Discord notifications) naya banana hoga. |
+| "Webhook settings mein milega" | ❌ Webhook code koi nahi. Real webhook (Discord notifications) naya banana hoga. |
 | "File manager HKVM mein hai" | ❌ Koi file manager route ya view nahi. File manager **apanel (AKVM)** mein hai (`/vm/<id>/files/*`, 16 routes). Usko idea lekar HKVM mein banayenge. |
 | "Nested KVM HKVM mein hai" | ⚠️ Explicit toggle nahi. `cpu=host` se implicitly pass ho sakta hai. Explicit toggle banayenge. |
 | "Custom CPU model HKVM mein hai" | ✅ Haan. `custom_cpu_name` + 10 CPU models. |
