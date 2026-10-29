@@ -549,7 +549,7 @@ unzip -l Analyse-File/*.zip              → 12 archives; HVM-1.rar = ZIP magic
 | Warning ka rule | Har click par warning. Teesri click par strong **PERMANENT BLOCK** notice (kaise unlock karein, steps ke saath). |
 | Block ka rule | KVM ya nested ON maangne par server 409 `KVM_BLOCKED` deta hai (create aur edit dono). KVM OFF wali VM bani rehti hai (software emulation, slow). |
 | Lock kab hatega | Jab host par `/dev/kvm` aur VT-x / AMD-V available ho jaye (BIOS mein enable karke reboot). Lock automatically hat jata hai. |
-| Sidebar | "Create VM" default rahega. 29 Oct ko user ne "Create RDP" option Create VM ke neeche maanga — Batch 5 (`docs/01_FEATURE_STATUS_AND_BATCHES.md` 5.13). VPS aur VDS alag options nahi. |
+| Sidebar | "Create VM" default rahega. VPS aur VDS alag options nahi. "Create RDP" option (29 Oct ko maanga tha) user ne baad mein cancel kar diya: RDP / Windows scope se bahar hai (D-3). |
 | Installer ka DB folder | `STARCLOUD_DATA_DIR=./data` `.env` mein likha jaata hai (agar pehle se set nahi), taaki DB project ke andar rahe. |
 
 Code: `public/js/kvm-lock.js` (shared lock), `services/capabilities.js` (`KVM_BLOCK_MESSAGE`, installer report read), `app.js` (create/edit 409 block), `views/admin/vm-create.ejs` aur `views/admin/vm-edit.ejs` (lock call).

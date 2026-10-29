@@ -11,3 +11,7 @@ backups/
 
 # Local secrets: never commit (installer writes admin password here)
 .env
+
+# Runtime logs and the background panel PID file
+logs/
+data/panel.pid

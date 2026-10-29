@@ -144,7 +144,10 @@ cd "$APP_DIR"
 if [ -f package-lock.json ]; then npm ci --omit=dev || npm install --omit=dev; else npm install --omit=dev; fi
 
 # ---- 6. Service ------------------------------------------------------------
-if [ "$SKIP_SYSTEM" = false ] && command -v systemctl >/dev/null 2>&1; then
+# systemd only counts as usable when it is really running as PID 1 (/run/systemd/system exists).
+# Codespaces, Docker and WSL often have the systemctl command but no running systemd.
+START_IN_BACKGROUND=0
+if [ "$SKIP_SYSTEM" = false ] && [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; then
   NODE_BIN="$(command -v node)"
   cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<UNIT
 [Unit]
@@ -163,9 +166,24 @@ Environment=NODE_ENV=production
 [Install]
 WantedBy=multi-user.target
 UNIT
-  systemctl daemon-reload
-  systemctl enable --now "${SERVICE_NAME}.service"
-  say "[ok]   Service '${SERVICE_NAME}' enabled and started."
+  if systemctl daemon-reload && systemctl enable --now "${SERVICE_NAME}.service"; then
+    say "[ok]   Service '${SERVICE_NAME}' enabled and started."
+  else
+    warn "systemd could not start the service. Starting the panel in the background instead."
+    START_IN_BACKGROUND=1
+  fi
+elif [ "$SKIP_SYSTEM" = false ]; then
+  say "[info] systemd is not running on this machine (normal in Codespaces, Docker and WSL)."
+  START_IN_BACKGROUND=1
+fi
+
+if [ "$START_IN_BACKGROUND" = 1 ]; then
+  say ""
+  if bash "$APP_DIR/start-panel.sh"; then
+    say "[ok]   Panel is running in the background. After a restart run:  bash $APP_DIR/start-panel.sh"
+  else
+    warn "The panel did not start. Read the log above, fix the problem, then run:  bash $APP_DIR/start-panel.sh"
+  fi
 fi
 
 PORT_VALUE="$(grep -E '^PORT=' "$ENV_FILE" | tail -1 | cut -d= -f2 || true)"
@@ -173,6 +191,7 @@ PORT_VALUE="${PORT_VALUE:-8080}"
 say ""
 say "=== Done ==="
 say "Open the panel:  http://<this-server-ip>:${PORT_VALUE}/login"
+say "GitHub Codespaces: open the PORTS tab and make port ${PORT_VALUE} Public (or Private) before opening the link."
 say "Admin username:  $ADMIN_USER"
 say "Admin password:  (the one you typed; 'admin' if you pressed Enter)"
 if [ "$KVM_OK" = false ]; then warn "KVM is OFF on this host (see the warnings above)."; fi
