@@ -20,7 +20,7 @@ function toggleFlag(value, defaultValue = 1) {
   return value ? 1 : 0;
 }
 const { Client } = require('ssh2');
-const { detectKvm } = require('./services/capabilities');
+const { detectKvm, KVM_BLOCK_MESSAGE } = require('./services/capabilities');
 const { checkCapacity } = require('./services/capacity');
 const { initAuditTable } = require('./services/audit');
 require('dotenv').config();
@@ -2318,13 +2318,17 @@ app.put('/api/vms/:vm_id/edit', checkAuth, (req, res) => {
     if (username) { updates.push('username = ?'); values.push(username); }
     if (password) { updates.push('password = ?'); values.push(password); }
     if (enable_acpi !== undefined) { updates.push('enable_acpi = ?'); values.push(toggleFlag(enable_acpi, 1)); }
+    // KVM block (same rule as create): no KVM on this host = cannot turn KVM or nested KVM ON
+    const editCaps = detectKvm();
+    if (!editCaps.kvmAvailable && ((enable_kvm !== undefined && toggleFlag(enable_kvm, 0) === 1) ||
+        (nested_kvm !== undefined && toggleFlag(nested_kvm, 0) === 1))) {
+      return res.status(409).json({ error: KVM_BLOCK_MESSAGE, code: 'KVM_BLOCKED' });
+    }
     if (enable_kvm !== undefined) {
-      const hostKvm = detectKvm().kvmAvailable;
-      updates.push('enable_kvm = ?'); values.push(hostKvm ? toggleFlag(enable_kvm, 1) : 0);
+      updates.push('enable_kvm = ?'); values.push(editCaps.kvmAvailable ? toggleFlag(enable_kvm, 1) : 0);
     }
     if (nested_kvm !== undefined) {
-      const caps = detectKvm();
-      updates.push('nested_kvm = ?'); values.push(caps.nestedAvailable ? toggleFlag(nested_kvm, 0) : 0);
+      updates.push('nested_kvm = ?'); values.push(editCaps.nestedAvailable ? toggleFlag(nested_kvm, 0) : 0);
     }
     if (extra_args !== undefined) { updates.push('extra_args = ?'); values.push(extra_args || ''); }
     if (network_type) { updates.push('network_type = ?'); values.push(network_type); }
@@ -2824,13 +2828,20 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
   const macAddr = mac_address || generateMACAddress();
   const vmOwner = owner_id || req.session.userId; // Use selected owner if provided, else current user
 
-  // KVM / nested KVM: only when the host really has KVM; otherwise forced OFF
+  // KVM block: on a host without KVM, a request to turn KVM (or nested KVM) ON is refused.
+  // Creating a VM with KVM OFF (software emulation) is still allowed.
   const hostCaps = detectKvm();
+  const kvmRequested = enable_kvm !== undefined && toggleFlag(enable_kvm, 0) === 1;
+  const nestedRequested = nested_kvm !== undefined && toggleFlag(nested_kvm, 0) === 1;
+  if (!hostCaps.kvmAvailable && (kvmRequested || nestedRequested)) {
+    console.warn('[Create] KVM blocked: host has no KVM');
+    return res.status(409).json({ error: KVM_BLOCK_MESSAGE, code: 'KVM_BLOCKED' });
+  }
+  if (nestedRequested && !kvmRequested && hostCaps.kvmAvailable && toggleFlag(enable_kvm, 1) === 0) {
+    return res.status(400).json({ error: 'Nested KVM needs KVM On / Off to be ON', code: 'NESTED_NEEDS_KVM' });
+  }
   const kvmOn = hostCaps.kvmAvailable ? toggleFlag(enable_kvm, 1) : 0;
   const nestedOn = hostCaps.nestedAvailable && kvmOn ? toggleFlag(nested_kvm, 0) : 0;
-  if (!hostCaps.kvmAvailable && (toggleFlag(enable_kvm, 1) || toggleFlag(nested_kvm, 0))) {
-    console.warn('[Create] KVM requested but host has no KVM; created with KVM OFF (software emulation)');
-  }
 
   // Capacity guard: refuse if the host cannot hold this VM's RAM / vCPUs
   const capacityError = await checkCapacity(db, { memoryMb: memory, vcpus: cpuCount });

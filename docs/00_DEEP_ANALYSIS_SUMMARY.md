@@ -573,3 +573,21 @@ Aapne poocha tha ki "download" kya hai — yahan iska matlab hai `discord.py` li
 Discord webhook ek URL hai jispar panel seedha ek message bhej deta hai (bot login ke bina). Jaise "naya VM bana" ki alert. Ye settings mein ek field hai; default khaali hai — khaali hone par kuch nahi bheja jayega.
 
 **Abhi status:** Bot abhi build nahi hua. Ye Batch 4 mein aayega. Pehle Batch 1 aur 2 poore honge.
+
+---
+
+## 17. User ke faisle (round 3) — KVM lock aur sidebar
+
+| Faisla | Kya lagu hua |
+|---|---|
+| "VPS" = wo server jpar panel install hai | Installer us server par KVM check karta hai aur result `data/install-kvm-report.json` mein likhta hai. Operations page par dikhta hai. |
+| KVM nahi to lock | Panel runtime par bhi `/dev/kvm` aur CPU flag check karta hai. KVM na ho to **KVM On / Off** aur **Nested KVM On / Off** dono OFF, aur click karne par warning. |
+| Warning ka rule | Har click par warning. Teesri click par strong **PERMANENT BLOCK** notice (kaise unlock karein, steps ke saath). |
+| Block ka rule | KVM ya nested ON maangne par server 409 `KVM_BLOCKED` deta hai (create aur edit dono). KVM OFF wali VM bani rehti hai (software emulation, slow). |
+| Lock kab hatega | Jab host par `/dev/kvm` aur VT-x / AMD-V available ho jaye (BIOS mein enable karke reboot). Lock automatically hat jata hai. |
+| Sidebar | "Create VM" hi rahega. VPS aur VDS alag options nahi, kyunki dono same cheez hain. Default option sahi hai. |
+| Installer ka DB folder | `STARCLOUD_DATA_DIR=./data` `.env` mein likha jaata hai (agar pehle se set nahi), taaki DB project ke andar rahe. |
+
+Code: `public/js/kvm-lock.js` (shared lock), `services/capabilities.js` (`KVM_BLOCK_MESSAGE`, installer report read), `app.js` (create/edit 409 block), `views/admin/vm-create.ejs` aur `views/admin/vm-edit.ejs` (lock call).
+
+Pending: Discord bot (Batch 4) abhi build nahi hua; user confirmation ke baad agle round mein.

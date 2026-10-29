@@ -1,6 +1,16 @@
 // Host capability detection: is hardware virtualization (KVM) usable on this machine?
 // Used by the installer report, the VM create/edit forms, and the QEMU start code.
 const fs = require('fs');
+const path = require('path');
+
+// Shown whenever a KVM option is requested on a host that has no KVM
+const KVM_BLOCK_MESSAGE = 'KVM is blocked on this host: the server has no hardware virtualization (KVM), so KVM VMs cannot be created or enabled. Use KVM On / Off = OFF, or enable KVM in BIOS/UEFI and re-check.';
+
+// Result written by install.sh (informational; live detection below decides the lock)
+const INSTALL_REPORT = path.join(__dirname, '..', 'data', 'install-kvm-report.json');
+function readInstallReport() {
+  try { return JSON.parse(fs.readFileSync(INSTALL_REPORT, 'utf8')); } catch (e) { return null; }
+}
 
 const CACHE_MS = 10 * 1000;
 let cache = null;
@@ -57,10 +67,11 @@ function detectKvm() {
     // is reported separately so the UI can warn about it.
     nestedAvailable: kvmAvailable,
     reasons,
+    installReport: readInstallReport(),
     checkedAt: new Date().toISOString()
   };
   cachedAt = Date.now();
   return cache;
 }
 
-module.exports = { detectKvm };
+module.exports = { detectKvm, KVM_BLOCK_MESSAGE };

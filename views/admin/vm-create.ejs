@@ -757,6 +757,7 @@
   </div>
 </div>
 
+<script src="/js/kvm-lock.js"></script>
 <script>
 let currentStep = 1;
 const totalSteps = 5;
@@ -1143,35 +1144,11 @@ function getOwnerName(ownerId) {
   return option?.textContent || '—';
 }
 
-// Read host KVM capability from the server and lock the KVM options when the host has no KVM
-(async function initKvmHostState() {
-  const kvm = document.getElementById('enable_kvm');
-  const nested = document.getElementById('enable_nested');
-  const kvmHint = document.getElementById('kvmHint');
-  const nestedHint = document.getElementById('nestedHint');
-  const banner = document.getElementById('kvmHostBanner');
-  try {
-    const res = await fetch('/api/admin/operations', { credentials: 'same-origin' });
-    const d = await res.json();
-    const caps = d.capabilities || {};
-    if (!caps.kvmAvailable) {
-      kvm.checked = false; kvm.disabled = true;
-      nested.checked = false; nested.disabled = true;
-      kvmHint.textContent = 'Locked OFF: this host has no KVM. VMs will run with slow software emulation.';
-      nestedHint.textContent = 'Locked OFF: nested KVM needs host KVM.';
-      banner.style.display = 'block';
-      banner.textContent = 'This host does not support KVM. ' + (caps.reasons || []).join(' ');
-    } else {
-      kvmHint.textContent = 'Hardware virtualization (' + (caps.virtFlag === 'svm' ? 'AMD-V' : 'Intel VT-x') + ') is available on this host.';
-      if (!caps.hostNestedOn) {
-        banner.style.display = 'block';
-        banner.textContent = 'Host nested KVM module is OFF. Nested KVM VMs will not work until the installer or admin enables nested mode on the host.';
-      }
-    }
-  } catch (e) {
-    kvmHint.textContent = 'Could not check host KVM status (' + e.message + ').';
-  }
-})();
+// KVM lock: host without KVM keeps the KVM options OFF and warns on each click (see /js/kvm-lock.js)
+KvmLock.init({
+  kvmId: 'enable_kvm', nestedId: 'enable_nested',
+  kvmHintId: 'kvmHint', nestedHintId: 'nestedHint', bannerId: 'kvmHostBanner'
+});
 
 function collectFormData() {
   const form = document.getElementById('createVMForm');

@@ -125,6 +125,7 @@
                     </div>
                   </label>
 
+                  <div id="kvmHostBanner" style="display: none; font-size: 12px; padding: 10px; border-radius: 8px; background: rgba(234,179,8,.12); border: 1px solid rgba(234,179,8,.4);"></div>
                   <label class="toggle-switch">
                     <input type="checkbox" class="toggle-input" name="enable_kvm" id="edit_kvm" value="1"
                       <%= vm && vm.enable_kvm !== false ? 'checked' : '' %>
@@ -499,7 +500,9 @@
   </div>
 </div>
 
+<script src="/js/kvm-lock.js"></script>
 <script>
+KvmLock.init({ kvmId: 'edit_kvm', nestedId: 'edit_nested', bannerId: 'kvmHostBanner' });
 const vmId = <%= vmId %>;
 
 // Reinstall Modal Functions

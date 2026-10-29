@@ -125,6 +125,9 @@ async function loadStatus() {
     html += `<div class="ops-kv"><span>Hardware virtualization flag</span><span>${esc(c.virtFlag || 'none')}</span></div>`;
     html += `<div class="ops-kv"><span>/dev/kvm usable</span><span>${c.devKvmWritable ? 'yes' : 'no'}</span></div>`;
     html += `<div class="ops-kv"><span>Host nested KVM module</span><span>${c.hostNestedOn ? 'on' : 'off'}</span></div>`;
+    if (c.installReport) {
+      html += `<div class="ops-kv"><span>Installer KVM check</span><span>${c.installReport.kvm ? 'yes' : 'no'} (${esc(c.installReport.checkedAt)})</span></div>`;
+    }
     html += `<div class="ops-kv"><span>VMs (total / running)</span><span>${d.vms.total} / ${d.vms.running}</span></div>`;
     $('capBox').innerHTML = html;
     $('mtEnabled').checked = !!d.maintenance.enabled;

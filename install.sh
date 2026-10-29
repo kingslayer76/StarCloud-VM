@@ -74,6 +74,15 @@ if [ "$KVM_OK" = true ]; then
   fi
 fi
 
+# Record the KVM result for the panel (the panel locks the KVM options when KVM is missing)
+mkdir -p "$APP_DIR/data"
+DEV_KVM_JSON=false; [ -e /dev/kvm ] && DEV_KVM_JSON=true
+KVM_JSON=false; [ "$KVM_OK" = true ] && KVM_JSON=true
+cat > "$APP_DIR/data/install-kvm-report.json" <<JSON
+{"kvm": $KVM_JSON, "devKvm": $DEV_KVM_JSON, "virtFlag": "$VIRT_FLAG", "vendor": "${CPU_VENDOR:-unknown}", "checkedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+JSON
+say "[ok]   KVM result saved to data/install-kvm-report.json"
+
 # ---- 2. System packages ----------------------------------------------------
 if [ "$SKIP_SYSTEM" = false ]; then
   say ""
@@ -123,6 +132,8 @@ SECRET="$(openssl rand -hex 32)"
   echo "STARCLOUD_ADMIN_PASSWORD=$ADMIN_PASS"
 } > "$ENV_FILE"
 rm -f "$ENV_FILE.tmp"
+# Keep the database and secrets inside the project data folder (unless the admin set another folder)
+if ! grep -qE '^STARCLOUD_DATA_DIR=' "$ENV_FILE"; then echo "STARCLOUD_DATA_DIR=./data" >> "$ENV_FILE"; fi
 chmod 600 "$ENV_FILE"
 say "[ok]   Wrote $ENV_FILE (mode 600). The plain-text admin password is removed automatically after the first start."
 
