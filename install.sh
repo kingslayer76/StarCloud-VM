@@ -256,7 +256,7 @@ control_status() {
   if panel_answers; then state="RUNNING (answering on port ${PANEL_PORT})"; rc=0
   elif [ -n "$p" ]; then state="process ${p} exists but is not answering yet"; rc=1
   else state="NOT RUNNING"; rc=1; fi
-  echo "StarCloud panel: ${state}"
+  echo "StarCloud Panel: ${state}"
   [ -n "$p" ] && echo "  process id : ${p}"
   service_installed && echo "  service     : systemd (${SERVICE_NAME}) - $(systemctl is-active "$SERVICE_NAME" 2>/dev/null || true)"
   echo "  folder      : ${APP_DIR}"
@@ -296,7 +296,7 @@ fi
 
 mkdir -p "$LOG_DIR" "$APP_DIR/data"
 : >> "$LOG_FILE"
-log "===== StarCloud installer started ($(date)) args: $* ====="
+log "===== StarCloud Panel installer started ($(date)) args: $* ====="
 
 PANEL_PORT="${PANEL_PORT:-$(read_env_value PORT 8080)}"
 [[ "$PANEL_PORT" =~ ^[0-9]+$ ]] && [ "$PANEL_PORT" -ge 1 ] && [ "$PANEL_PORT" -le 65535 ] || die "Port must be a number from 1 to 65535."
@@ -375,7 +375,7 @@ fi
 
 # Port
 if panel_answers; then
-  ui_ok "Port ${PANEL_PORT}: the StarCloud panel is already running. It will be restarted with the new code."
+  ui_ok "Port ${PANEL_PORT}: the StarCloud Panel is already running. It will be restarted with the new code."
 elif port_listening; then
   ui_warn "Port ${PANEL_PORT} is used by another program:"
   (ss -ltnp 2>/dev/null || netstat -ltnp 2>/dev/null) | grep ":${PANEL_PORT} " | sed 's/^/      /' || true

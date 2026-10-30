@@ -59,6 +59,8 @@
       border-bottom: 1px solid var(--border-color);
     }
 
+    .login-welcome { margin-top: 10px; font-size: 13px; line-height: 1.5; color: var(--text-secondary, #cbd5e1); }
+    .login-welcome span { font-size: 11px; color: var(--text-muted, #94a3b8); }
     .login-logo-inside {
       display: flex;
       flex-direction: column;
@@ -260,10 +262,11 @@
         <div>
           <div class="login-title">Welcome Back</div>
           <div class="login-subtitle">Sign in to access your control panel</div>
+          <div class="login-welcome">Welcome to StarCloud Panel. Manage your virtual machines in one place.<br><span>Inspired by HopingBoyz · Built by KingSlayer</span></div>
         </div>
         <div class="login-logo-inside">
           <div class="login-logo-icon" style="display: flex; align-items: center; justify-content: center;">
-            <img src="<%= siteLogo %>" style="width: 48px; height: 48px; object-fit: contain; border-radius: 8px;" alt="StarCloud Logo">
+            <img src="<%= siteLogo %>" style="width: 48px; height: 48px; object-fit: contain; border-radius: 8px;" alt="StarCloud Panel Logo">
           </div>
         </div>
       </div>
@@ -358,7 +361,7 @@
       </button>
 
     <div class="login-footer">
-      <%= siteName %> <%= panelVersion %> · &copy; <%= new Date().getFullYear() %> KingSlayer
+      <%= siteName %> · &copy; <%= new Date().getFullYear() %> KingSlayer
       <br>
       <span style="font-size: 10px; color: var(--text-muted);">Powered by QEMU/KVM + Express.js</span>
     </div>
@@ -470,7 +473,7 @@ async function loadLoginBranding() {
     if (!res.ok) return;
     const settings = await res.json();
     
-    const siteIconUrl = settings['site_icon_url'] || '/images/logo.png';
+    const siteIconUrl = settings['site_icon_url'] || '/images/logo-cloud.png';
     const siteName = settings['site_name'] || 'StarCloud Panel';
     const siteDesc = settings['site_description'] || 'Professional VM Management Platform';
     
@@ -496,7 +499,7 @@ async function loadLoginBranding() {
     const iconImg = document.getElementById('loginIconImg');
     const iconFallback = document.getElementById('loginIconFallback');
     if (iconImg) {
-      iconImg.src = '/images/logo.png';
+      iconImg.src = '/images/logo-cloud.png';
       iconImg.style.display = 'block';
     }
     if (iconFallback) iconFallback.style.display = 'none';
@@ -555,7 +558,7 @@ async function loadLoginBranding() {
     if (!res.ok) return;
     const settings = await res.json();
     
-    const siteIconUrl = settings['site_icon_url'] || '/images/logo.png';
+    const siteIconUrl = settings['site_icon_url'] || '/images/logo-cloud.png';
     const siteName = settings['site_name'] || 'StarCloud Panel';
     const siteDesc = settings['site_description'] || 'Professional VM Management Platform';
     
@@ -581,7 +584,7 @@ async function loadLoginBranding() {
     const iconImg = document.getElementById('loginIconImg');
     const iconFallback = document.getElementById('loginIconFallback');
     if (iconImg) {
-      iconImg.src = '/images/logo.png';
+      iconImg.src = '/images/logo-cloud.png';
       iconImg.style.display = 'block';
     }
     if (iconFallback) iconFallback.style.display = 'none';

@@ -198,13 +198,13 @@
                 <div class="form-group">
                   <label class="form-label">Password <span class="required">*</span></label>
                   <div style="position: relative;">
-                    <input type="password" class="form-control" id="custom_password" name="custom_password" placeholder="Minimum 8 characters (required)" minlength="8" required style="padding-right: 40px;">
+                    <input type="password" class="form-control" id="custom_password" name="custom_password" placeholder="Enter a VM password (required)" required style="padding-right: 40px;">
                     <button type="button" onclick="togglePw('custom_password', this)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; display:inline-flex;">
                       <svg width="16" height="16"><use href="#i-eye"/></svg>
                     </button>
                   </div>
                   <div class="form-hint" style="color: var(--text-muted); font-size: 12px; margin-top: 6px;">
-                    Required. Minimum 8 characters. Used for the VM's cloud-init login.
+                    Required. Used for the VM's login and SSH access.
                   </div>
                 </div>
               </div>
@@ -293,7 +293,7 @@
                 <select class="form-control" name="cpu_model" id="cpu_model">
                   <!-- Loaded dynamically -->
                 </select>
-                <div class="form-hint">Use 'host' for best performance on physical hardware</div>
+                <div class="form-hint">Pick the CPU family your customers expect. Intel Xeon and AMD EPYC models are offered.</div>
               </div>
 
               <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-subtle);">
@@ -775,8 +775,7 @@ async function loadTemplates() {
     if (!grid) return;
     
     grid.innerHTML = Object.entries(osTemplates).map(([key, tmpl]) => {
-      const iconUrl = tmpl.icon && tmpl.icon.startsWith('http') ? tmpl.icon : 'https://i.imgur.com/wu0Ob6B.png';
-      const iconHtml = `<img src="${iconUrl}" style="width: 48px; height: 48px; object-fit: contain; border-radius: 8px; padding:4px; background:rgba(99,102,241,0.05);" onerror="this.src='https://i.imgur.com/wu0Ob6B.png';" alt="${tmpl.name}">`;
+      const iconHtml = `<img src="${osIconSrc(tmpl.icon)}" alt="" style="width: 48px; height: 48px; object-fit: contain; border-radius: 8px;">`;
       return `
       <label class="template-card">
         <input type="radio" name="_template" value="${key}" onchange="selectTemplate('${key}')">
@@ -834,7 +833,7 @@ async function loadCPUModels() {
     const sel = document.getElementById('cpu_model');
     if (!sel) return;
     sel.innerHTML = Object.entries(models).map(([key, m]) =>
-      `<option value="${key}" ${key === 'host' ? 'selected' : ''}>${m.name} — ${m.description}</option>`
+      `<option value="${key}" ${key === 'xeon-cascadelake' ? 'selected' : ''}>${m.name} — ${m.description}</option>`
     ).join('');
   } catch(e) {}
 }
@@ -1098,7 +1097,7 @@ function buildReview() {
           <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color:#EC4899; margin-bottom: 10px; display:inline-flex; align-items:center; gap:6px;">${svg('i-cpu', 12)} Hardware</div>
           ${reviewRow('vCPUs', data.custom_cpus + ' vCPUs')}
           ${reviewRow('CPU Layout', data.cpu_sockets + 'S × ' + data.cpu_cores + 'C × ' + data.cpu_threads + 'T')}
-          ${reviewRow('CPU Model', data.cpu_model || 'host')}
+          ${reviewRow('CPU Model', data.cpu_model || 'xeon-cascadelake')}
           ${reviewRow('Custom CPU', data.custom_cpu_name ? '<span style="color:#6366F1; font-weight:600;">' + data.custom_cpu_name + '</span>' : 'Default (host)')}
           ${reviewRow('Memory', data.custom_memory + ' MB')}
           ${reviewRow('Disk Size', data.disk_size)}
@@ -1153,8 +1152,8 @@ function collectFormData() {
   data.enable_kvm = document.getElementById('enable_kvm')?.checked ? 1 : 0;
   data.enable_acpi = document.getElementById('enable_acpi')?.checked ? 1 : 0;
   
-  if (!data.custom_password || String(data.custom_password).length < 8) {
-    return { __error: 'VM password is required and must be at least 8 characters' };
+  if (!data.custom_password) {
+    return { __error: 'VM password is required' };
   }
   
   const customCPUCheckbox = document.getElementById('enable_custom_cpu_name');

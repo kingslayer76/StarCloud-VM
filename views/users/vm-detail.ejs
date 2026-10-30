@@ -53,7 +53,7 @@
 </svg>
 
 <div class="admin-wrapper">
-  <%- include('../partials/users/sidebar') %>
+  <%- include(user && user.role === 'admin' ? '../partials/admin/sidebar' : '../partials/users/sidebar') %>
 
   <div class="admin-main">
     <%- include('../partials/admin/header') %>
@@ -234,7 +234,7 @@ function renderPage(vm, stats) {
   const statusCls = vm.status === 'running' ? 'badge-running' : vm.status === 'error' ? 'badge-error' : 'badge-stopped';
   const isRunning = vm.status === 'running';
   const icon = vm.template_icon;
-  const displayIcon = (icon && icon.startsWith('http')) ? icon : 'https://i.imgur.com/wu0Ob6B.png';
+  const displayIcon = osIconSrc(icon);
   
   document.getElementById('pageContent').innerHTML = `
     <!-- Page Header -->
@@ -398,7 +398,7 @@ function renderPage(vm, stats) {
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
             <div>
               <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #EC4899; margin-bottom: 12px; display:inline-flex; align-items:center; gap:6px;">${svg('i-cpu', 12)} CPU Configuration</div>
-              ${renderInfoRow('CPU Model', vm.cpu_model || 'host')}
+              ${renderInfoRow('CPU Model', vm.cpu_model || 'xeon-cascadelake')}
               ${renderInfoRow('Custom CPU', vm.custom_cpu_name || '—')}
               ${renderInfoRow('Sockets', vm.cpu_sockets || '1')}
               ${renderInfoRow('Cores', vm.cpu_cores || '2')}

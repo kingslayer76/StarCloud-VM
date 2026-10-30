@@ -91,7 +91,6 @@ module.exports = function mountOps(app, ctx) {
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  app.get('/admin/operations', checkAdmin, (req, res) => {
-    res.render('admin/operations', { title: 'Operations - StarCloud Panel', cp: 'operations', currentPage: 'operations' });
-  });
+  // Operations was merged into Settings (Host virtualization -> System Info, Maintenance + Emergency -> General).
+  app.get('/admin/operations', checkAdmin, (req, res) => res.redirect('/admin/settings#general'));
 };

@@ -696,7 +696,7 @@ async function loadCPUModels() {
     const models = await res.json();
     const sel = document.getElementById('edit_cpu_model');
     if (!sel) return;
-    const currentModel = '<%= vm ? vm.cpu_model : "host" %>';
+    const currentModel = '<%= vm ? vm.cpu_model : "xeon-cascadelake" %>';
     sel.innerHTML = Object.entries(models).map(([key, m]) =>
       `<option value="${key}" ${key === currentModel ? 'selected' : ''}>${m.name} — ${m.description}</option>`
     ).join('');

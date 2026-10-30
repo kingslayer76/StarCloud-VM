@@ -138,56 +138,39 @@ if (!fs.existsSync(CLOUDVM_DIR)) {
 }
 
 // CPU Models available
+// CPU models offered to customers/admins. Keys are stored in the DB; "features" is the QEMU -cpu name.
+// Only current Intel Xeon and AMD EPYC families are listed (the old generic/legacy list was removed).
+const DEFAULT_CPU_MODEL = 'xeon-cascadelake';
 const CPU_MODELS = {
-  'host': {
-    name: 'Host CPU (Native)',
-    description: 'Use host CPU directly - best performance',
-    features: 'host'
+  'xeon-icelake': {
+    name: 'Intel Xeon Scalable 3rd Gen (Ice Lake)',
+    description: 'Intel Xeon Scalable, 3rd generation',
+    features: 'Icelake-Server'
   },
-  'max': {
-    name: 'Maximum Features',
-    description: 'Maximum supported features by QEMU',
-    features: 'max'
-  },
-  'qemu64': {
-    name: 'QEMU 64-bit',
-    description: 'Generic 64-bit processor',
-    features: 'qemu64'
-  },
-  'kvm64': {
-    name: 'KVM 64-bit',
-    description: 'Optimized for KVM',
-    features: 'kvm64'
-  },
-  'core2duo': {
-    name: 'Core 2 Duo',
-    description: 'Intel Core 2 Duo',
-    features: 'core2duo'
-  },
-  'corei7': {
-    name: 'Core i7',
-    description: 'Intel Core i7',
-    features: 'corei7'
-  },
-  'skylake': {
-    name: 'Skylake',
-    description: 'Intel Skylake',
-    features: 'Skylake-Client'
-  },
-  'cascadelake': {
-    name: 'Cascade Lake',
-    description: 'Intel Cascade Lake (Server)',
+  'xeon-cascadelake': {
+    name: 'Intel Xeon Scalable 2nd Gen (Cascade Lake)',
+    description: 'Intel Xeon Scalable, 2nd generation (default)',
     features: 'Cascadelake-Server'
   },
-  'opteron': {
-    name: 'Opteron',
-    description: 'AMD Opteron',
-    features: 'opteron'
+  'xeon-skylake': {
+    name: 'Intel Xeon Scalable 1st Gen (Skylake)',
+    description: 'Intel Xeon Scalable, 1st generation',
+    features: 'Skylake-Server'
   },
-  'epyc': {
-    name: 'EPYC',
-    description: 'AMD EPYC (Server)',
-    features: 'EPYC'
+  'xeon-sapphirerapids': {
+    name: 'Intel Xeon Scalable 4th Gen (Sapphire Rapids)',
+    description: 'Intel Xeon Scalable, 4th generation',
+    features: 'SapphireRapids'
+  },
+  'epyc-milan': {
+    name: 'AMD EPYC 7003 Series (Milan)',
+    description: 'AMD EPYC 7003 server processors',
+    features: 'EPYC-Milan'
+  },
+  'epyc-rome': {
+    name: 'AMD EPYC 7002 Series (Rome)',
+    description: 'AMD EPYC 7002 server processors',
+    features: 'EPYC-Rome'
   }
 };
 
@@ -296,10 +279,22 @@ const SMBIOS_PRODUCTS = [
   'Cloud Instance'
 ];
 const OS_TEMPLATES = {
+  // icon is an emoji shown on every template card so users can tell the OS apart.
+  ubuntu_20_cloud: {
+    name: 'Ubuntu 20.04 LTS',
+    type: 'cloud-init',
+    icon: '🟠',
+    disk_size: '20G',
+    memory: 2048,
+    cpus: 2,
+    url: 'https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img',
+    username: 'ubuntu',
+    password: 'ubuntu'
+  },
   ubuntu_22_cloud: {
     name: 'Ubuntu 22.04 LTS',
     type: 'cloud-init',
-    icon: 'https://i.imgur.com/wu0Ob6B.png',
+    icon: '🟠',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -310,7 +305,7 @@ const OS_TEMPLATES = {
   ubuntu_24_cloud: {
     name: 'Ubuntu 24.04 LTS',
     type: 'cloud-init',
-    icon: 'https://i.imgur.com/wu0Ob6B.png',
+    icon: '🟠',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -318,10 +313,21 @@ const OS_TEMPLATES = {
     username: 'ubuntu',
     password: 'ubuntu'
   },
-  debian_12_cloud: {
-    name: 'Debian 12',
+  debian_11_cloud: {
+    name: 'Debian 11 (Bullseye)',
     type: 'cloud-init',
-    icon: 'https://i.imgur.com/C4SiENP.png',
+    icon: '🌀',
+    disk_size: '20G',
+    memory: 2048,
+    cpus: 2,
+    url: 'https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-generic-amd64.qcow2',
+    username: 'debian',
+    password: 'debian'
+  },
+  debian_12_cloud: {
+    name: 'Debian 12 (Bookworm)',
+    type: 'cloud-init',
+    icon: '🌀',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -329,10 +335,21 @@ const OS_TEMPLATES = {
     username: 'debian',
     password: 'debian'
   },
+  debian_13_cloud: {
+    name: 'Debian 13 (Trixie)',
+    type: 'cloud-init',
+    icon: '🌀',
+    disk_size: '20G',
+    memory: 2048,
+    cpus: 2,
+    url: 'https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2',
+    username: 'debian',
+    password: 'debian'
+  },
   fedora_40_cloud: {
     name: 'Fedora 40',
     type: 'cloud-init',
-    icon: 'https://i.imgur.com/iq4y3J8.png',
+    icon: '🎩',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -343,24 +360,57 @@ const OS_TEMPLATES = {
   centos_9_cloud: {
     name: 'CentOS Stream 9',
     type: 'cloud-init',
-    icon: 'https://i.imgur.com/MgxK5WZ.png',
+    icon: '💠',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
     url: 'https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2',
-    username: 'centos',
-    password: 'centos'
+    username: 'cloud-user',
+    password: 'cloud-user'
+  },
+  almalinux_8_cloud: {
+    name: 'AlmaLinux 8',
+    type: 'cloud-init',
+    icon: '🦙',
+    disk_size: '20G',
+    memory: 2048,
+    cpus: 2,
+    url: 'https://repo.almalinux.org/almalinux/8/cloud/x86_64/images/AlmaLinux-8-GenericCloud-latest.x86_64.qcow2',
+    username: 'almalinux',
+    password: 'almalinux'
   },
   almalinux_9_cloud: {
     name: 'AlmaLinux 9',
     type: 'cloud-init',
-    icon: 'https://i.imgur.com/YcYGa2c.png',
+    icon: '🦙',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
     url: 'https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2',
     username: 'almalinux',
     password: 'almalinux'
+  },
+  rocky_8_cloud: {
+    name: 'Rocky Linux 8',
+    type: 'cloud-init',
+    icon: '🪨',
+    disk_size: '20G',
+    memory: 2048,
+    cpus: 2,
+    url: 'https://dl.rockylinux.org/pub/rocky/8/images/x86_64/Rocky-8-GenericCloud-Base.latest.x86_64.qcow2',
+    username: 'rocky',
+    password: 'rocky'
+  },
+  rocky_9_cloud: {
+    name: 'Rocky Linux 9',
+    type: 'cloud-init',
+    icon: '🪨',
+    disk_size: '20G',
+    memory: 2048,
+    cpus: 2,
+    url: 'https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2',
+    username: 'rocky',
+    password: 'rocky'
   }
 };
 
@@ -410,9 +460,9 @@ app.use((req, res, next) => {
   const p = req.path;
   if (p.startsWith('/images/') || p.startsWith('/css/') || p.startsWith('/js/') || MAINTENANCE_OPEN_PATHS.includes(p)) return next();
   if (req.session && req.session.role === 'admin') return next();
-  const msg = maintenanceState.message || 'StarCloud is under maintenance. Please try again shortly.';
+  const msg = maintenanceState.message || 'StarCloud Panel is under maintenance. Please try again shortly.';
   if (p.startsWith('/api/')) return res.status(503).json({ error: 'Maintenance mode', message: msg });
-  res.status(503).send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Maintenance - StarCloud</title>
+  res.status(503).send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Maintenance - StarCloud Panel</title>
 <style>body{font-family:system-ui,sans-serif;background:#0a0a0f;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}h1{font-size:28px}p{color:#aaa;max-width:520px}</style>
 </head><body><div><h1>Under maintenance</h1><p>${String(msg).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</p></div></body></html>`);
 });
@@ -498,7 +548,7 @@ function initializeDatabase() {
       cpu_sockets INTEGER DEFAULT 1,
       cpu_cores INTEGER DEFAULT 2,
       cpu_threads INTEGER DEFAULT 1,
-      cpu_model TEXT DEFAULT 'host',
+      cpu_model TEXT DEFAULT 'xeon-cascadelake',
       custom_cpu_name TEXT,
       machine_type TEXT DEFAULT 'pc',
       board_name TEXT DEFAULT 'Main-Board',
@@ -656,9 +706,9 @@ function initializeDatabase() {
 
     // Initialize default site settings if not exist
     const defaultSettings = {
-      'site_name': 'StarCloud',
+      'site_name': 'StarCloud Panel',
       'site_description': 'Virtual Machine Management System',
-      'site_icon_url': '/images/logo.png',
+      'site_icon_url': '/images/logo-cloud.png',
     };
     
     Object.entries(defaultSettings).forEach(([key, value]) => {
@@ -668,6 +718,12 @@ function initializeDatabase() {
         }
       });
     });
+
+    // Upgrade old installs: replace the previous built-in branding defaults (only those exact values;
+    // anything an admin typed is left alone).
+    db.run(`UPDATE settings SET setting_value = 'StarCloud Panel' WHERE setting_key = 'site_name' AND setting_value = 'StarCloud'`);
+    db.run(`UPDATE settings SET setting_value = '/images/logo-cloud.png' WHERE setting_key = 'site_icon_url' AND setting_value = '/images/logo.png'`);
+    db.run(`UPDATE settings SET setting_value = 'StarCloud Panel' WHERE setting_key = 'panel_title' AND setting_value IN ('StarCloud Panel V2.0', 'StarCloud Panel V1.0')`);
 
     // Add Discord columns to users table if they don't exist
     db.all(`PRAGMA table_info(users)`, (err, columns) => {
@@ -999,8 +1055,8 @@ function renderDiscordHandoff(req, res) {
   }
   return res.render('discord-account', {
     title: 'Discord Account - StarCloud Panel',
-    siteName: res.locals.siteName || 'StarCloud',
-    siteLogo: res.locals.siteLogo || '/images/logo.png',
+    siteName: res.locals.siteName || 'StarCloud Panel',
+    siteLogo: res.locals.siteLogo || '/images/logo-cloud.png',
     pending: req.session.pendingDiscordAuth,
     isLoggedIn: !!req.session.userId
   });
@@ -1566,7 +1622,7 @@ app.get('/api/iso-list', (req, res) => {
 
 // Favicon endpoint
 app.get('/favicon.ico', (req, res) => {
-  res.redirect('/images/logo.png');
+  res.redirect('/images/logo-cloud.png');
 });
 
 // Middleware to pass user and settings to all views
@@ -1582,8 +1638,8 @@ app.use((req, res, next) => {
   res.locals.panelVersion = process.env.PANEL_VERSION || 'V2.0';
   
   // Set default logo and site name
-  res.locals.siteLogo = process.env.DEFAULT_LOGO_URL || '/images/logo.png';
-  res.locals.siteName = process.env.PANEL_NAME || 'StarCloud';
+  res.locals.siteLogo = process.env.DEFAULT_LOGO_URL || '/images/logo-cloud.png';
+  res.locals.siteName = process.env.PANEL_NAME || 'StarCloud Panel';
   
   // Load site settings from database (blocking, so sidebar reflects changes immediately)
   db.get(`SELECT setting_value FROM settings WHERE setting_key = 'site_icon_url' LIMIT 1`, (err, row) => {
@@ -1626,8 +1682,8 @@ app.get('/login', (req, res) => {
   res.render('users/login', { 
     title: 'Login - StarCloud Panel',
     currentPage: 'login',
-    siteLogo: res.locals.siteLogo || process.env.DEFAULT_LOGO_URL || '/images/logo.png',
-    siteName: res.locals.siteName || process.env.PANEL_NAME || 'StarCloud'
+    siteLogo: res.locals.siteLogo || process.env.DEFAULT_LOGO_URL || '/images/logo-cloud.png',
+    siteName: res.locals.siteName || process.env.PANEL_NAME || 'StarCloud Panel'
   });
 });
 
@@ -1824,7 +1880,7 @@ app.get('/admin/templates/builtin/:key/edit', checkAuth, checkAdmin, (req, res) 
   res.render('admin/templates-edit', {
     title: `View ${template.name} - StarCloud Panel`,
     currentPage: 'templates',
-    siteLogo: res.locals.siteLogo || '/images/logo.png',
+    siteLogo: res.locals.siteLogo || '/images/logo-cloud.png',
     templateKey: templateKey,
     isBuiltin: true,
     template: templateObj
@@ -1837,7 +1893,7 @@ app.get('/admin/templates/builtin/:key/edit', checkAuth, checkAdmin, (req, res) 
 app.get('/vms', checkAuth, (req, res) => {
   res.render('users/vms', {
     title: 'My Virtual Machines - StarCloud Panel',
-    currentPage: 'vms',
+    currentPage: req.session.role === 'admin' ? 'my-vms' : 'vms',
     user: {
       username: req.session.username,
       role: req.session.role
@@ -1866,7 +1922,7 @@ app.get('/vm/:id', checkAuth, (req, res) => {
 app.get('/profile', checkAuth, (req, res) => {
   res.render('users/profile', {
     title: 'My Profile - StarCloud Panel',
-    currentPage: 'profile',
+    currentPage: req.session.role === 'admin' ? 'my-profile' : 'profile',
     user: {
       username: req.session.username,
       role: req.session.role,
@@ -2286,10 +2342,7 @@ app.put('/api/vms/:vm_id/edit', checkAuth, async (req, res) => {
     const validatedCores = cpu_cores && cpu_cores >= 1 ? cpu_cores : undefined;
     const validatedThreads = cpu_threads && cpu_threads >= 1 ? cpu_threads : undefined;
 
-    // Never allow a weak password through the edit API either.
-    if (password !== undefined && String(password).length > 0 && String(password).length < 8) {
-      return res.status(400).json({ error: 'VM password must be at least 8 characters' });
-    }
+    // VM password: any non-empty value is accepted (no minimum length).
 
     // Build update query dynamically
     const updates = [];
@@ -2514,9 +2567,6 @@ app.post('/api/vms/:vm_id/reinstall', checkAuth, async (req, res) => {
         let template = null;
         let isCloudInit = false;
         let templateName = 'Custom OS';
-        if (new_password && String(new_password).length < 8) {
-          return res.status(400).json({ error: 'New password must be at least 8 characters' });
-        }
         const fallbackPassword = vm.password || crypto.randomBytes(12).toString('base64url');
         let username = new_username || 'root';
         let password = new_password || fallbackPassword;
@@ -2752,10 +2802,9 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
     return res.status(400).json({ error: 'Please select a template or upload ISO' });
   }
 
-  // Owner decision D-15 / D-24: the admin must set a VM password (>= 8 chars).
-  // Weak template defaults (ubuntu/ubuntu, debian/debian, 'password') are never used.
-  if (typeof custom_password !== 'string' || custom_password.length < 8) {
-    return res.status(400).json({ error: 'VM password is required and must be at least 8 characters' });
+  // The admin must set a VM password. There is no minimum length; template default passwords are never used.
+  if (typeof custom_password !== 'string' || custom_password.length === 0) {
+    return res.status(400).json({ error: 'VM password is required' });
   }
 
   if (!vm_name) {
@@ -2847,7 +2896,7 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
   const sockets = cpu_sockets || 1;
   const cores = cpu_cores || cpuCount;
   const threads = cpu_threads || 1;
-  const cpuModelToUse = cpu_model && CPU_MODELS[cpu_model] ? cpu_model : 'host';
+  const cpuModelToUse = cpu_model && CPU_MODELS[cpu_model] ? cpu_model : DEFAULT_CPU_MODEL;
   const diskSizeVal = disk_size || (template ? template.disk_size : '20G');
   const netType = network_type || 'nat';
   const macAddr = mac_address || generateMACAddress();
@@ -4103,13 +4152,13 @@ async function startQemuVM(vm) {
       const pidFile = path.join(VM_DIR, `vm-${vm.vm_id}.pid`);
       const logFile = path.join(VM_DIR, `vm-${vm.vm_id}.log`);
       
-      // Validate CPU model - fallback to 'host' if model not available
-      let cpuToUse = 'host';
+      // Validate CPU model - fall back to the default model if it is not available
+      let cpuToUse = DEFAULT_CPU_MODEL;
       if (vm.custom_cpu_name) {
         // Custom CPU name + CPU model - use both for full flexibility
         // Format: -cpu <cpu_model>,model-id=Custom Name
         // Note: No quotes needed when using spawn() array format
-        let baseCpuModel = 'host';
+        let baseCpuModel = DEFAULT_CPU_MODEL;
         if (vm.cpu_model && CPU_MODELS[vm.cpu_model]) {
           baseCpuModel = vm.cpu_model;
         }
@@ -4119,11 +4168,11 @@ async function startQemuVM(vm) {
         cpuToUse = vm.cpu_model;
         console.log(`[VM-${vm.vm_id}] Using preset CPU: ${cpuToUse}`);
       } else if (vm.cpu_model) {
-        console.warn(`[VM-${vm.vm_id}] CPU model '${vm.cpu_model}' not found, falling back to 'host'`);
-        cpuToUse = 'host';
+        console.warn(`[VM-${vm.vm_id}] CPU model '${vm.cpu_model}' not found, falling back to '${DEFAULT_CPU_MODEL}'`);
+        cpuToUse = DEFAULT_CPU_MODEL;
         // Also update the database to fix the VM's CPU model
-        db.run(`UPDATE vms SET cpu_model = 'host' WHERE vm_id = ?`, [vm.vm_id], (err) => {
-          if (!err) console.log(`[VM-${vm.vm_id}] Updated database: cpu_model -> 'host'`);
+        db.run(`UPDATE vms SET cpu_model = ? WHERE vm_id = ?`, [DEFAULT_CPU_MODEL, vm.vm_id], (err) => {
+          if (!err) console.log(`[VM-${vm.vm_id}] Updated database: cpu_model -> ${DEFAULT_CPU_MODEL}`);
         });
       }
       
@@ -4132,7 +4181,8 @@ async function startQemuVM(vm) {
       // KVM is only used when the host really has it (see services/capabilities.js)
       const hostCaps = detectKvm();
       const kvmAccelEnabled = hostCaps.kvmAvailable && toggleFlag(vm.enable_kvm, 1) === 1;
-      let effectiveCpu = kvmAccelEnabled ? cpuToUse : (cpuToUse === 'host' ? 'qemu64' : cpuToUse);
+      // Without KVM (TCG software emulation) named server CPUs are not reliable, so use the generic qemu64 model
+      let effectiveCpu = kvmAccelEnabled ? cpuToUse : 'qemu64';
       // Nested KVM: lets the guest run its own KVM (+vmx on Intel, +svm on AMD)
       if (kvmAccelEnabled && hostCaps.nestedFlag) {
         effectiveCpu = `${effectiveCpu},${hostCaps.nestedFlag}`;
@@ -4258,7 +4308,7 @@ async function startQemuVM(vm) {
       }
 
       console.log(`[VM-${vm.vm_id}] CPU Config: ${vm.cpu_sockets} sockets x ${vm.cpu_cores} cores x ${vm.cpu_threads} threads = ${vm.cpus} total`);
-      const cpuDisplayName = vm.custom_cpu_name || vm.cpu_model || 'host';
+      const cpuDisplayName = vm.custom_cpu_name || vm.cpu_model || DEFAULT_CPU_MODEL;
       console.log(`[VM-${vm.vm_id}] CPU Model: ${cpuDisplayName}`);
       console.log(`[VM-${vm.vm_id}] SMBIOS: ${vm.smbios_manufacturer} ${vm.smbios_product} (${vm.smbios_serial})`);
       console.log(`[VM-${vm.vm_id}] Network Mode: ${vm.network_type === 'nat' ? 'NAT (User Mode)' : 'Static Public IPv4'}`);
@@ -4306,9 +4356,9 @@ app.get('/api/settings', (req, res) => {
     
     const settings = {
       panel_version: 'V2.0',
-      panel_title: 'StarCloud Panel V2.0',
+      panel_title: 'StarCloud Panel',
       panel_description: 'Professional VM Management Panel',
-      site_icon_url: '/images/logo.png',
+      site_icon_url: '/images/logo-cloud.png',
       session_timeout: 24,
       max_sessions: 10
     };
@@ -4603,15 +4653,15 @@ server.listen(PORT, async () => {
     if (!err && vms && vms.length > 0) {
       console.log(`[Startup] Found ${vms.length} VMs with invalid CPU models, fixing...`);
       vms.forEach(vm => {
-        console.warn(`[Startup] VM ${vm.vm_id}: CPU model '${vm.cpu_model}' is not available, resetting to 'host'`);
-        db.run(`UPDATE vms SET cpu_model = 'host' WHERE vm_id = ?`, [vm.vm_id]);
+        console.warn(`[Startup] VM ${vm.vm_id}: CPU model '${vm.cpu_model}' is not available, resetting to '${DEFAULT_CPU_MODEL}'`);
+        db.run(`UPDATE vms SET cpu_model = ? WHERE vm_id = ?`, [DEFAULT_CPU_MODEL, vm.vm_id]);
       });
     }
   });
 
   console.log(`
 ╔════════════════════════════════════════════════════════════╗
-║             StarCloud VM MANAGEMENT PANEL V2.0            ║
+║                  StarCloud Panel                          ║
 ║          Advanced VM Management & Control Panel            ║
 ╚════════════════════════════════════════════════════════════╝
 

@@ -1,3 +1,4 @@
+<script src="/js/os-icons.js"></script>
 <%
   const _pageName = typeof pageName !== 'undefined' ? pageName : (currentPage || '');
   const _pageTitle = typeof pageTitle !== 'undefined' ? pageTitle : (title || '');
@@ -20,7 +21,7 @@
         </svg>
       </span>
       <span class="breadcrumb-separator"></span>
-      <span class="breadcrumb-item">StarCloud</span>
+      <span class="breadcrumb-item">StarCloud Panel</span>
       <% if (_pageName && _pageName !== 'dashboard') { %>
       <span class="breadcrumb-separator"></span>
       <span class="breadcrumb-item active"><%= _pageTitle.split(' - ')[0] %></span>
@@ -48,28 +49,6 @@
     <div class="header-status" id="systemStatus">
       <span class="status-dot"></span>
       <span>Online</span>
-    </div>
-
-    <!-- Theme Switcher -->
-    <div class="theme-switcher" title="Switch Theme">
-      <button class="theme-btn active" id="darkThemeBtn" onclick="setTheme('dark')" title="Dark Theme">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"></path>
-        </svg>
-      </button>
-      <button class="theme-btn" id="lightThemeBtn" onclick="setTheme('light')" title="Light Theme">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="5"></circle>
-          <line x1="12" y1="1" x2="12" y2="3"></line>
-          <line x1="12" y1="21" x2="12" y2="23"></line>
-          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-          <line x1="1" y1="12" x2="3" y2="12"></line>
-          <line x1="21" y1="12" x2="23" y2="12"></line>
-          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-        </svg>
-      </button>
     </div>
 
     <!-- Notifications -->
@@ -192,29 +171,10 @@ if (document.readyState === 'loading') {
   loadUserAvatar();
 }
 
-// Theme Management
-function setTheme(theme) {
-  const body = document.body;
-  const darkBtn = document.getElementById('darkThemeBtn');
-  const lightBtn = document.getElementById('lightThemeBtn');
-  
-  if (theme === 'dark') {
-    body.classList.remove('light-theme');
-    darkBtn?.classList.add('active');
-    lightBtn?.classList.remove('active');
-    localStorage.setItem('theme', 'dark');
-  } else if (theme === 'light') {
-    body.classList.add('light-theme');
-    darkBtn?.classList.remove('active');
-    lightBtn?.classList.add('active');
-    localStorage.setItem('theme', 'light');
-  }
-}
-
-// Initialize theme on page load
+// Dark theme only: any old "light" preference is cleared so the panel always renders dark.
 function initializeTheme() {
-  const savedTheme = localStorage.getItem('theme') || 'dark';
-  setTheme(savedTheme);
+  document.body.classList.remove('light-theme');
+  try { localStorage.removeItem('theme'); } catch (e) {}
 }
 
 // Global search

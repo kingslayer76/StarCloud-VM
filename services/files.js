@@ -1,5 +1,5 @@
 // VM file manager backend: talks to the guest VM over SFTP (SSH file transfer)
-// using the VM's own SSH login on the forwarded SSH port (127.0.0.1:ssh_port).
+// using the VM own SSH login. Target comes from services/vm-access.js sshTarget() (NAT port forward or bridge IP).
 const { Client } = require('ssh2');
 const posix = require('path').posix;
 const { sshTarget } = require('./vm-access');
