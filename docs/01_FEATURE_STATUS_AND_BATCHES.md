@@ -79,6 +79,18 @@ Test ka level:
 | `STARCLOUD_DATA_DIR` installer `.env` mein (DB project ke andar) | ✅ | Code + dry run |
 | Live: `/api/admin/operations` JSON shape | ✅ | `capabilities`, `maintenance`, `vms` keys |
 
+#### 3.1a Fix round (user screenshots, 2026-10-30)
+
+| Item | Status | Kya badla / test |
+|---|---|---|
+| **KVM ek hi switch** (user ka decision): "KVM On / Off" ke saath state text On/Off; "Nested KVM" toggle hata diya (create + edit). Nested ab KVM ke saath chalta hai (ON = VM ke andar VM). DB `nested_kvm` = `enable_kvm` (same value). | ✅ | Create/edit pages 200, nested toggle HTML mein nahi; inline JS `node --check` OK; API: no-KVM host par `enable_kvm=1` → 409 `KVM_BLOCKED`, `0` → 200. Browser click test pending |
+| Duplicate VM name → raw SQLite error hata kar saaf message (409 `NAME_TAKEN`), create + rename dono | ✅ | Live: `taken` naam par create 409; rename `other`→`taken` 409 |
+| Failed create ka row rollback (template download fail → row delete, naam free) | ✅ | Live: download fail (sandbox network) → 500, `newvm` list mein nahi, dubara same naam pe bhi naam ka error nahi |
+| SSH port validation: 1024–65535 aur kisi aur VM ka port nahi (400 `SSH_PORT_RANGE` / 409 `SSH_PORT_TAKEN`) | ✅ | Live: port 77 → 400; port 2222 (dusri VM par) → 409 |
+| Installer: user ke `hkvm-master-fix.sh` ke steps (libvirt + helper services, swap 4 GB sirf jab koi swap na ho, swappiness 10, `genisoimage` / `cloud-localds` / `qemu-img` check) | ✅ | Fake apt + fake tools run: 12/12 ✔; apt-fail path: ✖ + log tail; sandbox mein `mkswap` nahi → warning, swap skip (installer nahi ruka) |
+
+**User ko Codespaces/VPS par:** jo purana VM `test` (4096 MB) dikh raha tha, usko **All VMs** se delete karein, phir naya VM banayein. Guest RAM host RAM ka aadha rakhein (4 GB VPS par ~2048 MB guest).
+
 ### 3.2 Pending (Batch 1 ke andar hi baaki)
 
 | # | Feature | Kaam | Faisla / reference |
@@ -249,7 +261,7 @@ Installer admin username/password puchega. Enter dabane par `admin` / `admin` ra
 
 1. Browser mein panel kholen, login karein.
 2. **Admin → Operations** page: KVM status dikhna chahiye (Codespaces par aksar KVM nahi hota).
-3. **Create VM**: KVM On / Off aur Nested KVM On / Off locked dikhne chahiye. Ek click par warning, teesri click par permanent-block notice.
+3. **Create VM**: ek hi switch **KVM On / Off** dikhna chahiye (state text On/Off). Host par KVM na ho to switch locked OFF: ek click par warning, teesri click par permanent-block notice.
 4. **Maintenance mode**, **Audit log** (CSV download), **File manager** (koi VM ho to) check karein.
 5. Feedback mein batayein: kaun sa step fail hua, screenshot ke saath.
 

@@ -132,19 +132,8 @@
                       <%= vm && vm.status !== 'stopped' ? 'disabled' : '' %>>
                     <div class="toggle-track"><div class="toggle-thumb"></div></div>
                     <div>
-                      <div class="toggle-label" style="font-size: 13px; color: var(--text-primary);">KVM On / Off</div>
-                      <div style="font-size: 11px; color: var(--text-muted);">Hardware virtualization. Forced OFF on hosts without KVM.</div>
-                    </div>
-                  </label>
-
-                  <label class="toggle-switch">
-                    <input type="checkbox" class="toggle-input" name="nested_kvm" id="edit_nested" value="1"
-                      <%= vm && vm.nested_kvm ? 'checked' : '' %>
-                      <%= vm && vm.status !== 'stopped' ? 'disabled' : '' %>>
-                    <div class="toggle-track"><div class="toggle-thumb"></div></div>
-                    <div>
-                      <div class="toggle-label" style="font-size: 13px; color: var(--text-primary);">Nested KVM On / Off</div>
-                      <div style="font-size: 11px; color: var(--text-muted);">VMs inside this VM. Needs host KVM and KVM On. Stop the VM to change.</div>
+                      <div class="toggle-label" style="font-size: 13px; color: var(--text-primary);">KVM On / Off <span id="edit_kvm_state" style="font-weight: 700; margin-left: 6px;"></span></div>
+                      <div style="font-size: 11px; color: var(--text-muted);">Hardware virtualization. ON also lets this VM run its own VMs (nested). Forced OFF on hosts without KVM. Stop the VM to change.</div>
                     </div>
                   </label>
                 </div>
@@ -502,7 +491,7 @@
 
 <script src="/js/kvm-lock.js"></script>
 <script>
-KvmLock.init({ kvmId: 'edit_kvm', nestedId: 'edit_nested', bannerId: 'kvmHostBanner' });
+KvmLock.init({ kvmId: 'edit_kvm', stateId: 'edit_kvm_state', bannerId: 'kvmHostBanner' });
 const vmId = <%= vmId %>;
 
 // Reinstall Modal Functions
@@ -857,8 +846,6 @@ async function saveChanges(e) {
     
     // Handle checkboxes
     data.enable_kvm = document.getElementById('edit_kvm')?.checked ? 1 : 0;
-    // Disabled while the VM runs: leave the value unchanged instead of sending 0
-    if (!document.getElementById('edit_nested')?.disabled) data.nested_kvm = document.getElementById('edit_nested')?.checked ? 1 : 0;
     data.enable_acpi = document.getElementById('edit_acpi')?.checked ? 1 : 0;
     
     // Handle custom Manufacturer - override from select field

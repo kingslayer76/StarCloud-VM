@@ -24,7 +24,7 @@ APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_NAME="starcloud"
 MIN_NODE_MAJOR=18
 NODE_INSTALL_MAJOR=20
-TOTAL_STEPS=8
+TOTAL_STEPS=12
 LOG_DIR="$APP_DIR/logs"
 LOG_FILE="$LOG_DIR/install.log"
 PID_FILE="$APP_DIR/data/panel.pid"
@@ -113,10 +113,12 @@ read_env_value() { # read_env_value KEY default
   printf '%s' "${v:-$2}"
 }
 
+# skip_step "Title" [count] - marks one or more steps as skipped (keeps the numbering right)
 skip_step() {
-  STEP_NO=$((STEP_NO + 1))
+  local count="${2:-1}"
+  STEP_NO=$((STEP_NO + count))
   printf '  %s–%s [%d/%d] %s%s (skipped)%s\n' "$C_GREY" "$C_RESET" "$STEP_NO" "$TOTAL_STEPS" "$C_GREY" "$1" "$C_RESET"
-  log "SKIP step $STEP_NO: $1"
+  log "SKIP steps up to $STEP_NO: $1"
 }
 
 # run_step "Title" function-or-command args...
@@ -227,6 +229,9 @@ MEM_MB="$(awk '/MemTotal/ {printf "%d", $2/1024}' /proc/meminfo 2>/dev/null || e
 DISK_GB="$(df -BG --output=avail "$APP_DIR" 2>/dev/null | tail -1 | tr -dc '0-9' || echo 0)"
 ui_ok "Resources: ${CPUS} CPU, ${MEM_MB} MB RAM, ${DISK_GB:-?} GB free disk"
 [ "${MEM_MB:-0}" -ge 2048 ] || ui_warn "Less than 2 GB RAM. The panel may run, but VMs will be very limited."
+if [ "${MEM_MB:-0}" -lt 6000 ] && [ "${MEM_MB:-0}" -ge 2048 ]; then
+  ui_grey "Small server: create guest VMs with about half of the RAM (for 4 GB, use about 2 GB per VM)."
+fi
 [ "${DISK_GB:-0}" -ge 10 ] || ui_warn "Less than 10 GB free disk. Cloud images and VM disks need space."
 
 # KVM (hardware virtualization)
@@ -314,8 +319,74 @@ step_apt() {
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y
   apt-get install -y -o Dpkg::Options::=--force-confold \
-    qemu-system-x86 qemu-utils genisoimage cloud-image-utils \
-    openssl curl ca-certificates build-essential python3 git iproute2
+    qemu-kvm qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients virtinst \
+    bridge-utils cpu-checker genisoimage cloud-image-utils cloud-init xorriso \
+    curl wget ca-certificates unzip tar gzip jq rsync lsof net-tools iproute2 \
+    openssl build-essential python3 git
+}
+
+# libvirt and its helper services (same set as the HKVM master setup). Failures are not fatal.
+step_libvirt() {
+  if ! systemd_usable; then
+    echo "systemd is not running: libvirt services were not started (start them manually if needed)"
+    return 0
+  fi
+  for svc in libvirtd virtlogd virtlockd; do
+    systemctl enable --now "$svc" 2>/dev/null || echo "could not enable $svc (continuing)"
+  done
+  systemctl restart libvirtd 2>/dev/null || true
+  echo "libvirt services: $(systemctl is-active libvirtd 2>/dev/null || echo unknown)"
+}
+
+# 4 GB swap file, only when the machine has no swap at all and at least 6 GB free disk.
+# Never fails the install: some containers (Codespaces, Docker) do not allow swap.
+step_swap() {
+  if swapon --show --noheadings 2>/dev/null | grep -q .; then
+    echo "swap already present:"; swapon --show 2>/dev/null || true
+    return 0
+  fi
+  local free_gb
+  free_gb="$(df -BG --output=avail / 2>/dev/null | tail -1 | tr -dc '0-9' || echo 0)"
+  if [ "${free_gb:-0}" -lt 6 ]; then
+    echo "not enough free disk (${free_gb:-0} GB) for a 4 GB swap file: skipped"
+    return 0
+  fi
+  if fallocate -l 4G /swapfile && chmod 600 /swapfile && mkswap /swapfile >/dev/null && swapon /swapfile; then
+    grep -q "^/swapfile " /etc/fstab || echo "/swapfile none swap sw 0 0" >> /etc/fstab
+    echo "4 GB swap file created (/swapfile)"
+  else
+    rm -f /swapfile
+    echo "swap could not be created on this system (continuing)"
+  fi
+}
+
+# Swappiness 10: keep VM RAM in memory, use swap only when really needed
+step_sysctl() {
+  mkdir -p /etc/sysctl.d
+  echo "vm.swappiness=10" > /etc/sysctl.d/99-starcloud.conf
+  if sysctl -w vm.swappiness=10 >/dev/null 2>&1; then
+    echo "vm.swappiness=10 applied now (saved in /etc/sysctl.d/99-starcloud.conf)"
+  else
+    echo "vm.swappiness=10 saved in /etc/sysctl.d/99-starcloud.conf (applies after reboot)"
+  fi
+}
+
+# The VM tools the panel needs. Missing one = the installer stops with the name of the tool.
+step_tools() {
+  local missing="" tool
+  for tool in qemu-system-x86_64 qemu-img genisoimage cloud-localds; do
+    if command -v "$tool" >/dev/null 2>&1; then
+      echo "$tool: $(command -v "$tool")"
+    else
+      missing="$missing $tool"
+    fi
+  done
+  if [ -n "$missing" ]; then
+    echo "MISSING tools:$missing (package install failed? see the apt lines above)"
+    [ "$SKIP_SYSTEM" = true ] && return 0   # test installs (--skip-system) do not need the VM tools
+    return 1
+  fi
+  if [ -e /dev/kvm ]; then echo "/dev/kvm: OK"; else echo "/dev/kvm: not present (VMs will use software emulation)"; fi
 }
 
 step_node() {
@@ -447,12 +518,15 @@ step_health() {
 }
 
 if [ "$SKIP_SYSTEM" = false ]; then
-  run_step "Updating system packages (QEMU, disk and ISO tools)" step_apt
+  run_step "Installing QEMU/KVM, libvirt, ISO and cloud-init tools" step_apt
   run_step "Checking Node.js ${MIN_NODE_MAJOR}+" step_node
+  run_step "Starting libvirt services" step_libvirt
+  run_step "Checking swap (4 GB, only if none)" step_swap
+  run_step "Setting swappiness (vm.swappiness=10)" step_sysctl
 else
-  skip_step "System packages (apt)"
-  skip_step "Checking Node.js"
+  skip_step "System packages, Node.js, libvirt, swap, swappiness (--skip-system)" 5
 fi
+run_step "Checking VM tools (qemu, genisoimage, cloud-localds)" step_tools
 run_step "Installing Node packages" step_npm
 run_step "Recording KVM / nested virtualization status" step_kvm
 run_step "Writing configuration (.env, mode 600)" step_env
@@ -465,9 +539,7 @@ if [ "$SKIP_SYSTEM" = false ]; then
   fi
   run_step "Health check" step_health
 else
-  skip_step "Firewall"
-  skip_step "Starting the panel (--skip-system)"
-  skip_step "Health check"
+  skip_step "Firewall, service and health check (--skip-system)" 3
 fi
 
 # =============================================================================

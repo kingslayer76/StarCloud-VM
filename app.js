@@ -2261,9 +2261,10 @@ async function resizeDisk(vm_id, diskFilePath, newSize) {
 // Regenerate cloud-init seed for a VM
 
 // UPDATE VM CONFIGURATION (PUT request)
-app.put('/api/vms/:vm_id/edit', checkAuth, (req, res) => {
+app.put('/api/vms/:vm_id/edit', checkAuth, async (req, res) => {
   const vm_id = req.params.vm_id;
   const userId = req.session.userId;
+  if (typeof req.body.vm_name === 'string') req.body.vm_name = req.body.vm_name.trim();
   const {
     vm_name, hostname, memory, cpus, cpu_sockets, cpu_cores, cpu_threads, cpu_model,
     custom_cpu_name, username, password,
@@ -2275,6 +2276,17 @@ app.put('/api/vms/:vm_id/edit', checkAuth, (req, res) => {
     ssh_port, ssh_port_static,
     owner_id
   } = req.body;
+
+  // Renaming to a name that another VM already uses: clear message instead of a raw SQLite error
+  if (vm_name) {
+    try {
+      if (await dbGetPromise(`SELECT vm_id FROM vms WHERE vm_name = ? AND vm_id != ?`, [vm_name, vm_id])) {
+        return res.status(409).json({ error: nameTakenMessage(vm_name), code: 'NAME_TAKEN' });
+      }
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
 
   let query = `SELECT status, template_type, seed_file FROM vms WHERE vm_id = ?`;
   let params = [vm_id];
@@ -2333,16 +2345,15 @@ app.put('/api/vms/:vm_id/edit', checkAuth, (req, res) => {
     if (password) { updates.push('password = ?'); values.push(password); }
     if (enable_acpi !== undefined) { updates.push('enable_acpi = ?'); values.push(toggleFlag(enable_acpi, 1)); }
     // KVM block (same rule as create): no KVM on this host = cannot turn KVM or nested KVM ON
+    // One switch: nested KVM follows KVM On / Off (both columns get the same value)
     const editCaps = detectKvm();
-    if (!editCaps.kvmAvailable && ((enable_kvm !== undefined && toggleFlag(enable_kvm, 0) === 1) ||
-        (nested_kvm !== undefined && toggleFlag(nested_kvm, 0) === 1))) {
+    if (!editCaps.kvmAvailable && enable_kvm !== undefined && toggleFlag(enable_kvm, 0) === 1) {
       return res.status(409).json({ error: KVM_BLOCK_MESSAGE, code: 'KVM_BLOCKED' });
     }
     if (enable_kvm !== undefined) {
-      updates.push('enable_kvm = ?'); values.push(editCaps.kvmAvailable ? toggleFlag(enable_kvm, 1) : 0);
-    }
-    if (nested_kvm !== undefined) {
-      updates.push('nested_kvm = ?'); values.push(editCaps.nestedAvailable ? toggleFlag(nested_kvm, 0) : 0);
+      const kvmValue = editCaps.kvmAvailable ? toggleFlag(enable_kvm, 1) : 0;
+      updates.push('enable_kvm = ?'); values.push(kvmValue);
+      updates.push('nested_kvm = ?'); values.push(kvmValue);
     }
     if (extra_args !== undefined) { updates.push('extra_args = ?'); values.push(extra_args || ''); }
     if (network_type) { updates.push('network_type = ?'); values.push(network_type); }
@@ -2740,8 +2751,17 @@ app.post('/api/vms/:vm_id/reinstall', checkAuth, async (req, res) => {
   }
 });
 
+// Friendly messages for duplicate names / ports (no raw SQLite text in the UI)
+function nameTakenMessage(name) {
+  return `A VM named "${name}" already exists. Use another name. If you just clicked Create, the first attempt may still be running: check All VMs.`;
+}
+function dbGetPromise(sql, params) {
+  return new Promise((resolve, reject) => db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row))));
+}
+
 // VM CREATE (Admin only)
 app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
+  if (typeof req.body.vm_name === 'string') req.body.vm_name = req.body.vm_name.trim();
   const { 
     vm_name, os_template, hostname, custom_memory, custom_cpus,
     iso_file, custom_username, custom_password, disk_size,
@@ -2771,6 +2791,32 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
   // Weak template defaults (ubuntu/ubuntu, debian/debian, 'password') are never used.
   if (typeof custom_password !== 'string' || custom_password.length < 8) {
     return res.status(400).json({ error: 'VM password is required and must be at least 8 characters' });
+  }
+
+  if (!vm_name) {
+    return res.status(400).json({ error: 'VM name is required' });
+  }
+  try {
+    if (await dbGetPromise(`SELECT vm_id FROM vms WHERE vm_name = ?`, [vm_name])) {
+      return res.status(409).json({ error: nameTakenMessage(vm_name), code: 'NAME_TAKEN' });
+    }
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+
+  // SSH port (optional): must be 1024-65535 and not used by another VM
+  const requestedSsh = ssh_port_static || ssh_port;
+  if (requestedSsh) {
+    const sshNum = parseInt(requestedSsh, 10);
+    if (!Number.isInteger(sshNum) || sshNum < 1024 || sshNum > 65535) {
+      return res.status(400).json({ error: 'SSH port must be a number from 1024 to 65535' , code: 'SSH_PORT_RANGE'});
+    }
+    try {
+      const clash = await dbGetPromise(`SELECT vm_id FROM vms WHERE ssh_port = ? OR ssh_port_static = ?`, [sshNum, sshNum]);
+      if (clash) return res.status(409).json({ error: `SSH port ${sshNum} is already used by another VM. Choose another port.`, code: 'SSH_PORT_TAKEN' });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
   }
 
   // Validate memory - remove strict limits, allow any positive value
@@ -2844,18 +2890,16 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
 
   // KVM block: on a host without KVM, a request to turn KVM (or nested KVM) ON is refused.
   // Creating a VM with KVM OFF (software emulation) is still allowed.
+  // One switch in the panel: "KVM On / Off". Nested KVM follows it (ON = this VM can run its own VMs).
+  // nested_kvm is still stored (same value) so older code and data stay consistent.
   const hostCaps = detectKvm();
   const kvmRequested = enable_kvm !== undefined && toggleFlag(enable_kvm, 0) === 1;
-  const nestedRequested = nested_kvm !== undefined && toggleFlag(nested_kvm, 0) === 1;
-  if (!hostCaps.kvmAvailable && (kvmRequested || nestedRequested)) {
+  if (!hostCaps.kvmAvailable && kvmRequested) {
     console.warn('[Create] KVM blocked: host has no KVM');
     return res.status(409).json({ error: KVM_BLOCK_MESSAGE, code: 'KVM_BLOCKED' });
   }
-  if (nestedRequested && !kvmRequested && hostCaps.kvmAvailable && toggleFlag(enable_kvm, 1) === 0) {
-    return res.status(400).json({ error: 'Nested KVM needs KVM On / Off to be ON', code: 'NESTED_NEEDS_KVM' });
-  }
   const kvmOn = hostCaps.kvmAvailable ? toggleFlag(enable_kvm, 1) : 0;
-  const nestedOn = hostCaps.nestedAvailable && kvmOn ? toggleFlag(nested_kvm, 0) : 0;
+  const nestedOn = kvmOn;
 
   // Capacity guard: refuse if the host cannot hold this VM's RAM / vCPUs
   const capacityError = await checkCapacity(db, { memoryMb: memory, vcpus: cpuCount });
@@ -2893,7 +2937,10 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
       macAddr, bridge_device || 'vmbr0', vlan_id || null, vmOwner
     ],
     async function(err) {
-      if (err) return res.status(500).json({ error: err.message });
+      if (err) {
+        if (/UNIQUE/i.test(err.message)) return res.status(409).json({ error: nameTakenMessage(vm_name), code: 'NAME_TAKEN' });
+        return res.status(500).json({ error: err.message });
+      }
       
       const vm_id = this.lastID;
       // Cloud-init images go to /cloudvm, ISO images go to /iso
@@ -4146,7 +4193,7 @@ async function startQemuVM(vm) {
       const kvmAccelEnabled = hostCaps.kvmAvailable && toggleFlag(vm.enable_kvm, 1) === 1;
       let effectiveCpu = kvmAccelEnabled ? cpuToUse : (cpuToUse === 'host' ? 'qemu64' : cpuToUse);
       // Nested KVM: lets the guest run its own KVM (+vmx on Intel, +svm on AMD)
-      if (kvmAccelEnabled && toggleFlag(vm.nested_kvm, 0) === 1 && hostCaps.nestedFlag) {
+      if (kvmAccelEnabled && hostCaps.nestedFlag) {
         effectiveCpu = `${effectiveCpu},${hostCaps.nestedFlag}`;
         console.log(`[VM-${vm.vm_id}] Nested KVM: enabled (${hostCaps.nestedFlag})`);
       }

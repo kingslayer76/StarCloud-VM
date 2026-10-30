@@ -649,17 +649,8 @@
                     <input type="checkbox" class="toggle-input" name="enable_kvm" id="enable_kvm" value="1" checked>
                     <div class="toggle-track"><div class="toggle-thumb"></div></div>
                     <div style="flex: 1;">
-                      <div class="toggle-label" style="font-size: 13px; color: var(--text-primary);">KVM On / Off</div>
-                      <div id="kvmHint" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">KVM = hardware virtualization for fast VMs. Checking this host...</div>
-                    </div>
-                  </label>
-
-                  <label class="toggle-switch">
-                    <input type="checkbox" class="toggle-input" name="nested_kvm" id="enable_nested" value="1">
-                    <div class="toggle-track"><div class="toggle-thumb"></div></div>
-                    <div style="flex: 1;">
-                      <div class="toggle-label" style="font-size: 13px; color: var(--text-primary);">Nested KVM On / Off</div>
-                      <div id="nestedHint" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Lets software inside this VM run its own VMs. Needs host KVM and KVM On.</div>
+                      <div class="toggle-label" style="font-size: 13px; color: var(--text-primary);">KVM On / Off <span id="kvmStateText" style="font-weight: 700; margin-left: 6px;">On</span></div>
+                      <div id="kvmHint" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Hardware virtualization for fast VMs. ON also lets this VM run its own VMs (nested). Checking this host...</div>
                     </div>
                   </label>
                   <div id="kvmHostBanner" style="display: none; font-size: 12px; padding: 10px; border-radius: 8px; background: rgba(234,179,8,.12); border: 1px solid rgba(234,179,8,.4);"></div>
@@ -1124,7 +1115,7 @@ function buildReview() {
           ${reviewRow('Manufacturer', data.smbios_manufacturer)}
           ${reviewRow('Product', data.smbios_product)}
           ${reviewRow('ACPI', data.enable_acpi ? 'Enabled' : 'Disabled')}
-          ${reviewRow('Nested KVM', data.nested_kvm ? 'On' : 'Off')}
+          ${reviewRow('KVM On / Off', data.enable_kvm ? 'On' : 'Off')}
         </div>
       </div>`;
   }
@@ -1146,8 +1137,8 @@ function getOwnerName(ownerId) {
 
 // KVM lock: host without KVM keeps the KVM options OFF and warns on each click (see /js/kvm-lock.js)
 KvmLock.init({
-  kvmId: 'enable_kvm', nestedId: 'enable_nested',
-  kvmHintId: 'kvmHint', nestedHintId: 'nestedHint', bannerId: 'kvmHostBanner'
+  kvmId: 'enable_kvm', stateId: 'kvmStateText',
+  kvmHintId: 'kvmHint', bannerId: 'kvmHostBanner'
 });
 
 function collectFormData() {
@@ -1160,7 +1151,6 @@ function collectFormData() {
   if (osTemplateInput && osTemplateInput.value) data.os_template = osTemplateInput.value;
   
   data.enable_kvm = document.getElementById('enable_kvm')?.checked ? 1 : 0;
-  data.nested_kvm = document.getElementById('enable_nested')?.checked ? 1 : 0;
   data.enable_acpi = document.getElementById('enable_acpi')?.checked ? 1 : 0;
   
   if (!data.custom_password || String(data.custom_password).length < 8) {
