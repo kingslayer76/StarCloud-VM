@@ -2,6 +2,7 @@
 // using the VM's own SSH login on the forwarded SSH port (127.0.0.1:ssh_port).
 const { Client } = require('ssh2');
 const posix = require('path').posix;
+const { sshTarget } = require('./vm-access');
 
 const MAX_EDIT_BYTES = 2 * 1024 * 1024;        // text editor limit
 const MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB per upload
@@ -18,7 +19,8 @@ function safePath(p) {
 
 function openSftp(vm) {
   return new Promise((resolve, reject) => {
-    if (!vm.ssh_port || !vm.username || !vm.password) {
+    const target = sshTarget(vm);
+    if (!target || !vm.username || !vm.password) {
       return reject(Object.assign(new Error('VM has no SSH login saved'), { status: 409 }));
     }
     const conn = new Client();
@@ -38,8 +40,8 @@ function openSftp(vm) {
     });
     conn.on('error', fail);
     conn.connect({
-      host: '127.0.0.1',
-      port: parseInt(vm.ssh_port, 10),
+      host: target.host,
+      port: target.port,
       username: vm.username,
       password: vm.password,
       readyTimeout: 10000,
@@ -48,9 +50,15 @@ function openSftp(vm) {
   });
 }
 
+// SFTP status codes: 2 = NO_SUCH_FILE, 3 = PERMISSION_DENIED
 function sftpCall(sftp, method, ...args) {
   return new Promise((resolve, reject) => {
-    sftp[method](...args, (err, result) => (err ? reject(err) : resolve(result)));
+    sftp[method](...args, (err, result) => {
+      if (!err) return resolve(result);
+      if (err.code === 2) return reject(Object.assign(new Error('File or folder not found'), { status: 404 }));
+      if (err.code === 3) return reject(Object.assign(new Error('Permission denied by the VM (check the file owner)'), { status: 403 }));
+      reject(err);
+    });
   });
 }
 

@@ -6,7 +6,7 @@ const files = require('../services/files');
 const { auditFromReq } = require('../services/audit');
 
 module.exports = function mountFileManager(app, ctx) {
-  const { db } = ctx;
+  const { db, runtime } = ctx;
 
   function apiAuth(req, res, next) {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required' });
@@ -25,7 +25,7 @@ module.exports = function mountFileManager(app, ctx) {
   }
 
   function requireRunning(req, res, next) {
-    if (req.vm.status !== 'running') {
+    if (!runtime.isRunning(req.vm.vm_id)) {
       return res.status(409).json({ error: 'VM is stopped. Start the VM first, then open the file manager.' });
     }
     next();

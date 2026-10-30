@@ -52,7 +52,7 @@ module.exports = function mountOps(app, ctx) {
   app.post('/api/admin/emergency/stop-all', apiAdmin, requireConfirm('STOP ALL'), async (req, res) => {
     try {
       const running = (await allVms()).filter(v => v.status === 'running');
-      const results = running.map(vm => ({ vm_id: vm.vm_id, name: vm.vm_name, stopped: stopVmProcess(vm) }));
+      const results = await Promise.all(running.map(async vm => ({ vm_id: vm.vm_id, name: vm.vm_name, stopped: await stopVmProcess(vm) })));
       await auditFromReq(db, req, 'emergency.stop_all', 'all VMs', 'ok', `count=${results.length}`);
       res.json({ success: true, count: results.length, results });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -61,9 +61,8 @@ module.exports = function mountOps(app, ctx) {
   app.post('/api/admin/emergency/reboot-all', apiAdmin, requireConfirm('REBOOT ALL'), async (req, res) => {
     try {
       const running = (await allVms()).filter(v => v.status === 'running');
-      running.forEach(vm => stopVmProcess(vm));
-      // Give QEMU processes a moment to exit before starting them again
-      await new Promise(r => setTimeout(r, 4000));
+      // Wait for every VM to power off (graceful) before starting them again
+      await Promise.all(running.map(vm => stopVmProcess(vm)));
       const results = [];
       for (const vm of running) {
         try {
