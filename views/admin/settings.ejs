@@ -330,6 +330,22 @@
           <div class="ops-msg" id="emMsg"></div>
         </div>
       </div>
+      <!-- Audit log (moved from Operations into Settings > General) -->
+      <div class="card" style="margin-top:16px;">
+        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
+          <h3 class="card-title">Audit log (latest 200)</h3>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-ghost btn-sm" id="auditRefresh">Refresh</button>
+            <a class="btn btn-outline btn-sm" href="/api/admin/audit.csv?limit=5000">Download CSV</a>
+          </div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="ops-table">
+            <thead><tr><th>Time</th><th>Who</th><th>Action</th><th>Target</th><th>Result</th><th>IP</th><th>Details</th></tr></thead>
+            <tbody id="auditRows"><tr><td colspan="7">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
       </div>
 
       <!-- BRANDING TAB -->
@@ -342,7 +358,7 @@
           <div class="settings-section-body">
             <div class="settings-row">
               <div class="settings-row-info"><div class="settings-row-label">Site Icon URL</div><div class="settings-row-desc">PNG/SVG path</div></div>
-              <div class="settings-row-control"><input type="text" class="form-control" id="setting_site_icon_url_branding" data-key="site_icon_url" placeholder="/public/images/logo-cloud.png"></div>
+              <div class="settings-row-control"><input type="text" class="form-control" id="setting_site_icon_url_branding" data-key="site_icon_url" placeholder="/public/images/logo.png"></div>
             </div>
           </div>
         </div>
@@ -458,24 +474,6 @@
             </div>
           </div>
         </div>
-        <div style="margin-top:16px;">
-      <!-- Audit -->
-      <div class="card" style="margin-top:16px;">
-        <div class="card-header" style="display:flex; justify-content:space-between; align-items:center;">
-          <h3 class="card-title">Audit log (latest 200)</h3>
-          <div style="display:flex; gap:8px;">
-            <button class="btn btn-ghost btn-sm" id="auditRefresh">Refresh</button>
-            <a class="btn btn-outline btn-sm" href="/api/admin/audit.csv?limit=5000">Download CSV</a>
-          </div>
-        </div>
-        <div style="overflow-x:auto;">
-          <table class="ops-table">
-            <thead><tr><th>Time</th><th>Who</th><th>Action</th><th>Target</th><th>Result</th><th>IP</th><th>Details</th></tr></thead>
-            <tbody id="auditRows"><tr><td colspan="7">Loading…</td></tr></tbody>
-          </table>
-        </div>
-      </div>
-        </div>
       </div>
 
       <!-- ABOUT TAB with svg dynamic -->
@@ -536,7 +534,7 @@
       pane.classList.toggle('active', on);
     });
     if (history.replaceState) history.replaceState(null, '', '#' + tab);
-    if (tab === 'system' && window.loadOpsPanel) window.loadOpsPanel();
+    if ((tab === 'system' || tab === 'general') && window.loadOpsPanel) window.loadOpsPanel();
     if (tab === 'system') loadSystemStats();
     if (tab === 'discord') loadDiscordSettings();
   };

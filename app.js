@@ -278,141 +278,8 @@ const SMBIOS_PRODUCTS = [
   'Custom VM',
   'Cloud Instance'
 ];
-const OS_TEMPLATES = {
-  // icon is an emoji shown on every template card so users can tell the OS apart.
-  ubuntu_20_cloud: {
-    name: 'Ubuntu 20.04 LTS',
-    type: 'cloud-init',
-    icon: '🟠',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img',
-    username: 'ubuntu',
-    password: 'ubuntu'
-  },
-  ubuntu_22_cloud: {
-    name: 'Ubuntu 22.04 LTS',
-    type: 'cloud-init',
-    icon: '🟠',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img',
-    username: 'ubuntu',
-    password: 'ubuntu'
-  },
-  ubuntu_24_cloud: {
-    name: 'Ubuntu 24.04 LTS',
-    type: 'cloud-init',
-    icon: '🟠',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img',
-    username: 'ubuntu',
-    password: 'ubuntu'
-  },
-  debian_11_cloud: {
-    name: 'Debian 11 (Bullseye)',
-    type: 'cloud-init',
-    icon: '🌀',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-generic-amd64.qcow2',
-    username: 'debian',
-    password: 'debian'
-  },
-  debian_12_cloud: {
-    name: 'Debian 12 (Bookworm)',
-    type: 'cloud-init',
-    icon: '🌀',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2',
-    username: 'debian',
-    password: 'debian'
-  },
-  debian_13_cloud: {
-    name: 'Debian 13 (Trixie)',
-    type: 'cloud-init',
-    icon: '🌀',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://cloud.debian.org/images/cloud/trixie/latest/debian-13-generic-amd64.qcow2',
-    username: 'debian',
-    password: 'debian'
-  },
-  fedora_40_cloud: {
-    name: 'Fedora 40',
-    type: 'cloud-init',
-    icon: '🎩',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://download.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/x86_64/images/Fedora-Cloud-Base-40-1.14.x86_64.qcow2',
-    username: 'fedora',
-    password: 'fedora'
-  },
-  centos_9_cloud: {
-    name: 'CentOS Stream 9',
-    type: 'cloud-init',
-    icon: '💠',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2',
-    username: 'cloud-user',
-    password: 'cloud-user'
-  },
-  almalinux_8_cloud: {
-    name: 'AlmaLinux 8',
-    type: 'cloud-init',
-    icon: '🦙',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://repo.almalinux.org/almalinux/8/cloud/x86_64/images/AlmaLinux-8-GenericCloud-latest.x86_64.qcow2',
-    username: 'almalinux',
-    password: 'almalinux'
-  },
-  almalinux_9_cloud: {
-    name: 'AlmaLinux 9',
-    type: 'cloud-init',
-    icon: '🦙',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2',
-    username: 'almalinux',
-    password: 'almalinux'
-  },
-  rocky_8_cloud: {
-    name: 'Rocky Linux 8',
-    type: 'cloud-init',
-    icon: '🪨',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://dl.rockylinux.org/pub/rocky/8/images/x86_64/Rocky-8-GenericCloud-Base.latest.x86_64.qcow2',
-    username: 'rocky',
-    password: 'rocky'
-  },
-  rocky_9_cloud: {
-    name: 'Rocky Linux 9',
-    type: 'cloud-init',
-    icon: '🪨',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2',
-    username: 'rocky',
-    password: 'rocky'
-  }
-};
+// Built-in OS templates live in services/os-templates.js (also used by the installer)
+const { OS_TEMPLATES } = require('./services/os-templates');
 
 // Middleware
 app.use(express.json());
@@ -708,7 +575,7 @@ function initializeDatabase() {
     const defaultSettings = {
       'site_name': 'StarCloud Panel',
       'site_description': 'Virtual Machine Management System',
-      'site_icon_url': '/images/logo-cloud.png',
+      'site_icon_url': '/images/logo.png',
     };
     
     Object.entries(defaultSettings).forEach(([key, value]) => {
@@ -722,7 +589,7 @@ function initializeDatabase() {
     // Upgrade old installs: replace the previous built-in branding defaults (only those exact values;
     // anything an admin typed is left alone).
     db.run(`UPDATE settings SET setting_value = 'StarCloud Panel' WHERE setting_key = 'site_name' AND setting_value = 'StarCloud'`);
-    db.run(`UPDATE settings SET setting_value = '/images/logo-cloud.png' WHERE setting_key = 'site_icon_url' AND setting_value = '/images/logo.png'`);
+    db.run(`UPDATE settings SET setting_value = '/images/logo.png' WHERE setting_key = 'site_icon_url' AND setting_value = '/images/logo-cloud.png'`);
     db.run(`UPDATE settings SET setting_value = 'StarCloud Panel' WHERE setting_key = 'panel_title' AND setting_value IN ('StarCloud Panel V2.0', 'StarCloud Panel V1.0')`);
 
     // Add Discord columns to users table if they don't exist
@@ -1056,7 +923,7 @@ function renderDiscordHandoff(req, res) {
   return res.render('discord-account', {
     title: 'Discord Account - StarCloud Panel',
     siteName: res.locals.siteName || 'StarCloud Panel',
-    siteLogo: res.locals.siteLogo || '/images/logo-cloud.png',
+    siteLogo: res.locals.siteLogo || '/images/logo.png',
     pending: req.session.pendingDiscordAuth,
     isLoggedIn: !!req.session.userId
   });
@@ -1622,7 +1489,7 @@ app.get('/api/iso-list', (req, res) => {
 
 // Favicon endpoint
 app.get('/favicon.ico', (req, res) => {
-  res.redirect('/images/logo-cloud.png');
+  res.redirect('/images/logo.png');
 });
 
 // Middleware to pass user and settings to all views
@@ -1638,7 +1505,7 @@ app.use((req, res, next) => {
   res.locals.panelVersion = process.env.PANEL_VERSION || 'V2.0';
   
   // Set default logo and site name
-  res.locals.siteLogo = process.env.DEFAULT_LOGO_URL || '/images/logo-cloud.png';
+  res.locals.siteLogo = process.env.DEFAULT_LOGO_URL || '/images/logo.png';
   res.locals.siteName = process.env.PANEL_NAME || 'StarCloud Panel';
   
   // Load site settings from database (blocking, so sidebar reflects changes immediately)
@@ -1682,7 +1549,7 @@ app.get('/login', (req, res) => {
   res.render('users/login', { 
     title: 'Login - StarCloud Panel',
     currentPage: 'login',
-    siteLogo: res.locals.siteLogo || process.env.DEFAULT_LOGO_URL || '/images/logo-cloud.png',
+    siteLogo: res.locals.siteLogo || process.env.DEFAULT_LOGO_URL || '/images/logo.png',
     siteName: res.locals.siteName || process.env.PANEL_NAME || 'StarCloud Panel'
   });
 });
@@ -1880,7 +1747,7 @@ app.get('/admin/templates/builtin/:key/edit', checkAuth, checkAdmin, (req, res) 
   res.render('admin/templates-edit', {
     title: `View ${template.name} - StarCloud Panel`,
     currentPage: 'templates',
-    siteLogo: res.locals.siteLogo || '/images/logo-cloud.png',
+    siteLogo: res.locals.siteLogo || '/images/logo.png',
     templateKey: templateKey,
     isBuiltin: true,
     template: templateObj
@@ -4358,7 +4225,7 @@ app.get('/api/settings', (req, res) => {
       panel_version: 'V2.0',
       panel_title: 'StarCloud Panel',
       panel_description: 'Professional VM Management Panel',
-      site_icon_url: '/images/logo-cloud.png',
+      site_icon_url: '/images/logo.png',
       session_timeout: 24,
       max_sessions: 10
     };

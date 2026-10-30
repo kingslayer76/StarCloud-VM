@@ -473,7 +473,7 @@ async function loadLoginBranding() {
     if (!res.ok) return;
     const settings = await res.json();
     
-    const siteIconUrl = settings['site_icon_url'] || '/images/logo-cloud.png';
+    const siteIconUrl = settings['site_icon_url'] || '/images/logo.png';
     const siteName = settings['site_name'] || 'StarCloud Panel';
     const siteDesc = settings['site_description'] || 'Professional VM Management Platform';
     
@@ -499,7 +499,7 @@ async function loadLoginBranding() {
     const iconImg = document.getElementById('loginIconImg');
     const iconFallback = document.getElementById('loginIconFallback');
     if (iconImg) {
-      iconImg.src = '/images/logo-cloud.png';
+      iconImg.src = '/images/logo.png';
       iconImg.style.display = 'block';
     }
     if (iconFallback) iconFallback.style.display = 'none';
@@ -558,7 +558,7 @@ async function loadLoginBranding() {
     if (!res.ok) return;
     const settings = await res.json();
     
-    const siteIconUrl = settings['site_icon_url'] || '/images/logo-cloud.png';
+    const siteIconUrl = settings['site_icon_url'] || '/images/logo.png';
     const siteName = settings['site_name'] || 'StarCloud Panel';
     const siteDesc = settings['site_description'] || 'Professional VM Management Platform';
     
@@ -584,7 +584,7 @@ async function loadLoginBranding() {
     const iconImg = document.getElementById('loginIconImg');
     const iconFallback = document.getElementById('loginIconFallback');
     if (iconImg) {
-      iconImg.src = '/images/logo-cloud.png';
+      iconImg.src = '/images/logo.png';
       iconImg.style.display = 'block';
     }
     if (iconFallback) iconFallback.style.display = 'none';

@@ -14,6 +14,8 @@
 #     --skip-system       do not use apt, systemd or start the panel
 #     --no-service        install everything but do not start the panel
 #     --yes               never ask questions (uses defaults)
+#     --os-images MODE    OS cloud images for VM creation: all | none | ask (default ask; --yes = none)
+#     --all-os            same as --os-images all
 #     --verbose           show the raw output of every command (default: only the logo and steps)
 #     -h, --help          show this help
 #
@@ -25,7 +27,7 @@ APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_NAME="starcloud"
 MIN_NODE_MAJOR=18
 NODE_INSTALL_MAJOR=20
-TOTAL_STEPS=12
+TOTAL_STEPS=13
 LOG_DIR="$APP_DIR/logs"
 LOG_FILE="$LOG_DIR/install.log"
 PID_FILE="$APP_DIR/data/panel.pid"
@@ -39,6 +41,7 @@ SKIP_SYSTEM=false
 VERBOSE=false
 NO_SERVICE=false
 ASSUME_YES=false
+OS_IMAGES="ask"
 PANEL_PORT=""
 SERVICE_KIND="none"
 STEP_NO=0
@@ -62,7 +65,7 @@ ui_grey()  { printf '    %s%s%s\n' "$C_GREY" "$*" "$C_RESET"; }
 log()      { printf '[%s] %s\n' "$(date '+%F %T')" "$*" >> "$LOG_FILE"; }
 die()      { ui_err "$*"; log "FATAL: $*"; exit 1; }
 
-usage() { sed -n '2,20p' "$0" | sed 's/^#\( \|$\)//'; }
+usage() { sed -n '2,/^#   Every command/p' "$0" | sed 's/^#\( \|$\)//'; }
 
 on_error() {
   local code=$?
@@ -73,28 +76,116 @@ on_error() {
 trap 'on_error $LINENO' ERR
 
 # ---------------------------------------------------------------- logo -------
+# The banner is the top 16 rows of the screen. On an interactive terminal a background loop repaints
+# it every 120 ms with a rainbow palette, and a scroll region keeps all installer output below it.
+# Every repaint is one printf call (cursor saved and restored inside it), so stopping the loop at any
+# moment is safe. Prompts pause the loop so the typed text is never drawn over the banner.
+LOGO_ROWS=16
+LOGO_LINES=(
+  ""
+  " ███████╗████████╗ █████╗ ██████╗"
+  " ██╔════╝╚══██╔══╝██╔══██╗██╔══██╗"
+  " ███████╗   ██║   ███████║██████╔╝"
+  " ╚════██║   ██║   ██╔══██║██╔══██╗"
+  " ███████║   ██║   ██║  ██║██║  ██║"
+  " ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝"
+  "  ██████╗██╗      ██████╗ ██╗   ██╗██████╗"
+  " ██╔════╝██║     ██╔═══██╗██║   ██║██╔══██╗"
+  " ██║     ██║     ██║   ██║██║   ██║██║  ██║"
+  " ██║     ██║     ██║   ██║██║   ██║██║  ██║"
+  " ╚██████╗███████╗╚██████╔╝╚██████╔╝██████╔╝"
+  "  ╚═════╝╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝"
+  ""
+  "      ✦  Virtual Machine Panel  ·  Installer  ✦"
+  ""
+)
+# 256-colour rainbow (red -> orange -> yellow -> green -> cyan -> blue -> violet -> pink)
+LOGO_PALETTE=(196 202 208 214 220 226 190 154 118 82 46 48 51 45 39 33 27 21 57 93 129 165 201 200 199 198 197)
+
+# Prints the banner. With a colour phase, each row gets its own palette colour that moves each frame.
+logo_block() {
+  local p="${1:-0}" r c n=${#LOGO_PALETTE[@]} out=""
+  for r in $(seq 0 $((LOGO_ROWS - 1))); do
+    if [ -n "$C_RESET" ]; then
+      if [ "$r" -eq 14 ]; then
+        c=${LOGO_PALETTE[$(( (p + 13) % n ))]}
+      else
+        c=${LOGO_PALETTE[$(( (p + r * 2) % n ))]}
+      fi
+      out+="$(printf '\033[1;38;5;%sm%s\033[0m' "$c" "${LOGO_LINES[$r]}")"$'\n'
+    else
+      out+="${LOGO_LINES[$r]}"$'\n'
+    fi
+  done
+  printf '%s' "$out"
+}
+
 show_logo() {
-  if [ -t 1 ] && [ "$VERBOSE" = false ]; then clear || true; fi
-  printf '\n'
-  printf '%s%s' "$C_BLUE" "$C_BOLD"; cat <<'EOF'
- ███████╗████████╗ █████╗ ██████╗
- ██╔════╝╚══██╔══╝██╔══██╗██╔══██╗
- ███████╗   ██║   ███████║██████╔╝
- ╚════██║   ██║   ██╔══██║██╔══██╗
- ███████║   ██║   ██║  ██║██║  ██║
- ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝
-EOF
-  printf '%s%s' "$C_PURPLE" "$C_BOLD"; cat <<'EOF'
-  ██████╗██╗      ██████╗ ██╗   ██╗██████╗
- ██╔════╝██║     ██╔═══██╗██║   ██║██╔══██╗
- ██║     ██║     ██║   ██║██║   ██║██║  ██║
- ██║     ██║     ██║   ██║██║   ██║██║  ██║
- ╚██████╗███████╗╚██████╔╝╚██████╔╝██████╔╝
-  ╚═════╝╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝
-EOF
-  printf '%s\n' "$C_RESET"
-  printf '      %s✦%s  %sVirtual Machine Panel  ·  Installer%s  %s✦%s\n\n' \
-    "$C_CYAN" "$C_RESET" "$C_BOLD" "$C_RESET" "$C_CYAN" "$C_RESET"
+  if [ -t 1 ] && [ "$VERBOSE" = false ]; then TERM="${TERM:-xterm-256color}" clear 2>/dev/null || true; fi
+  logo_block 0
+}
+
+# Repaints the banner in place (cursor saved and restored in the same write).
+logo_paint() {
+  printf '\e7\033[1;1H%s\e8' "$(logo_block "$1")"
+}
+
+LOGO_ANIM_PID=""
+LOGO_REGION=0
+
+logo_anim_start() {
+  [ "$LOGO_REGION" = 1 ] || return 0
+  [ -z "$LOGO_ANIM_PID" ] || return 0
+  (
+    trap - ERR
+    set +e
+    while :; do
+      logo_paint $(( $(date +%s%3N) / 120 ))
+      sleep 0.12
+    done
+  ) &
+  LOGO_ANIM_PID=$!
+}
+
+logo_anim_stop() {
+  if [ -n "$LOGO_ANIM_PID" ]; then
+    kill "$LOGO_ANIM_PID" 2>/dev/null || true
+    wait "$LOGO_ANIM_PID" 2>/dev/null || true
+    LOGO_ANIM_PID=""
+  fi
+}
+
+# Starts the scroll region below the banner and the animation. Only on a real terminal that is tall
+# enough, and only when the banner is at the top of the screen (not with --verbose).
+logo_region_on() {
+  [ -n "$C_RESET" ] && [ "$VERBOSE" = false ] || return 0
+  local rows
+  rows="$(tput lines 2>/dev/null || echo 0)"
+  [[ "$rows" =~ ^[0-9]+$ ]] && [ "$rows" -ge $((LOGO_ROWS + 8)) ] || return 0
+  printf '\e7\033[%d;%dr\e8' $((LOGO_ROWS + 1)) "$rows"
+  LOGO_REGION=1
+  logo_anim_start
+}
+
+# Stops the animation and gives the whole screen back to the terminal (the final colours stay).
+logo_region_off() {
+  logo_anim_stop
+  if [ "$LOGO_REGION" = 1 ]; then
+    printf '\e7\033[r\e8'
+    LOGO_REGION=0
+  fi
+}
+
+logo_pause()  { logo_anim_stop; }
+logo_resume() { logo_anim_start; }
+
+# read wrapper: pauses the banner animation while the user types.
+ask() {
+  local rc=0
+  logo_pause
+  read "$@" || rc=$?
+  logo_resume
+  return "$rc"
 }
 
 section() { printf '\n  %s%s%s\n' "$C_BOLD$C_CYAN" "$*" "$C_RESET"; log "== $*"; }
@@ -274,6 +365,9 @@ while [ $# -gt 0 ]; do
     --skip-system) SKIP_SYSTEM=true; shift ;;
     --no-service)  NO_SERVICE=true; shift ;;
     --yes|-y)      ASSUME_YES=true; shift ;;
+    --os-images)   OS_IMAGES="${2:-}"; shift 2
+                   case "$OS_IMAGES" in all|none|ask) ;; *) echo "--os-images must be: all, none or ask" >&2; exit 1 ;; esac ;;
+    --all-os)      OS_IMAGES=all; shift ;;
     --verbose|-v)  VERBOSE=true; shift ;;
     --start)       MODE="start"; shift ;;
     --stop)        MODE="stop"; shift ;;
@@ -302,6 +396,8 @@ PANEL_PORT="${PANEL_PORT:-$(read_env_value PORT 8080)}"
 [[ "$PANEL_PORT" =~ ^[0-9]+$ ]] && [ "$PANEL_PORT" -ge 1 ] && [ "$PANEL_PORT" -le 65535 ] || die "Port must be a number from 1 to 65535."
 
 show_logo
+logo_region_on
+trap 'logo_region_off' EXIT
 
 # =============================================================================
 #   PREFLIGHT: check the machine before changing anything
@@ -382,7 +478,7 @@ elif port_listening; then
   if [ "$ASSUME_YES" = true ] || [ ! -t 0 ]; then
     die "Port ${PANEL_PORT} is busy. Free it or choose another port with --port N."
   fi
-  read -r -p "  Continue anyway? [y/N]: " CONFIRM || CONFIRM=""
+  ask -r -p "  Continue anyway? [y/N]: " CONFIRM || CONFIRM=""
   [[ "$CONFIRM" =~ ^[Yy]$ ]] || die "Installation cancelled."
 else
   ui_ok "Port ${PANEL_PORT} is free."
@@ -399,8 +495,8 @@ section "Admin account"
 if [ -z "$ADMIN_USER" ] && [ -z "$ADMIN_PASS" ] && [ "$ASSUME_YES" = false ] && [ -t 0 ]; then
   ui_grey "Press Enter to keep the default  admin / admin  (change it after login),"
   ui_grey "or type your own username and password."
-  read -r -p "  Admin username [admin]: " ADMIN_USER || true
-  read -r -s -p "  Admin password [admin]: " ADMIN_PASS || true
+  ask -r -p "  Admin username [admin]: " ADMIN_USER || true
+  ask -r -s -p "  Admin password [admin]: " ADMIN_PASS || true
   echo ""
 fi
 ADMIN_USER="${ADMIN_USER:-admin}"
@@ -415,9 +511,66 @@ ui_ok "Admin account: ${ADMIN_USER}"
 log "admin user: $ADMIN_USER"
 
 # =============================================================================
+#   OS IMAGES: decide whether to download the cloud images now
+# =============================================================================
+section "OS images for VM creation"
+OS_COUNT="$(grep -cE '^  [a-z0-9_]+: \{' "$APP_DIR/services/os-templates.js" 2>/dev/null || echo 0)"
+if [ "$OS_IMAGES" = ask ]; then
+  if [ "$ASSUME_YES" = false ] && [ -t 0 ]; then
+    ui_grey "The panel creates VMs from cloud images: Ubuntu, Debian, Fedora, CentOS, AlmaLinux, Rocky."
+    ui_grey "${OS_COUNT} images, several GB in total. Skip now and download later from Admin > Templates."
+    ask -r -p "  Download all OS images now? [Y/n]: " OS_ANS || true
+    case "${OS_ANS:-}" in n|N|no|NO|No) OS_IMAGES=none ;; *) OS_IMAGES=all ;; esac
+  else
+    OS_IMAGES=none
+  fi
+fi
+case "$OS_IMAGES" in
+  all)  ui_ok "All ${OS_COUNT} OS images will be downloaded during the install" ;;
+  *)    ui_grey "OS images skipped (install later: sudo bash install.sh --os-images all)" ;;
+esac
+log "os images: $OS_IMAGES"
+
+# =============================================================================
 #   INSTALL STEPS
 # =============================================================================
 section "Installing"
+
+# Downloads every built-in OS template (services/os-templates.js) into the panel's template cache,
+# the same folder the panel uses: ~/vms/templates/<key>-template.qcow2. Existing files are kept.
+# One failed image never stops the install; the summary lists what failed.
+step_os_images() {
+  local dir list key url file part total=0 ok=0 had=0 failed="" free_gb
+  dir="$(node -p "require('path').join(require('os').homedir(), 'vms', 'templates')")"
+  mkdir -p "$dir"
+  list="$(node -e "const { OS_TEMPLATES } = require(process.argv[1]); for (const [k, v] of Object.entries(OS_TEMPLATES)) console.log(k + ' ' + v.url);" "$APP_DIR/services/os-templates.js")"
+  free_gb="$(df -BG --output=avail "$dir" 2>/dev/null | tail -1 | tr -dc '0-9' || true)"
+  echo "cache folder: $dir (free: ${free_gb:-?} GB)"
+  if [ -n "$free_gb" ] && [ "$free_gb" -lt 40 ] 2>/dev/null; then
+    echo "warning: less than 40 GB free; large images may not fit"
+  fi
+  while read -r key url; do
+    [ -n "$key" ] || continue
+    total=$((total + 1))
+    file="$dir/${key}-template.qcow2"
+    if [ -s "$file" ]; then
+      had=$((had + 1)); echo "$key: already present"; continue
+    fi
+    part="$file.part"
+    echo "$key: downloading $url"
+    if curl -fL --retry 3 --retry-delay 5 --connect-timeout 20 -o "$part" "$url" && [ -s "$part" ]; then
+      mv -f "$part" "$file"; ok=$((ok + 1)); echo "$key: done"
+    else
+      rm -f "$part"; failed="$failed $key"; echo "$key: FAILED (the rest continue)"
+    fi
+  done <<< "$list"
+  {
+    echo "OS images: $ok downloaded, $had already present, $(( total - ok - had )) failed (of $total)"
+    [ -z "$failed" ] || echo "failed:$failed  -> retry later from Admin > Templates, or: sudo bash install.sh --os-images all"
+  } > "$LOG_DIR/os-images.txt"
+  cat "$LOG_DIR/os-images.txt"
+  return 0
+}
 
 step_apt() {
   export DEBIAN_FRONTEND=noninteractive
@@ -627,6 +780,12 @@ run_step "Checking VM tools (qemu, genisoimage, cloud-localds)" step_tools
 run_step "Installing Node packages" step_npm
 run_step "Recording KVM / nested virtualization status" step_kvm
 run_step "Writing configuration (.env, mode 600)" step_env
+if [ "$OS_IMAGES" = all ]; then
+  run_step "Downloading ${OS_COUNT} OS images (cloud templates)" step_os_images
+  [ ! -s "$LOG_DIR/os-images.txt" ] || ui_grey "$(cat "$LOG_DIR/os-images.txt")"
+else
+  skip_step "OS images (not requested: --os-images $OS_IMAGES)" 1
+fi
 if [ "$SKIP_SYSTEM" = false ]; then
   run_step "Opening port ${PANEL_PORT} in the firewall" step_firewall
   if [ "$NO_SERVICE" = false ]; then
@@ -642,6 +801,7 @@ fi
 # =============================================================================
 #   SUMMARY
 # =============================================================================
+logo_region_off
 if systemd_usable && [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ] && systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
   SERVICE_KIND="systemd"
 elif [ -n "$(panel_pid || true)" ]; then

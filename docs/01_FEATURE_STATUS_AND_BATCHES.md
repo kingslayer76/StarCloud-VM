@@ -75,6 +75,8 @@ Test ka level:
 | Installer admin account setup (Enter = `admin`/`admin`, D-14 — security note) | ✅ | `install.sh` test: exit 0, `.env` mode 600 |
 | Installer terminal: sirf StarCloud logo + step status (spinner, ✔/✖); raw output `logs/install.log` mein; `--verbose` se screen par | ✅ | Local test: `script` (TTY) + fake apt-get, `--skip-system` aur full run; failure path: ✖ + log tail + exit code |
 | Installer preflight (root, OS, RAM/disk/CPU, KVM, systemd, internet, port 8080 check) + final summary box | ✅ | Sandbox run; real Codespaces/Debian run pending |
+| Installer OS images: `--os-images all|none|ask` (`--all-os`); interactive prompt (default Y), `--yes` = none; `services/os-templates.js` single source; cache `~/vms/templates/<key>-template.qcow2`; existing files kept, one failure does not stop the rest | 🟡 | Pty run with fake curl: 11 ✔, 1 forced failure reported, summary correct; interactive 'n' path skips. Real download URLs unverified in sandbox |
+| Installer animated StarCloud logo (rainbow repaint every 120 ms in a scroll region; paused during prompts; final colours kept) | ✅ | pyte terminal emulation: banner stays on top, cursor not moved by repaints (0 mismatches), region reset on exit |
 | Installer ka panel background service (`install.sh --start/--stop/--status`, `setsid` + PID file) | 🟡 | Sandbox: install ke baad panel pty band hone par bhi chalta hai (pid check + login 200), `--stop`/`--start` cycle ✅. systemd unit file `systemd-analyze` ✅; real `systemctl` start real server par pending |
 | `STARCLOUD_DATA_DIR` installer `.env` mein (DB project ke andar) | ✅ | Code + dry run |
 | Live: `/api/admin/operations` JSON shape | ✅ | `capabilities`, `maintenance`, `vms` keys |
