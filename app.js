@@ -1589,6 +1589,22 @@ app.use((req, res, next) => {
 // License check middleware — silently bypassed
 app.use((req, res, next) => { next(); });
 
+// VM ownership guard. Every user-facing VM path (/vm/:id..., /api/vms/:id...)
+// must belong to the logged-in user, unless the user is an admin.
+// Non-owners get a 404 so VM existence is not revealed.
+app.use((req, res, next) => {
+  const m = req.path.match(/^\/(?:api\/vms|vm)\/([^/]+)(?:\/|$)/);
+  if (!m || !req.session || !req.session.userId) return next(); // anonymous -> checkAuth redirects
+  if (req.session.role === 'admin') return next();
+  db.get(`SELECT owner_id FROM vms WHERE vm_id = ?`, [m[1]], (err, vm) => {
+    if (!err && vm && Number(vm.owner_id) === Number(req.session.userId)) return next();
+    if (req.path.startsWith('/api/')) {
+      return res.status(404).json({ error: 'VM not found or access denied' });
+    }
+    return res.status(404).send('VM not found or access denied');
+  });
+});
+
 // Login page
 app.get('/login', (req, res) => {
   if (req.session.userId) {

@@ -75,7 +75,7 @@ Test ka level:
 | Installer admin account setup (Enter = `admin`/`admin`, D-14 — security note) | ✅ | `install.sh` test: exit 0, `.env` mode 600 |
 | Installer terminal: sirf StarCloud logo + step status (spinner, ✔/✖); raw output `logs/install.log` mein; `--verbose` se screen par | ✅ | Local test: `script` (TTY) + fake apt-get, `--skip-system` aur full run; failure path: ✖ + log tail + exit code |
 | Installer preflight (root, OS, RAM/disk/CPU, KVM, systemd, internet, port 8080 check) + final summary box | ✅ | Sandbox run; real Codespaces/Debian run pending |
-| Installer systemd service (unit file) / background fallback (`start-panel.sh`) | 🟡 | Background path ✅ (sandbox). Unit file verify ✅ (`systemd-analyze`), real `systemctl` start pending (real server) |
+| Installer ka panel background service (`install.sh --start/--stop/--status`, `setsid` + PID file) | 🟡 | Sandbox: install ke baad panel pty band hone par bhi chalta hai (pid check + login 200), `--stop`/`--start` cycle ✅. systemd unit file `systemd-analyze` ✅; real `systemctl` start real server par pending |
 | `STARCLOUD_DATA_DIR` installer `.env` mein (DB project ke andar) | ✅ | Code + dry run |
 | Live: `/api/admin/operations` JSON shape | ✅ | `capabilities`, `maintenance`, `vms` keys |
 
@@ -88,6 +88,11 @@ Test ka level:
 | Failed create ka row rollback (template download fail → row delete, naam free) | ✅ | Live: download fail (sandbox network) → 500, `newvm` list mein nahi, dubara same naam pe bhi naam ka error nahi |
 | SSH port validation: 1024–65535 aur kisi aur VM ka port nahi (400 `SSH_PORT_RANGE` / 409 `SSH_PORT_TAKEN`) | ✅ | Live: port 77 → 400; port 2222 (dusri VM par) → 409 |
 | Installer: user ke `hkvm-master-fix.sh` ke steps (libvirt + helper services, swap 4 GB sirf jab koi swap na ho, swappiness 10, `genisoimage` / `cloud-localds` / `qemu-img` check) | ✅ | Fake apt + fake tools run: 12/12 ✔; apt-fail path: ✖ + log tail; sandbox mein `mkswap` nahi → warning, swap skip (installer nahi ruka) |
+
+| **Installer ek hi file:** `start-panel.sh` hata kar `install.sh` mein merge. Modes: `install` (default), `--start`, `--stop`, `--status`. Install ke baad panel turant chalta hai | ✅ | Full install under pty: 12/12 ✔, panel ONLINE; terminal band hone ke baad bhi RUNNING; `--stop` → `--start` → `--status` RUNNING, login 200 |
+| **Panel install ke baad band ho jata tha** (root cause: `nohup` bina `setsid` ke terminal band hone par process mar jata) | ✅ | `setsid nohup node app.js` ke saath survive karta hai (ppid 1); test: pty close ke baad login 200 |
+| **VM ownership (security):** customer doosre user ke VM ke `/api/vms/:id/*` aur `/vm/:id/*` (stats, logs, console, ssh, snapshots, ISO, command POST) dekh/chala sakta tha | ✅ | Global guard `app.js` (`VM ownership guard`): admin sab, customer sirf apna VM; non-owner → 404. Test: cust1 → admin VM 404 (11 routes + POST), own VM 200, admin 200, anon login redirect |
+| Admin + customer GET routes smoke test (sab pages/API) | ✅ | 34 admin pages 200; VM detail/edit/console/files/ssh 200; customer dashboard/vms/profile 200; `/api/discord-auth-url` 400 `Discord auth not configured` (Discord setup nahi hai, expected) |
 
 **User ko Codespaces/VPS par:** jo purana VM `test` (4096 MB) dikh raha tha, usko **All VMs** se delete karein, phir naya VM banayein. Guest RAM host RAM ka aadha rakhein (4 GB VPS par ~2048 MB guest).
 
@@ -254,6 +259,8 @@ git clone -b arena/1bed8e0c-starcloud-vm https://github.com/kingslayer76/StarClo
 cd StarCloud-VM
 sudo bash install.sh
 ```
+
+Panel control (install ke baad): `sudo bash install.sh --status` (chal raha hai ya nahi), `sudo bash install.sh --start`, `sudo bash install.sh --stop`. Server restart ke baad panel phir se chalane ke liye `sudo bash install.sh --start`. Panel log: `logs/panel.log`.
 
 Installer terminal par sirf StarCloud logo aur step ka status dikhayega (raw output `logs/install.log` mein jayega; `--verbose` se sab screen par). Last mein summary box mein Panel URL aayega (Codespaces mein `https://<codespace>-8080.app.github.dev/login`). Ports tab mein port 8080 ko Public karein agar browser se khulna band ho.
 

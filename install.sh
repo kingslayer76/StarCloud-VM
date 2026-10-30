@@ -2,9 +2,10 @@
 # =============================================================================
 #   StarCloud Panel installer (Debian / Ubuntu)
 # -----------------------------------------------------------------------------
-#   sudo bash install.sh                          interactive install
+#   sudo bash install.sh                          install (or update) and start the panel
 #   sudo bash install.sh --admin-user X --admin-pass Y --yes   unattended install
 #   bash install.sh --skip-system                 only .env + Node packages (no apt, no service)
+#   sudo bash install.sh --start | --stop | --status   control the panel (after install)
 #
 #   Options:
 #     --admin-user NAME   admin username (3-32 chars: letters, digits, _ . -)
@@ -28,6 +29,9 @@ TOTAL_STEPS=12
 LOG_DIR="$APP_DIR/logs"
 LOG_FILE="$LOG_DIR/install.log"
 PID_FILE="$APP_DIR/data/panel.pid"
+PANEL_LOG="$LOG_DIR/panel.log"
+ENV_FILE="$APP_DIR/.env"
+MODE="install"
 
 ADMIN_USER=""
 ADMIN_PASS=""
@@ -99,7 +103,9 @@ section() { printf '\n  %s%s%s\n' "$C_BOLD$C_CYAN" "$*" "$C_RESET"; log "== $*";
 port_listening() { (exec 3<>"/dev/tcp/127.0.0.1/${PANEL_PORT}") >/dev/null 2>&1; }
 
 panel_answers() {
-  curl -fsS -o /dev/null --max-time 3 "http://127.0.0.1:${PANEL_PORT}/login" >/dev/null 2>&1
+  local code
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://127.0.0.1:${PANEL_PORT}/login" 2>/dev/null || true)"
+  [[ "$code" =~ ^[1-4][0-9][0-9]$ ]]
 }
 
 node_major() { node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0; }
@@ -175,6 +181,90 @@ run_step() {
   exit "$rc"
 }
 
+# ---------------------------------------------------------------- panel -------
+# The panel runs in its own session (setsid), so closing the terminal does not stop it.
+# On a server with systemd the service is used; otherwise the process is tracked in data/panel.pid.
+service_installed() { systemd_usable && [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ]; }
+
+panel_pid() { # prints the PID of the running panel (from the PID file, or by its command line)
+  local p=""
+  if [ -f "$PID_FILE" ]; then p="$(cat "$PID_FILE" 2>/dev/null || true)"; fi
+  if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then echo "$p"; return 0; fi
+  if command -v pgrep >/dev/null 2>&1; then
+    p="$(pgrep -f "${APP_DIR}/app.js" 2>/dev/null | head -n 1 || true)"
+    if [ -n "$p" ]; then echo "$p"; return 0; fi
+  fi
+  return 1
+}
+
+stop_panel_background() {
+  local p i
+  p="$(panel_pid || true)"
+  if [ -z "$p" ]; then rm -f "$PID_FILE"; return 0; fi
+  if ! kill "$p" 2>/dev/null; then
+    echo "could not stop the panel (pid $p). Run with sudo: sudo bash install.sh --stop"
+    return 1
+  fi
+  for i in $(seq 1 10); do kill -0 "$p" 2>/dev/null || break; sleep 1; done
+  kill -0 "$p" 2>/dev/null && kill -9 "$p" 2>/dev/null || true
+  rm -f "$PID_FILE"
+  echo "stopped the panel (pid $p)"
+}
+
+start_panel_background() {
+  local node_bin pid real i
+  node_bin="$(command -v node || true)"
+  [ -n "$node_bin" ] || { echo "Node.js is not installed"; return 1; }
+  [ -d "$APP_DIR/node_modules/express" ] || { echo "Node packages are missing. Run: sudo bash install.sh"; return 1; }
+  mkdir -p "$LOG_DIR" "$APP_DIR/data"
+  cd "$APP_DIR"
+  nohup setsid "$node_bin" "$APP_DIR/app.js" >> "$PANEL_LOG" 2>&1 < /dev/null &
+  pid=$!
+  real="$(panel_pid || true)"
+  echo "${real:-$pid}" > "$PID_FILE"
+  for i in $(seq 1 40); do
+    if panel_answers; then echo "panel is up on port ${PANEL_PORT} (process ${real:-$pid})"; return 0; fi
+    if ! kill -0 "$pid" 2>/dev/null && [ -z "$(panel_pid || true)" ]; then
+      echo "the panel stopped right after start. Last log lines:"; tail -n 30 "$PANEL_LOG" 2>/dev/null || true; return 1
+    fi
+    sleep 1
+  done
+  echo "the panel did not answer on port ${PANEL_PORT} within 40 seconds. Last log lines:"
+  tail -n 30 "$PANEL_LOG" 2>/dev/null || true
+  return 1
+}
+
+control_start() {
+  [ -f "$ENV_FILE" ] || die "The panel is not installed yet. Run: sudo bash install.sh"
+  if service_installed; then
+    systemctl start "$SERVICE_NAME" && echo "service '${SERVICE_NAME}' started"
+  elif panel_answers; then
+    echo "the panel is already running on port ${PANEL_PORT}"
+  else
+    start_panel_background
+  fi
+}
+
+control_stop() {
+  if service_installed; then systemctl stop "$SERVICE_NAME" 2>/dev/null && echo "service '${SERVICE_NAME}' stopped" || true; fi
+  stop_panel_background || true
+}
+
+control_status() {
+  local p state
+  p="$(panel_pid || true)"
+  if panel_answers; then state="RUNNING (answering on port ${PANEL_PORT})"; rc=0
+  elif [ -n "$p" ]; then state="process ${p} exists but is not answering yet"; rc=1
+  else state="NOT RUNNING"; rc=1; fi
+  echo "StarCloud panel: ${state}"
+  [ -n "$p" ] && echo "  process id : ${p}"
+  service_installed && echo "  service     : systemd (${SERVICE_NAME}) - $(systemctl is-active "$SERVICE_NAME" 2>/dev/null || true)"
+  echo "  folder      : ${APP_DIR}"
+  echo "  panel log   : ${PANEL_LOG}"
+  echo "  start/stop  : sudo bash install.sh --start | --stop"
+  return "$rc"
+}
+
 # ---------------------------------------------------------------- args -------
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -185,10 +275,24 @@ while [ $# -gt 0 ]; do
     --no-service)  NO_SERVICE=true; shift ;;
     --yes|-y)      ASSUME_YES=true; shift ;;
     --verbose|-v)  VERBOSE=true; shift ;;
+    --start)       MODE="start"; shift ;;
+    --stop)        MODE="stop"; shift ;;
+    --status)      MODE="status"; shift ;;
     -h|--help)     usage; exit 0 ;;
     *) echo "Unknown option: $1 (see: bash install.sh --help)" >&2; exit 1 ;;
   esac
 done
+
+if [ "$MODE" != "install" ]; then
+  PANEL_PORT="${PANEL_PORT:-$(read_env_value PORT 8080)}"
+  rc=0
+  case "$MODE" in
+    start)  control_start || rc=$? ;;
+    stop)   control_stop || rc=$? ;;
+    status) control_status || rc=$? ;;
+  esac
+  exit "$rc"
+fi
 
 mkdir -p "$LOG_DIR" "$APP_DIR/data"
 : >> "$LOG_FILE"
@@ -259,7 +363,7 @@ ui_ok "Environment: $ENV_NOTE"
 if [ "$SKIP_SYSTEM" = false ] && systemd_usable; then
   ui_ok "systemd is running. The panel will be installed as a service (${SERVICE_NAME})."
 else
-  ui_warn "systemd is not running here. The panel will run in the background (start-panel.sh)."
+  ui_warn "systemd is not running here. The panel will run in the background (own session, survives closing the terminal)."
 fi
 
 # Internet
@@ -322,7 +426,7 @@ step_apt() {
     qemu-kvm qemu-system-x86 qemu-utils libvirt-daemon-system libvirt-clients virtinst \
     bridge-utils cpu-checker genisoimage cloud-image-utils cloud-init xorriso \
     curl wget ca-certificates unzip tar gzip jq rsync lsof net-tools iproute2 \
-    openssl build-essential python3 git
+    openssl build-essential python3 git procps
 }
 
 # libvirt and its helper services (same set as the HKVM master setup). Failures are not fatal.
@@ -464,13 +568,6 @@ step_firewall() {
   fi
 }
 
-stop_old_background_panel() {
-  if [ -f "$PID_FILE" ]; then
-    local old; old="$(cat "$PID_FILE" 2>/dev/null || true)"
-    if [ -n "$old" ] && kill -0 "$old" 2>/dev/null; then kill "$old" 2>/dev/null || true; sleep 2; fi
-    rm -f "$PID_FILE"
-  fi
-}
 
 step_service() {
   local unit="/etc/systemd/system/${SERVICE_NAME}.service"
@@ -503,8 +600,8 @@ UNIT
     fi
     echo "systemd could not start the service; falling back to a background process"
   fi
-  stop_old_background_panel
-  bash "$APP_DIR/start-panel.sh"
+  stop_panel_background || true
+  start_panel_background
 }
 
 step_health() {
@@ -547,7 +644,7 @@ fi
 # =============================================================================
 if systemd_usable && [ -f "/etc/systemd/system/${SERVICE_NAME}.service" ] && systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
   SERVICE_KIND="systemd"
-elif [ -f "$PID_FILE" ]; then
+elif [ -n "$(panel_pid || true)" ]; then
   SERVICE_KIND="background"
 fi
 
@@ -590,9 +687,10 @@ if [ "$SERVICE_KIND" = "systemd" ]; then
   printf '     start / stop / restart   sudo systemctl start|stop|restart %s\n' "$SERVICE_NAME"
   printf '     live panel log           journalctl -u %s -f\n' "$SERVICE_NAME"
 else
-  printf '     start                    bash %s/start-panel.sh\n' "$APP_DIR"
-  printf '     stop                     kill "$(cat %s)"\n' "$PID_FILE"
-  printf '     live panel log           tail -f %s/logs/panel.log\n' "$APP_DIR"
+  printf '     start                    sudo bash %s/install.sh --start\n' "$APP_DIR"
+  printf '     stop                     sudo bash %s/install.sh --stop\n' "$APP_DIR"
+  printf '     status                   bash %s/install.sh --status\n' "$APP_DIR"
+  printf '     live panel log           tail -f %s\n' "$PANEL_LOG"
 fi
 printf '     reinstall / update       sudo bash install.sh\n'
 
@@ -607,8 +705,8 @@ echo ""
 if [ "$STATUS_TEXT" = "ONLINE" ]; then
   ui_ok "Done. The panel is running on port ${PANEL_PORT}."
 elif [ "$STATUS_TEXT" = "NOT STARTED" ]; then
-  ui_info "Files and settings are ready. Start the panel with:  bash ${APP_DIR}/start-panel.sh"
+  ui_info "Files and settings are ready. Start the panel with:  sudo bash ${APP_DIR}/install.sh --start"
 else
-  ui_warn "Installed, but the panel is not answering yet. Read $LOG_FILE, then run:  bash ${APP_DIR}/start-panel.sh"
+  ui_warn "Installed, but the panel is not answering yet. Read $PANEL_LOG, then run:  sudo bash ${APP_DIR}/install.sh --start"
 fi
 log "installer finished (status: ${STATUS_TEXT})"
