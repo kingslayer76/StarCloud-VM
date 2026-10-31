@@ -104,6 +104,18 @@ const OS_TEMPLATES = {
     password: 'cloud-user'
   },
 
+  centos_stream_9_cloud: {
+    name: 'CentOS Stream 9',
+    type: 'cloud-init',
+    icon: '💠',
+    disk_size: '20G',
+    memory: 2048,
+    cpus: 2,
+    url: 'https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2',
+    username: 'cloud-user',
+    password: 'cloud-user'
+  },
+
   // ---- AlmaLinux (3 active) ----
   almalinux_10_cloud: {
     name: 'AlmaLinux 10',
@@ -211,6 +223,19 @@ const OS_TEMPLATES = {
     memory: 2048,
     cpus: 2,
     url: 'https://download.opensuse.org/repositories/openSUSE:/Leap:/16.0:/Images/images/Leap-16.0-Minimal-VM.x86_64-Cloud.qcow2',
+    username: 'opensuse',
+    password: 'opensuse'
+  },
+  opensuse_leap_15_6_cloud: {
+    name: 'openSUSE Leap 15.6',
+    type: 'cloud-init',
+    icon: '🦎',
+    disk_size: '20G',
+    memory: 2048,
+    cpus: 2,
+    index: 'https://download.opensuse.org/distribution/leap/15.6/appliances/',
+    match: 'openSUSE-Leap-15\\.6-Minimal-VM\\.x86_64-15\\.6\\.0-Cloud-Build[0-9.]+\\.qcow2(?![\\w.-])',
+    url: 'https://download.opensuse.org/distribution/leap/15.6/appliances/openSUSE-Leap-15.6-Minimal-VM.x86_64-15.6.0-Cloud-Build15.13.qcow2',
     username: 'opensuse',
     password: 'opensuse'
   },
