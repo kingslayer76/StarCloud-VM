@@ -126,6 +126,10 @@ function attachTerminals({ server, sessionMiddleware, db, runtime }) {
       sendJson(ws, { type: 'status', state: 'error', message: 'This VM has no SSH address yet. Check its network settings.' });
       return ws.close();
     }
+    if (!runtime.isRunning(vm.vm_id)) {
+      sendJson(ws, { type: 'status', state: 'stopped', message: `VM ${vm.vm_name} is stopped. Start it, then connect over SSH.` });
+      return ws.close();
+    }
 
     ws.on('message', (raw, isBinary) => {
       const msg = parseMessage(raw, isBinary);
@@ -144,7 +148,12 @@ function attachTerminals({ server, sessionMiddleware, db, runtime }) {
 
     function startSsh(msg) {
       const username = String(msg.username || vm.username || '').trim().slice(0, 64);
+      // Empty password in the browser means "use the password saved for this VM".
       const password = typeof msg.password === 'string' && msg.password.length ? msg.password : (vm.password || '');
+      if (!password) {
+        sendJson(ws, { type: 'status', state: 'error', message: 'No password for this VM. Enter the VM password.' });
+        return;
+      }
       const cols = Math.max(20, Math.min(500, parseInt(msg.cols, 10) || 80));
       const rows = Math.max(5, Math.min(200, parseInt(msg.rows, 10) || 24));
       if (!username) {

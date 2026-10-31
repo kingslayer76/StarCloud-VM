@@ -51,7 +51,7 @@
         </div>
         <div class="field">
           <label for="sshPass">Password</label>
-          <input id="sshPass" type="password" placeholder="VM password" autocomplete="new-password" required>
+          <input id="sshPass" type="password" placeholder="VM password (empty = saved password)" autocomplete="new-password">
         </div>
         <button class="btn btn-primary" id="btnConnect" type="submit">Connect</button>
         <button class="btn btn-outline" id="btnDisconnect" type="button" disabled>Disconnect</button>
@@ -106,7 +106,7 @@
     if (e) e.preventDefault();
     const username = document.getElementById('sshUser').value.trim();
     const password = document.getElementById('sshPass').value;
-    if (!username || !password) { setStatus('Enter username and password'); return; }
+    if (!username) { setStatus('Enter the VM username'); return; }
     disconnect();
     term.reset();
     setConnected(true);

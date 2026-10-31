@@ -175,9 +175,11 @@
                 </div>
                 <div class="form-group">
                   <label class="form-label">CPU Model</label>
+                  <input type="search" class="form-control" id="edit_cpu_search" placeholder="Search CPU (e.g. Xeon, EPYC, Milan)" oninput="filterEditCpuOptions()" autocomplete="off" style="margin-bottom: 8px;" <%= vm && vm.status !== 'stopped' ? 'disabled' : '' %>>
                   <select class="form-control" name="cpu_model" id="edit_cpu_model" <%= vm && vm.status !== 'stopped' ? 'disabled' : '' %>>
                     <!-- Loaded dynamically -->
                   </select>
+                  <div class="form-hint" id="editCpuSearchCount"></div>
                 </div>
 
                 <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-subtle);">
@@ -689,18 +691,32 @@ async function performReinstall(e) {
 }
 
 // Load CPU models
+let editCpuModelCache = {};
 async function loadCPUModels() {
   try {
     const res = await fetch('/api/cpu-models');
     if (!res.ok) return;
-    const models = await res.json();
-    const sel = document.getElementById('edit_cpu_model');
-    if (!sel) return;
-    const currentModel = '<%= vm ? vm.cpu_model : "xeon-cascadelake" %>';
-    sel.innerHTML = Object.entries(models).map(([key, m]) =>
-      `<option value="${key}" ${key === currentModel ? 'selected' : ''}>${m.name} — ${m.description}</option>`
-    ).join('');
+    editCpuModelCache = await res.json();
+    filterEditCpuOptions(true);
   } catch(e) {}
+}
+// Search box: filters the CPU list by name, family, description or QEMU model name.
+function filterEditCpuOptions(useCurrent) {
+  const sel = document.getElementById('edit_cpu_model');
+  if (!sel) return;
+  const q = (document.getElementById('edit_cpu_search')?.value || '').trim().toLowerCase();
+  const currentModel = '<%= vm ? vm.cpu_model : "xeon-cascadelake" %>';
+  const previous = useCurrent ? currentModel : (sel.value || currentModel);
+  const all = Object.entries(editCpuModelCache);
+  const matches = all.filter(([key, m]) => !q || `${key} ${m.name} ${m.description} ${m.features}`.toLowerCase().includes(q));
+  const count = document.getElementById('editCpuSearchCount');
+  if (!matches.length) {
+    // Keep the current options so a search with no hits never clears the selection.
+    if (count) count.textContent = 'No CPU model matches this search';
+    return;
+  }
+  sel.innerHTML = matches.map(([key, m]) => `<option value="${key}" ${key === previous ? 'selected' : ''}>${m.name} — ${m.description}</option>`).join('');
+  if (count) count.textContent = `Showing ${matches.length} of ${all.length} CPU models`;
 }
 
 // Update Network Fields visibility based on Network Type

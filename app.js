@@ -23,7 +23,7 @@ const { Client } = require('ssh2');
 const { detectKvm, KVM_BLOCK_MESSAGE } = require('./services/capabilities');
 const { checkCapacity } = require('./services/capacity');
 const { initAuditTable } = require('./services/audit');
-const { createRuntime } = require('./services/vm-runtime');
+const { createRuntime, QEMU_BIN } = require('./services/vm-runtime');
 const { attachTerminals } = require('./services/vm-terminal');
 const { canAccessVm } = require('./services/vm-access');
 require('dotenv').config();
@@ -171,8 +171,58 @@ const CPU_MODELS = {
     name: 'AMD EPYC 7002 Series (Rome)',
     description: 'AMD EPYC 7002 server processors',
     features: 'EPYC-Rome'
+  },
+  'xeon-cooperlake': {
+    name: 'Intel Xeon Scalable 3rd Gen (Cooper Lake)',
+    description: 'Intel Xeon Scalable, Cooper Lake',
+    features: 'Cooperlake'
+  },
+  'xeon-emeraldrapids': {
+    name: 'Intel Xeon Scalable 5th Gen (Emerald Rapids)',
+    description: 'Intel Xeon Scalable, 5th generation',
+    features: 'EmeraldRapids'
+  },
+  'xeon-broadwell': {
+    name: 'Intel Xeon E5 v4 (Broadwell)',
+    description: 'Intel Xeon E5 v4 server processors',
+    features: 'Broadwell-IBRS'
+  },
+  'epyc-naples': {
+    name: 'AMD EPYC 7001 Series (Naples)',
+    description: 'AMD EPYC 7001 server processors',
+    features: 'EPYC'
+  },
+  'epyc-genoa': {
+    name: 'AMD EPYC 9004 Series (Genoa)',
+    description: 'AMD EPYC 9004 server processors',
+    features: 'EPYC-Genoa'
   }
 };
+
+// Only offer CPU models that the host's QEMU really knows, so a VM never fails to start
+// because of an unsupported -cpu name. If QEMU cannot be probed, the full list is offered.
+function probeQemuCpuNames() {
+  try {
+    const out = require('child_process').execFileSync(QEMU_BIN, ['-cpu', 'help'], { encoding: 'utf8', timeout: 8000, stdio: ['ignore', 'pipe', 'ignore'] });
+    const names = new Set();
+    for (const line of out.split('\n')) {
+      const m = line.match(/^x86\s+(\S+)/);
+      if (m) names.add(m[1]);
+    }
+    return names.size ? names : null;
+  } catch (e) {
+    return null;
+  }
+}
+const HOST_QEMU_CPUS = probeQemuCpuNames();
+function availableCpuModels() {
+  const out = {};
+  for (const [key, m] of Object.entries(CPU_MODELS)) {
+    if (!HOST_QEMU_CPUS || HOST_QEMU_CPUS.has(m.features)) out[key] = m;
+  }
+  if (!Object.keys(out).length) return { ...CPU_MODELS };
+  return out;
+}
 
 // Machine Types available for QEMU
 const MACHINE_TYPES = {
@@ -1454,7 +1504,7 @@ app.post('/api/admin/templates/cache/clear', checkAuth, checkAdmin, (req, res) =
 
 // Get CPU Models
 app.get('/api/cpu-models', (req, res) => {
-  res.json(CPU_MODELS);
+  res.json(availableCpuModels());
 });
 
 // Get SMBIOS options
@@ -2677,6 +2727,13 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
   if (!vm_name) {
     return res.status(400).json({ error: 'VM name is required' });
   }
+  // Login user and hostname are written into cloud-init; accept only safe Linux names.
+  if (custom_username !== undefined && custom_username !== '' && !/^[a-zA-Z_][a-zA-Z0-9_-]{0,31}$/.test(String(custom_username).trim())) {
+    return res.status(400).json({ error: 'Username must start with a letter or _, use only letters, digits, _ or -, and be at most 32 characters', code: 'USERNAME_INVALID' });
+  }
+  if (hostname !== undefined && hostname !== '' && !/^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$/.test(String(hostname).trim())) {
+    return res.status(400).json({ error: 'Hostname may use only letters, digits and - (max 63 characters)', code: 'HOSTNAME_INVALID' });
+  }
   try {
     if (await dbGetPromise(`SELECT vm_id FROM vms WHERE vm_name = ?`, [vm_name])) {
       return res.status(409).json({ error: nameTakenMessage(vm_name), code: 'NAME_TAKEN' });
@@ -2763,7 +2820,7 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
   const sockets = cpu_sockets || 1;
   const cores = cpu_cores || cpuCount;
   const threads = cpu_threads || 1;
-  const cpuModelToUse = cpu_model && CPU_MODELS[cpu_model] ? cpu_model : DEFAULT_CPU_MODEL;
+  const cpuModelToUse = cpu_model && availableCpuModels()[cpu_model] ? cpu_model : DEFAULT_CPU_MODEL;
   const diskSizeVal = disk_size || (template ? template.disk_size : '20G');
   const netType = network_type || 'nat';
   const macAddr = mac_address || generateMACAddress();
@@ -3517,33 +3574,34 @@ function generateNATCloudInitConfig(vm) {
   const password = vm.password || 'password';
   const hostname = vm.hostname || 'starcloud-instance';
 
-  // Build users section - support root and custom users
+  // Build users section. Every user-controlled value is written as a JSON-quoted YAML string,
+  // so passwords with '#', ':', quotes or leading symbols reach chpasswd exactly as typed.
+  // The same chosen password is set for root and for the custom user, so either login works.
+  const q = (v) => JSON.stringify(String(v));
   let usersSection = `users:`;
   let chpasswdList = ``;
-  
+
   if (username.toLowerCase() === 'root') {
-    // If root user, configure root directly
     usersSection += `
   - name: root
     lock_passwd: false
     shell: /bin/bash
     homedir: /root`;
-    chpasswdList = `    - root:${password}`;
+    chpasswdList = `    - ${q('root:' + password)}`;
   } else {
-    // If custom user, create the user with sudo privileges
     usersSection += `
-  - name: ${username}
+  - name: ${q(username)}
     lock_passwd: false
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
     homedir: /home/${username}
     createhome: true
-    
+
   - name: root
     lock_passwd: false
     shell: /bin/bash`;
-    chpasswdList = `    - ${username}:${password}
-    - root:password`;
+    chpasswdList = `    - ${q(username + ':' + password)}
+    - ${q('root:' + password)}`;
   }
 
   const config = `#cloud-config
@@ -3551,7 +3609,7 @@ function generateNATCloudInitConfig(vm) {
 # ================================================
 # SYSTEM CONFIG
 # ================================================
-hostname: ${hostname}
+hostname: ${q(hostname)}
 manage_etc_hosts: true
 preserve_hostname: false
 
@@ -3624,33 +3682,34 @@ function generateStaticPublicIPv4CloudInitConfig(vm) {
     }, 0);
   }
 
-  // Build users section - support root and custom users
+  // Build users section. Every user-controlled value is written as a JSON-quoted YAML string,
+  // so passwords with '#', ':', quotes or leading symbols reach chpasswd exactly as typed.
+  // The same chosen password is set for root and for the custom user, so either login works.
+  const q = (v) => JSON.stringify(String(v));
   let usersSection = `users:`;
   let chpasswdList = ``;
-  
+
   if (username.toLowerCase() === 'root') {
-    // If root user, configure root directly
     usersSection += `
   - name: root
     lock_passwd: false
     shell: /bin/bash
     homedir: /root`;
-    chpasswdList = `    - root:${password}`;
+    chpasswdList = `    - ${q('root:' + password)}`;
   } else {
-    // If custom user, create the user with sudo privileges
     usersSection += `
-  - name: ${username}
+  - name: ${q(username)}
     lock_passwd: false
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
     homedir: /home/${username}
     createhome: true
-    
+
   - name: root
     lock_passwd: false
     shell: /bin/bash`;
-    chpasswdList = `    - ${username}:${password}
-    - root:password`;
+    chpasswdList = `    - ${q(username + ':' + password)}
+    - ${q('root:' + password)}`;
   }
 
   const config = `#cloud-config
@@ -3658,7 +3717,7 @@ function generateStaticPublicIPv4CloudInitConfig(vm) {
 # ================================================
 # SYSTEM CONFIG
 # ================================================
-hostname: ${hostname}
+hostname: ${q(hostname)}
 manage_etc_hosts: true
 preserve_hostname: false
 
@@ -4020,23 +4079,24 @@ async function startQemuVM(vm) {
       const logFile = path.join(VM_DIR, `vm-${vm.vm_id}.log`);
       
       // Validate CPU model - fall back to the default model if it is not available
-      let cpuToUse = DEFAULT_CPU_MODEL;
+      // -cpu needs the QEMU model name (CPU_MODELS[key].features), not the panel key.
+      let cpuToUse = CPU_MODELS[DEFAULT_CPU_MODEL].features;
       if (vm.custom_cpu_name) {
         // Custom CPU name + CPU model - use both for full flexibility
         // Format: -cpu <cpu_model>,model-id=Custom Name
         // Note: No quotes needed when using spawn() array format
-        let baseCpuModel = DEFAULT_CPU_MODEL;
-        if (vm.cpu_model && CPU_MODELS[vm.cpu_model]) {
-          baseCpuModel = vm.cpu_model;
+        let baseCpuModel = CPU_MODELS[DEFAULT_CPU_MODEL].features;
+        if (vm.cpu_model && availableCpuModels()[vm.cpu_model]) {
+          baseCpuModel = availableCpuModels()[vm.cpu_model].features;
         }
         cpuToUse = `${baseCpuModel},model-id=${vm.custom_cpu_name}`;
         console.log(`[VM-${vm.vm_id}] Using custom CPU: ${vm.custom_cpu_name} (base: ${baseCpuModel})`);
-      } else if (vm.cpu_model && CPU_MODELS[vm.cpu_model]) {
-        cpuToUse = vm.cpu_model;
-        console.log(`[VM-${vm.vm_id}] Using preset CPU: ${cpuToUse}`);
+      } else if (vm.cpu_model && availableCpuModels()[vm.cpu_model]) {
+        cpuToUse = availableCpuModels()[vm.cpu_model].features;
+        console.log(`[VM-${vm.vm_id}] Using preset CPU: ${vm.cpu_model} (-cpu ${cpuToUse})`);
       } else if (vm.cpu_model) {
         console.warn(`[VM-${vm.vm_id}] CPU model '${vm.cpu_model}' not found, falling back to '${DEFAULT_CPU_MODEL}'`);
-        cpuToUse = DEFAULT_CPU_MODEL;
+        cpuToUse = CPU_MODELS[DEFAULT_CPU_MODEL].features;
         // Also update the database to fix the VM's CPU model
         db.run(`UPDATE vms SET cpu_model = ? WHERE vm_id = ?`, [DEFAULT_CPU_MODEL, vm.vm_id], (err) => {
           if (!err) console.log(`[VM-${vm.vm_id}] Updated database: cpu_model -> ${DEFAULT_CPU_MODEL}`);

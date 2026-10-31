@@ -290,9 +290,11 @@
 
               <div class="form-group" style="margin-bottom: 0;">
                 <label class="form-label">CPU Model</label>
+                <input type="search" class="form-control" id="cpu_search" placeholder="Search CPU (e.g. Xeon, EPYC, Milan)" oninput="filterCpuOptions()" autocomplete="off" style="margin-bottom: 8px;">
                 <select class="form-control" name="cpu_model" id="cpu_model">
                   <!-- Loaded dynamically -->
                 </select>
+                <div class="form-hint" id="cpuSearchCount"></div>
                 <div class="form-hint">Pick the CPU family your customers expect. Intel Xeon and AMD EPYC models are offered.</div>
               </div>
 
@@ -825,17 +827,31 @@ function handleIsoSelect() {
   updatePreview();
 }
 
+let cpuModelCache = {};
 async function loadCPUModels() {
   try {
     const res = await fetch('/api/cpu-models');
     if (!res.ok) return;
-    const models = await res.json();
-    const sel = document.getElementById('cpu_model');
-    if (!sel) return;
-    sel.innerHTML = Object.entries(models).map(([key, m]) =>
-      `<option value="${key}" ${key === 'xeon-cascadelake' ? 'selected' : ''}>${m.name} — ${m.description}</option>`
-    ).join('');
+    cpuModelCache = await res.json();
+    filterCpuOptions();
   } catch(e) {}
+}
+// Search box: filters the CPU list by name, family, description or QEMU model name.
+function filterCpuOptions() {
+  const sel = document.getElementById('cpu_model');
+  if (!sel) return;
+  const q = (document.getElementById('cpu_search')?.value || '').trim().toLowerCase();
+  const previous = sel.value || 'xeon-cascadelake';
+  const all = Object.entries(cpuModelCache);
+  const matches = all.filter(([key, m]) => !q || `${key} ${m.name} ${m.description} ${m.features}`.toLowerCase().includes(q));
+  const count = document.getElementById('cpuSearchCount');
+  if (!matches.length) {
+    // Keep the current options so a search with no hits never clears the selection.
+    if (count) count.textContent = 'No CPU model matches this search';
+    return;
+  }
+  sel.innerHTML = matches.map(([key, m]) => `<option value="${key}" ${key === previous ? 'selected' : ''}>${m.name} — ${m.description}</option>`).join('');
+  if (count) count.textContent = `Showing ${matches.length} of ${all.length} CPU models`;
 }
 
 async function loadNetworkTypes() {
