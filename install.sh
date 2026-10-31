@@ -14,8 +14,8 @@
 #     --skip-system       do not use apt, systemd or start the panel
 #     --no-service        install everything but do not start the panel
 #     --yes               never ask questions (uses defaults)
-#     --os-images MODE    OS cloud images for VM creation: all | none | ask (default ask; --yes = none)
-#     --all-os            same as --os-images all
+#     --os-images MODE    OS cloud images for VM creation: all | none | ask (default all: every OS is downloaded)
+#     --all-os            same as --os-images all (kept for compatibility)
 #     --verbose           show the raw output of every command (default: only the logo and steps)
 #     -h, --help          show this help
 #
@@ -41,7 +41,7 @@ SKIP_SYSTEM=false
 VERBOSE=false
 NO_SERVICE=false
 ASSUME_YES=false
-OS_IMAGES="ask"
+OS_IMAGES="all"
 PANEL_PORT=""
 SERVICE_KIND="none"
 STEP_NO=0
@@ -522,12 +522,12 @@ if [ "$OS_IMAGES" = ask ]; then
     ask -r -p "  Download all OS images now? [Y/n]: " OS_ANS || true
     case "${OS_ANS:-}" in n|N|no|NO|No) OS_IMAGES=none ;; *) OS_IMAGES=all ;; esac
   else
-    OS_IMAGES=none
+    OS_IMAGES=all
   fi
 fi
 case "$OS_IMAGES" in
   all)  ui_ok "All ${OS_COUNT} OS images will be downloaded during the install" ;;
-  *)    ui_grey "OS images skipped (install later: sudo bash install.sh --os-images all)" ;;
+  *)    ui_grey "OS images skipped (download later: sudo bash install.sh --os-images all)" ;;
 esac
 log "os images: $OS_IMAGES"
 
