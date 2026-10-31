@@ -279,7 +279,7 @@ const SMBIOS_PRODUCTS = [
   'Cloud Instance'
 ];
 // Built-in OS templates live in services/os-templates.js (also used by the installer)
-const { OS_TEMPLATES } = require('./services/os-templates');
+const { OS_TEMPLATES, resolveTemplateUrl } = require('./services/os-templates');
 
 // Middleware
 app.use(express.json());
@@ -1308,7 +1308,7 @@ app.post('/api/admin/templates/:key/download', checkAuth, checkAdmin, async (req
       console.log(`[TEMPLATE] Starting download of ${templateKey} from ${template.url}`);
 
       // Download the template
-      await downloadTemplateFromURL(template.url, localPath);
+      await downloadTemplateFromURL(await resolveTemplateUrl(template), localPath);
 
       console.log(`[TEMPLATE] Download complete for ${templateKey}`);
 
@@ -3489,7 +3489,7 @@ async function downloadTemplate(sourceOrKey, targetPath) {
       // Check if it's a template key or a direct URL
       if (OS_TEMPLATES[sourceOrKey]) {
         const template = OS_TEMPLATES[sourceOrKey];
-        url = template.url;
+        url = await resolveTemplateUrl(template);
         templateName = template.name;
       } else if (sourceOrKey.startsWith('http')) {
         // It's a direct URL

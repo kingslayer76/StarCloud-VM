@@ -543,7 +543,7 @@ step_os_images() {
   local dir list key url file part total=0 ok=0 had=0 failed="" free_gb
   dir="$(node -p "require('path').join(require('os').homedir(), 'vms', 'templates')")"
   mkdir -p "$dir"
-  list="$(node -e "const { OS_TEMPLATES } = require(process.argv[1]); for (const [k, v] of Object.entries(OS_TEMPLATES)) console.log(k + ' ' + v.url);" "$APP_DIR/services/os-templates.js")"
+  list="$(node -e "const { OS_TEMPLATES, resolveTemplateUrl } = require(process.argv[1]); (async () => { for (const [k, v] of Object.entries(OS_TEMPLATES)) console.log(k + ' ' + await resolveTemplateUrl(v)); })();" "$APP_DIR/services/os-templates.js")"
   free_gb="$(df -BG --output=avail "$dir" 2>/dev/null | tail -1 | tr -dc '0-9' || true)"
   echo "cache folder: $dir (free: ${free_gb:-?} GB)"
   if [ -n "$free_gb" ] && [ "$free_gb" -lt 40 ] 2>/dev/null; then
