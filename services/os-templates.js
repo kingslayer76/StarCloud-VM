@@ -91,7 +91,7 @@ const OS_TEMPLATES = {
     password: 'debian'
   },
 
-  // ---- CentOS (1 active) ----
+  // ---- CentOS Stream (1 active) ----
   centos_stream_10_cloud: {
     name: 'CentOS Stream 10',
     type: 'cloud-init',
@@ -104,19 +104,8 @@ const OS_TEMPLATES = {
     password: 'cloud-user'
   },
 
-  centos_stream_9_cloud: {
-    name: 'CentOS Stream 9',
-    type: 'cloud-init',
-    icon: '💠',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2',
-    username: 'cloud-user',
-    password: 'cloud-user'
-  },
 
-  // ---- AlmaLinux (3 active) ----
+  // ---- AlmaLinux (2 active) ----
   almalinux_10_cloud: {
     name: 'AlmaLinux 10',
     type: 'cloud-init',
@@ -139,19 +128,8 @@ const OS_TEMPLATES = {
     username: 'almalinux',
     password: 'almalinux'
   },
-  almalinux_8_cloud: {
-    name: 'AlmaLinux 8',
-    type: 'cloud-init',
-    icon: '🦙',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://repo.almalinux.org/almalinux/8/cloud/x86_64/images/AlmaLinux-8-GenericCloud-latest.x86_64.qcow2',
-    username: 'almalinux',
-    password: 'almalinux'
-  },
 
-  // ---- Rocky Linux (3 active) ----
+  // ---- Rocky Linux (2 active) ----
   rocky_10_cloud: {
     name: 'Rocky Linux 10',
     type: 'cloud-init',
@@ -174,19 +152,8 @@ const OS_TEMPLATES = {
     username: 'rocky',
     password: 'rocky'
   },
-  rocky_8_cloud: {
-    name: 'Rocky Linux 8',
-    type: 'cloud-init',
-    icon: '🪨',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://dl.rockylinux.org/pub/rocky/8/images/x86_64/Rocky-8-GenericCloud-Base.latest.x86_64.qcow2',
-    username: 'rocky',
-    password: 'rocky'
-  },
 
-  // ---- Fedora (2 active): build number in the file name, resolved from the folder listing ----
+  // ---- Fedora (1 active): build number in the file name, resolved from the folder listing ----
   fedora_44_cloud: {
     name: 'Fedora 44 (Cloud Base)',
     type: 'cloud-init',
@@ -200,19 +167,6 @@ const OS_TEMPLATES = {
     username: 'fedora',
     password: 'fedora'
   },
-  fedora_43_cloud: {
-    name: 'Fedora 43 (Cloud Base)',
-    type: 'cloud-init',
-    icon: '🎩',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    index: 'https://dl.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/',
-    match: 'Fedora-Cloud-Base-Generic-43-[0-9.]+\\.x86_64\\.qcow2',
-    url: 'https://dl.fedoraproject.org/pub/fedora/linux/releases/43/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-43-1.6.x86_64.qcow2',
-    username: 'fedora',
-    password: 'fedora'
-  },
 
   // ---- openSUSE (2 active) ----
   opensuse_leap_16_cloud: {
@@ -223,19 +177,6 @@ const OS_TEMPLATES = {
     memory: 2048,
     cpus: 2,
     url: 'https://download.opensuse.org/repositories/openSUSE:/Leap:/16.0:/Images/images/Leap-16.0-Minimal-VM.x86_64-Cloud.qcow2',
-    username: 'opensuse',
-    password: 'opensuse'
-  },
-  opensuse_leap_15_6_cloud: {
-    name: 'openSUSE Leap 15.6',
-    type: 'cloud-init',
-    icon: '🦎',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    index: 'https://download.opensuse.org/distribution/leap/15.6/appliances/',
-    match: 'openSUSE-Leap-15\\.6-Minimal-VM\\.x86_64-15\\.6\\.0-Cloud-Build[0-9.]+\\.qcow2(?![\\w.-])',
-    url: 'https://download.opensuse.org/distribution/leap/15.6/appliances/openSUSE-Leap-15.6-Minimal-VM.x86_64-15.6.0-Cloud-Build15.13.qcow2',
     username: 'opensuse',
     password: 'opensuse'
   },
