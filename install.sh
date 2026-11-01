@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # =============================================================================
-#   StarCloud Panel installer (Debian / Ubuntu)
+#   StarCloud VM installer (Debian / Ubuntu)
 # -----------------------------------------------------------------------------
-#   sudo bash install.sh                          install (or update) and start the panel
+#   sudo bash install.sh            menu: 1) install   2) uninstall   3) upgrade
+#   sudo bash install.sh --install  install (or repair) and start the panel
+#   sudo bash install.sh --uninstall
+#   sudo bash install.sh --upgrade  get the newest code (git pull), reinstall packages, restart;
+#                                   keeps the admin account, database, VMs and OS images
 #   sudo bash install.sh --admin-user X --admin-pass Y --yes   unattended install
-#   bash install.sh --skip-system                 only .env + Node packages (no apt, no service)
+#   bash install.sh --skip-system   only .env + Node packages (no apt, no service)
 #   sudo bash install.sh --start | --stop | --status   control the panel (after install)
 #
 #   Options:
@@ -13,8 +17,9 @@
 #     --port N            panel port (default 8080)
 #     --skip-system       do not use apt, systemd or start the panel
 #     --no-service        install everything but do not start the panel
-#     --yes               never ask questions (uses defaults)
-#     --os-images MODE    OS cloud images for VM creation: all | none | ask (default all: every OS is downloaded)
+#     --yes               never ask questions (uninstall then keeps data and VMs)
+#     --os-images MODE    OS cloud images for VM creation: all | none | ask (default all).
+#                         "all" downloads in the background after the install; see logs/os-images.log
 #     --all-os            same as --os-images all (kept for compatibility)
 #     --verbose           show the raw output of every command (default: only the logo and steps)
 #     -h, --help          show this help
@@ -33,7 +38,13 @@ LOG_FILE="$LOG_DIR/install.log"
 PID_FILE="$APP_DIR/data/panel.pid"
 PANEL_LOG="$LOG_DIR/panel.log"
 ENV_FILE="$APP_DIR/.env"
-MODE="install"
+MODE=""
+EXPLICIT_MODE=false
+NO_PULL=false
+ORIG_ARGS=("$@")
+OS_LOG="$LOG_DIR/os-images.log"
+OS_PID_FILE="$LOG_DIR/os-images.pid"
+OS_STATUS_FILE="$LOG_DIR/os-images.txt"
 
 ADMIN_USER=""
 ADMIN_PASS=""
@@ -76,51 +87,114 @@ on_error() {
 trap 'on_error $LINENO' ERR
 
 # ---------------------------------------------------------------- logo -------
-# The banner is the top 16 rows of the screen. On an interactive terminal a background loop repaints
-# it every 120 ms with a rainbow palette, and a scroll region keeps all installer output below it.
-# Every repaint is one printf call (cursor saved and restored inside it), so stopping the loop at any
-# moment is safe. Prompts pause the loop so the typed text is never drawn over the banner.
-LOGO_ROWS=16
-LOGO_LINES=(
-  ""
-  " ███████╗████████╗ █████╗ ██████╗"
-  " ██╔════╝╚══██╔══╝██╔══██╗██╔══██╗"
-  " ███████╗   ██║   ███████║██████╔╝"
-  " ╚════██║   ██║   ██╔══██║██╔══██╗"
-  " ███████║   ██║   ██║  ██║██║  ██║"
-  " ╚══════╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝"
-  "  ██████╗██╗      ██████╗ ██╗   ██╗██████╗"
-  " ██╔════╝██║     ██╔═══██╗██║   ██║██╔══██╗"
-  " ██║     ██║     ██║   ██║██║   ██║██║  ██║"
-  " ██║     ██║     ██║   ██║██║   ██║██║  ██║"
-  " ╚██████╗███████╗╚██████╔╝╚██████╔╝██████╔╝"
-  "  ╚═════╝╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝"
-  ""
-  "      ✦  Virtual Machine Panel  ·  Installer  ✦"
-  ""
-)
+# Banner: the one word STARCLOUD in block letters. The letters are painted one after another:
+# S, A, C, O, D fill from the bottom up; T, R, L, U fill from the top down. The row being painted is
+# a rainbow colour and its leading edge is white. A finished letter keeps its own rainbow. When the
+# whole word is finished it stays rainbow for a moment, then every letter goes back to grey and the
+# sequence starts again.
+# On a narrow terminal (under 88 columns) the plain word "StarCloud" is used, with the same effect.
+# Every repaint is one printf (cursor saved and restored inside it), so stopping the loop at any moment
+# is safe. Prompts pause the loop so typed text is never drawn over the banner.
+LOGO_LETTERS=9
+LOGO_H=6
+LOGO_GAP=" "
+LOGO_HOLD=8          # frames (120 ms each) the finished word stays rainbow before the restart
+LOGO_BASE=245        # grey for letters that are not painted yet
+LOGO_SUBTITLE="✦  Virtual Machine Panel  ·  Installer  ✦"
+LOGO_ROWS=10
 # 256-colour rainbow (red -> orange -> yellow -> green -> cyan -> blue -> violet -> pink)
 LOGO_PALETTE=(196 202 208 214 220 226 190 154 118 82 46 48 51 45 39 33 27 21 57 93 129 165 201 200 199 198 197)
+LOGO_CELLS=(
+  # S (8 cols)
+  "███████╗" "██╔════╝" "███████╗" "╚════██║" "███████║" "╚══════╝"
+  # T (9 cols)
+  "████████╗" "╚══██╔══╝" "   ██║   " "   ██║   " "   ██║   " "   ╚═╝   "
+  # A (8 cols)
+  " █████╗ " "██╔══██╗" "███████║" "██╔══██║" "██║  ██║" "╚═╝  ╚═╝"
+  # R (8 cols)
+  "██████╗ " "██╔══██╗" "██████╔╝" "██╔══██╗" "██║  ██║" "╚═╝  ╚═╝"
+  # C (8 cols)
+  " ██████╗" "██╔════╝" "██║     " "██║     " "╚██████╗" " ╚═════╝"
+  # L (8 cols)
+  "██╗     " "██║     " "██║     " "██║     " "███████╗" "╚══════╝"
+  # O (9 cols)
+  " ██████╗ " "██╔═══██╗" "██║   ██║" "██║   ██║" "╚██████╔╝" " ╚═════╝ "
+  # U (9 cols)
+  "██╗   ██╗" "██║   ██║" "██║   ██║" "██║   ██║" "╚██████╔╝" " ╚═════╝ "
+  # D (8 cols)
+  "██████╗ " "██╔══██╗" "██║  ██║" "██║  ██║" "██████╔╝" "╚═════╝ "
+)
+LOGO_TEXT_CELLS=(S t a r C l o u d)
 
-# Prints the banner. With a colour phase, each row gets its own palette colour that moves each frame.
+# Picks the banner size: block letters on a wide terminal, the plain word on a narrow one.
+logo_setup() {
+  local cols
+  cols="$(tput cols 2>/dev/null || echo 80)"
+  if [ -t 1 ] && { ! [[ "$cols" =~ ^[0-9]+$ ]] || [ "$cols" -lt 88 ]; }; then
+    LOGO_H=1
+    LOGO_GAP=""
+    LOGO_CELLS=("${LOGO_TEXT_CELLS[@]}")
+  else
+    LOGO_H=6
+    LOGO_GAP=" "
+  fi
+  LOGO_ROWS=$((LOGO_H + 4))
+}
+
+# Prints the banner for one animation frame. Rows: blank, letter rows, blank, subtitle, blank.
 logo_block() {
-  local p="${1:-0}" r c n=${#LOGO_PALETTE[@]} out=""
-  for r in $(seq 0 $((LOGO_ROWS - 1))); do
-    if [ -n "$C_RESET" ]; then
-      if [ "$r" -eq 14 ]; then
-        c=${LOGO_PALETTE[$(( (p + 13) % n ))]}
+  local f="${1:-0}" H="$LOGO_H" N="$LOGO_LETTERS" np=${#LOGO_PALETTE[@]}
+  local per=$((LOGO_LETTERS * LOGO_H)) cyc k active step gr i cell col pal lead lit line tmp sub out=""
+  cyc=$((per + LOGO_HOLD))
+  k=$((f % cyc))
+  if [ "$k" -lt "$per" ]; then
+    active=$((k / H)); step=$((k % H))
+  else
+    active=$N; step=$H
+  fi
+  out+=$'\n'
+  for ((gr = 0; gr < H; gr++)); do
+    line="  "
+    for ((i = 0; i < N; i++)); do
+      cell="${LOGO_CELLS[$((i * H + gr))]}"
+      pal="${LOGO_PALETTE[$(( (gr * 3 + f + i * 4) % np ))]}"
+      if [ "$i" -lt "$active" ]; then
+        col="$pal"
+      elif [ "$i" -eq "$active" ]; then
+        # odd letters (S, A, C, O, D) fill bottom -> top; the others (T, R, L, U) top -> bottom
+        if [ $((i % 2)) -eq 0 ]; then lead=$((H - 1 - step)); lit=$((gr >= lead)); else lead=$step; lit=$((gr <= lead)); fi
+        if [ "$lit" -eq 1 ]; then
+          if [ "$gr" -eq "$lead" ]; then col=231; else col="$pal"; fi
+        else
+          col="$LOGO_BASE"
+        fi
       else
-        c=${LOGO_PALETTE[$(( (p + r * 2) % n ))]}
+        col="$LOGO_BASE"
       fi
-      out+="$(printf '\033[1;38;5;%sm%s\033[0m' "$c" "${LOGO_LINES[$r]}")"$'\n'
-    else
-      out+="${LOGO_LINES[$r]}"$'\n'
-    fi
+      if [ -n "$C_RESET" ]; then
+        printf -v tmp '\033[1;38;5;%sm%s' "$col" "$cell"
+        line+="$tmp"
+      else
+        line+="$cell"
+      fi
+      line+="$LOGO_GAP"
+    done
+    [ -n "$C_RESET" ] && line+="$C_RESET"
+    out+="$line"$'\033[K\n'
   done
+  out+=$'\n'
+  if [ -n "$C_RESET" ]; then
+    printf -v sub '\033[1;38;5;%sm%s%s' "${LOGO_PALETTE[$((f % np))]}" "$LOGO_SUBTITLE" "$C_RESET"
+  else
+    sub="$LOGO_SUBTITLE"
+  fi
+  out+="    $sub"$'\033[K\n'
+  out+=$'\n'
   printf '%s' "$out"
 }
 
 show_logo() {
+  logo_setup
   if [ -t 1 ] && [ "$VERBOSE" = false ]; then TERM="${TERM:-xterm-256color}" clear 2>/dev/null || true; fi
   logo_block 0
 }
@@ -179,7 +253,7 @@ logo_region_off() {
 logo_pause()  { logo_anim_stop; }
 logo_resume() { logo_anim_start; }
 
-# read wrapper: pauses the banner animation while the user types.
+# read wrapper:# read wrapper: pauses the banner animation while the user types.
 ask() {
   local rc=0
   logo_pause
@@ -356,6 +430,201 @@ control_status() {
   return "$rc"
 }
 
+# ---------------------------------------------------------------- background work ----
+# The OS image download runs as its own process (same idea as the panel), so the installer finishes
+# at once and the images keep downloading. Progress: logs/os-images.log. Short status: logs/os-images.txt.
+
+os_worker_running() {
+  [ -f "$OS_PID_FILE" ] && kill -0 "$(cat "$OS_PID_FILE" 2>/dev/null)" 2>/dev/null
+}
+
+# One line for the summary: download progress, or the final result.
+os_summary_line() {
+  local st=""
+  [ -f "$OS_STATUS_FILE" ] && st="$(head -n 1 "$OS_STATUS_FILE" 2>/dev/null || true)"
+  if os_worker_running; then
+    ui_info "OS images: downloading in the background, ${st:-starting}. Watch: tail -f $OS_LOG"
+  elif [[ "$st" == running* ]]; then
+    ui_warn "OS images: the download stopped early ($st). Resume with: sudo bash install.sh  (choose 3)"
+  elif [ -n "$st" ]; then
+    ui_info "$st"
+  fi
+}
+
+# Internal entry point: "bash install.sh --os-worker". Downloads every built-in OS template that is not
+# in the cache yet (~/vms/templates/<key>-template.qcow2). Existing files are kept. One failed image never
+# stops the others. It never runs the installer steps.
+os_image_worker() {
+  trap - ERR
+  set +e
+  local dir list key url file part total=0 n=0 ok=0 had=0 nfail=0 failed="" size
+  mkdir -p "$LOG_DIR"
+  echo "$$" > "$OS_PID_FILE"
+  dir="$(node -p "require('path').join(require('os').homedir(), 'vms', 'templates')" 2>/dev/null || true)"
+  if [ -z "$dir" ] || ! mkdir -p "$dir"; then
+    echo "cannot create the template folder: ${dir:-unknown}"
+    rm -f "$OS_PID_FILE"
+    exit 1
+  fi
+  list="$(node -e "const { OS_TEMPLATES, resolveTemplateUrl } = require(process.argv[1]); (async () => { for (const [k, v] of Object.entries(OS_TEMPLATES)) console.log(k + ' ' + await resolveTemplateUrl(v)); })();" "$APP_DIR/services/os-templates.js" 2>/dev/null || true)"
+  total="$(printf '%s\n' "$list" | grep -c . || true)"
+  echo "$(date '+%F %T') OS image download: ${total} images -> ${dir}"
+  echo "running: starting (${total} images)" > "$OS_STATUS_FILE"
+  while read -r key url; do
+    [ -n "$key" ] || continue
+    n=$((n + 1))
+    file="$dir/${key}-template.qcow2"
+    part="$file.part"
+    if [ -s "$file" ]; then
+      had=$((had + 1))
+      echo "[$n/$total] $key: already present"
+      continue
+    fi
+    echo "[$n/$total] $key: downloading $url"
+    rm -f "$part"
+    if curl -fL -sS --retry 3 --retry-delay 10 --connect-timeout 20 --speed-time 60 --speed-limit 10240 -o "$part" "$url" && [ -s "$part" ]; then
+      mv -f "$part" "$file"
+      ok=$((ok + 1))
+      size="$(stat -c %s "$file" 2>/dev/null || echo 0)"
+      echo "[$n/$total] $key: done ($(awk -v s="$size" 'BEGIN { printf "%.2f GB", s / 1073741824 }'))"
+    else
+      rm -f "$part"
+      nfail=$((nfail + 1))
+      failed="$failed $key"
+      echo "[$n/$total] $key: FAILED (the others continue)"
+    fi
+    echo "running: $n/$total done ($ok ok, $had present, $nfail failed)" > "$OS_STATUS_FILE"
+  done <<< "$list"
+  {
+    echo "OS images: $ok downloaded, $had already present, $nfail failed (of $total)"
+    [ -z "$failed" ] || echo "failed:$failed -> retry later: sudo bash install.sh  (choose 3, or Admin > Templates)"
+    echo "finished: $(date '+%F %T')"
+  } > "$OS_STATUS_FILE"
+  cat "$OS_STATUS_FILE"
+  rm -f "$OS_PID_FILE"
+  exit 0
+}
+
+# ---------------------------------------------------------------- menu actions -----
+# Asks a yes/no question. Answers "yes" only when the user types y. Never asks with --yes.
+confirm_yes() {
+  [ "$ASSUME_YES" = false ] && [ -t 0 ] || return 1
+  local answer=""
+  ask -r -p "  $1 [y/N]: " answer || answer=""
+  [[ "$answer" =~ ^[Yy]$ ]]
+}
+
+# The menu shown when the installer is started without options on a terminal.
+choose_action() {
+  local choice="" tries=0
+  printf '\n  %sWhat do you want to do?%s\n' "$C_BOLD" "$C_RESET"
+  printf '     %s1%s  Install StarCloud VM\n' "$C_CYAN" "$C_RESET"
+  printf '     %s2%s  Uninstall StarCloud VM\n' "$C_CYAN" "$C_RESET"
+  printf '     %s3%s  Upgrade StarCloud VM\n\n' "$C_CYAN" "$C_RESET"
+  while :; do
+    ask -r -p "  Type 1, 2 or 3 [1]: " choice || choice=""
+    choice="${choice//[[:space:]]/}"
+    case "${choice:-1}" in
+      1) MODE="install"; return 0 ;;
+      2) MODE="uninstall"; return 0 ;;
+      3) MODE="upgrade"; return 0 ;;
+    esac
+    tries=$((tries + 1))
+    [ "$tries" -lt 5 ] || die "No valid choice. Run the installer again: sudo bash install.sh"
+    ui_warn "Please type 1, 2 or 3."
+  done
+}
+
+# Upgrade: get the newest code (git pull, fast-forward only), then run the normal install steps again.
+# The admin account, the database, the VMs and the OS images are kept.
+upgrade_prepare() {
+  if [ ! -f "$ENV_FILE" ] || [ ! -d "$APP_DIR/node_modules/express" ]; then
+    ui_warn "No existing installation found. Running a fresh install instead."
+    MODE="install"
+    return 0
+  fi
+  if [ "$NO_PULL" = false ] && [ -d "$APP_DIR/.git" ] && command -v git >/dev/null 2>&1; then
+    local before after
+    # sudo may run as root on a folder owned by another user: trust this folder; never ask for a password
+    export GIT_TERMINAL_PROMPT=0
+    before="$(git -c safe.directory="$APP_DIR" -C "$APP_DIR" rev-parse HEAD 2>/dev/null || true)"
+    if git -c safe.directory="$APP_DIR" -C "$APP_DIR" pull --ff-only >>"$LOG_FILE" 2>&1; then
+      after="$(git -c safe.directory="$APP_DIR" -C "$APP_DIR" rev-parse HEAD 2>/dev/null || true)"
+      if [ "$before" != "$after" ]; then
+        ui_ok "New code downloaded (git pull). Continuing the upgrade with it."
+        exec bash "$APP_DIR/install.sh" ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"} --upgrade --no-pull
+      fi
+      ui_ok "Code is already the newest version."
+    else
+      ui_warn "git pull did not work (local changes or no internet). Upgrading with the code in this folder. Log: $LOG_FILE"
+    fi
+  else
+    ui_grey "Not a git checkout: upgrading with the files in this folder."
+  fi
+  return 0
+}
+
+# Uninstall: stops the panel and removes its service. Asks before deleting data or VM disks.
+# With --yes nothing is deleted (only the service and the running processes are stopped).
+do_uninstall() {
+  section "Uninstall StarCloud VM"
+  ui_warn "This stops the panel and removes its auto-start service."
+  ui_grey "Kept: server packages (QEMU, libvirt, Node.js) and this folder: $APP_DIR"
+  if [ "$ASSUME_YES" = false ] && [ -t 0 ]; then
+    local go=""
+    ask -r -p "  Continue with the uninstall? [y/N]: " go || go=""
+    if ! [[ "$go" =~ ^[Yy]$ ]]; then
+      ui_info "Cancelled. Nothing was changed."
+      return 0
+    fi
+  fi
+
+  local unit="/etc/systemd/system/${SERVICE_NAME}.service" p
+  if systemd_usable && [ -f "$unit" ]; then
+    systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+    systemctl disable "$SERVICE_NAME" 2>/dev/null || true
+    rm -f "$unit"
+    systemctl daemon-reload 2>/dev/null || true
+    ui_ok "Service '${SERVICE_NAME}' stopped and removed"
+  fi
+  stop_panel_background >/dev/null 2>&1 || true
+  ui_info "Panel process: stopped (or it was not running)"
+  if [ -f "$OS_PID_FILE" ]; then
+    p="$(cat "$OS_PID_FILE" 2>/dev/null || true)"
+    if [ -n "$p" ]; then kill -- -"$p" 2>/dev/null || kill "$p" 2>/dev/null || true; fi
+    rm -f "$OS_PID_FILE"
+    ui_info "OS image download: stopped (or it was not running)"
+  fi
+
+  local data_dir home_dir vm_dir
+  data_dir="$(read_env_value STARCLOUD_DATA_DIR "$APP_DIR/data")"
+  case "$data_dir" in
+    /*) ;;
+    *) data_dir="$APP_DIR/${data_dir#./}" ;;
+  esac
+  if [ -n "$data_dir" ] && [ "$data_dir" != "/" ] && confirm_yes "Also delete the database (users, VM records, settings), .env and the logs?"; then
+    rm -rf -- "$data_dir" "$LOG_DIR" "$ENV_FILE"
+    ui_ok "Deleted: database, .env and logs"
+  else
+    ui_grey "Kept: database, .env and logs (a later install or upgrade uses them)"
+  fi
+
+  home_dir="$(node -p "require('os').homedir()" 2>/dev/null || echo "$HOME")"
+  vm_dir="$home_dir/vms"
+  if [ -d "$vm_dir" ] && confirm_yes "Also delete ALL VM disks, ISOs and cloud images in $vm_dir? This CANNOT be undone."; then
+    pkill -f "qemu-system.*${vm_dir}" 2>/dev/null || true
+    sleep 2
+    rm -rf -- "$vm_dir"
+    ui_ok "Deleted: $vm_dir"
+  elif [ -d "$vm_dir" ]; then
+    ui_grey "Kept: VM disks and images in $vm_dir (running VMs are not stopped by the uninstall)"
+  fi
+
+  ui_ok "Uninstall finished."
+  ui_info "Install again any time with:  sudo bash ${APP_DIR}/install.sh"
+  return 0
+}
+
 # ---------------------------------------------------------------- args -------
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -369,24 +638,36 @@ while [ $# -gt 0 ]; do
                    case "$OS_IMAGES" in all|none|ask) ;; *) echo "--os-images must be: all, none or ask" >&2; exit 1 ;; esac ;;
     --all-os)      OS_IMAGES=all; shift ;;
     --verbose|-v)  VERBOSE=true; shift ;;
-    --start)       MODE="start"; shift ;;
-    --stop)        MODE="stop"; shift ;;
-    --status)      MODE="status"; shift ;;
+    --install)     MODE="install"; EXPLICIT_MODE=true; shift ;;
+    --uninstall)   MODE="uninstall"; EXPLICIT_MODE=true; shift ;;
+    --upgrade)     MODE="upgrade"; EXPLICIT_MODE=true; shift ;;
+    --no-pull)     NO_PULL=true; shift ;;
+    --start)       MODE="start"; EXPLICIT_MODE=true; shift ;;
+    --stop)        MODE="stop"; EXPLICIT_MODE=true; shift ;;
+    --status)      MODE="status"; EXPLICIT_MODE=true; shift ;;
+    --os-worker)   MODE="os-worker"; shift ;;
     -h|--help)     usage; exit 0 ;;
     *) echo "Unknown option: $1 (see: bash install.sh --help)" >&2; exit 1 ;;
   esac
 done
 
-if [ "$MODE" != "install" ]; then
-  PANEL_PORT="${PANEL_PORT:-$(read_env_value PORT 8080)}"
-  rc=0
-  case "$MODE" in
-    start)  control_start || rc=$? ;;
-    stop)   control_stop || rc=$? ;;
-    status) control_status || rc=$? ;;
-  esac
-  exit "$rc"
+# internal: the background OS image download (started by the install)
+if [ "$MODE" = "os-worker" ]; then
+  os_image_worker
 fi
+
+case "$MODE" in
+  start|stop|status)
+    PANEL_PORT="${PANEL_PORT:-$(read_env_value PORT 8080)}"
+    rc=0
+    case "$MODE" in
+      start)  control_start || rc=$? ;;
+      stop)   control_stop || rc=$? ;;
+      status) control_status || rc=$? ;;
+    esac
+    exit "$rc"
+    ;;
+esac
 
 mkdir -p "$LOG_DIR" "$APP_DIR/data"
 : >> "$LOG_FILE"
@@ -396,6 +677,19 @@ PANEL_PORT="${PANEL_PORT:-$(read_env_value PORT 8080)}"
 [[ "$PANEL_PORT" =~ ^[0-9]+$ ]] && [ "$PANEL_PORT" -ge 1 ] && [ "$PANEL_PORT" -le 65535 ] || die "Port must be a number from 1 to 65535."
 
 show_logo
+# Menu: only when started by hand on a terminal with no options. Any option = no menu.
+if [ -z "$MODE" ]; then
+  if [ -t 0 ] && [ -t 1 ] && [ "$ASSUME_YES" = false ] && [ -z "$ADMIN_USER" ] && [ -z "$ADMIN_PASS" ]; then
+    choose_action
+  else
+    MODE="install"
+  fi
+fi
+case "$MODE" in
+  uninstall) do_uninstall; exit $? ;;
+  upgrade)   upgrade_prepare ;;
+esac
+log "mode: $MODE"
 logo_region_on
 trap 'logo_region_off' EXIT
 
@@ -492,7 +786,12 @@ fi
 #   ADMIN ACCOUNT
 # =============================================================================
 section "Admin account"
-if [ -z "$ADMIN_USER" ] && [ -z "$ADMIN_PASS" ] && [ "$ASSUME_YES" = false ] && [ -t 0 ]; then
+if [ "$MODE" = upgrade ]; then
+  ADMIN_USER="$(read_env_value STARCLOUD_ADMIN_USER admin)"
+  ADMIN_PASS="$(read_env_value STARCLOUD_ADMIN_PASSWORD admin)"
+  ui_ok "Upgrade keeps the current admin account: ${ADMIN_USER} (password unchanged)"
+fi
+if [ "$MODE" != upgrade ] && [ -z "$ADMIN_USER" ] && [ -z "$ADMIN_PASS" ] && [ "$ASSUME_YES" = false ] && [ -t 0 ]; then
   ui_grey "Press Enter to keep the default  admin / admin  (change it after login),"
   ui_grey "or type your own username and password."
   ask -r -p "  Admin username [admin]: " ADMIN_USER || true
@@ -536,40 +835,19 @@ log "os images: $OS_IMAGES"
 # =============================================================================
 section "Installing"
 
-# Downloads every built-in OS template (services/os-templates.js) into the panel's template cache,
-# the same folder the panel uses: ~/vms/templates/<key>-template.qcow2. Existing files are kept.
-# One failed image never stops the install; the summary lists what failed.
+# Starts the OS image download in the background, so the install finishes at once. The panel works while
+# the images download; a VM can be created from an image once its file is complete. Existing images are
+# kept. One failed image never stops the others. Progress: logs/os-images.log.
 step_os_images() {
-  local dir list key url file part total=0 ok=0 had=0 failed="" free_gb
-  dir="$(node -p "require('path').join(require('os').homedir(), 'vms', 'templates')")"
-  mkdir -p "$dir"
-  list="$(node -e "const { OS_TEMPLATES, resolveTemplateUrl } = require(process.argv[1]); (async () => { for (const [k, v] of Object.entries(OS_TEMPLATES)) console.log(k + ' ' + await resolveTemplateUrl(v)); })();" "$APP_DIR/services/os-templates.js")"
-  free_gb="$(df -BG --output=avail "$dir" 2>/dev/null | tail -1 | tr -dc '0-9' || true)"
-  echo "cache folder: $dir (free: ${free_gb:-?} GB)"
-  if [ -n "$free_gb" ] && [ "$free_gb" -lt 40 ] 2>/dev/null; then
-    echo "warning: less than 40 GB free; large images may not fit"
+  if os_worker_running; then
+    echo "already downloading in the background (pid $(cat "$OS_PID_FILE" 2>/dev/null))"
+    return 0
   fi
-  while read -r key url; do
-    [ -n "$key" ] || continue
-    total=$((total + 1))
-    file="$dir/${key}-template.qcow2"
-    if [ -s "$file" ]; then
-      had=$((had + 1)); echo "$key: already present"; continue
-    fi
-    part="$file.part"
-    echo "$key: downloading $url"
-    if curl -fL --retry 3 --retry-delay 5 --connect-timeout 20 -o "$part" "$url" && [ -s "$part" ]; then
-      mv -f "$part" "$file"; ok=$((ok + 1)); echo "$key: done"
-    else
-      rm -f "$part"; failed="$failed $key"; echo "$key: FAILED (the rest continue)"
-    fi
-  done <<< "$list"
-  {
-    echo "OS images: $ok downloaded, $had already present, $(( total - ok - had )) failed (of $total)"
-    [ -z "$failed" ] || echo "failed:$failed  -> retry later from Admin > Templates, or: sudo bash install.sh --os-images all"
-  } > "$LOG_DIR/os-images.txt"
-  cat "$LOG_DIR/os-images.txt"
-  return 0
+  mkdir -p "$LOG_DIR"
+  echo "$(date '+%F %T') installer started the OS image download" >> "$OS_LOG"
+  echo "queued: ${OS_COUNT} images" > "$OS_STATUS_FILE"
+  nohup setsid bash "$APP_DIR/install.sh" --os-worker >> "$OS_LOG" 2>&1 < /dev/null &
+  echo "started in the background: ${OS_COUNT} images (progress: ${OS_LOG})"
 }
 
 step_apt() {
@@ -781,8 +1059,7 @@ run_step "Installing Node packages" step_npm
 run_step "Recording KVM / nested virtualization status" step_kvm
 run_step "Writing configuration (.env, mode 600)" step_env
 if [ "$OS_IMAGES" = all ]; then
-  run_step "Downloading ${OS_COUNT} OS images (cloud templates)" step_os_images
-  [ ! -s "$LOG_DIR/os-images.txt" ] || ui_grey "$(cat "$LOG_DIR/os-images.txt")"
+  run_step "Starting OS image download in the background (${OS_COUNT} images)" step_os_images
 else
   skip_step "OS images (not requested: --os-images $OS_IMAGES)" 1
 fi
@@ -842,6 +1119,7 @@ if [ "$STATUS_TEXT" = "NOT STARTED" ]; then SERVICE_SHOW="not started"; else SER
 printf '   %-16s %s\n' "Service"    "$SERVICE_SHOW"
 printf '   %-16s %s\n' "Folder"     "$APP_DIR"
 printf '   %-16s %s\n' "Install log" "$LOG_FILE"
+os_summary_line
 printf '\n   %sCommands%s\n' "$C_BOLD" "$C_RESET"
 if [ "$SERVICE_KIND" = "systemd" ]; then
   printf '     start / stop / restart   sudo systemctl start|stop|restart %s\n' "$SERVICE_NAME"
@@ -852,7 +1130,7 @@ else
   printf '     status                   bash %s/install.sh --status\n' "$APP_DIR"
   printf '     live panel log           tail -f %s\n' "$PANEL_LOG"
 fi
-printf '     reinstall / update       sudo bash install.sh\n'
+printf '     menu: install / uninstall / upgrade   sudo bash install.sh\n'
 
 printf '\n   %sNext steps%s\n' "$C_BOLD" "$C_RESET"
 printf '     1. Open the panel link and log in.\n'

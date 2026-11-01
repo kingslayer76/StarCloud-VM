@@ -265,9 +265,11 @@ cd StarCloud-VM
 sudo bash install.sh
 ```
 
+Installer ka menu: `1` install, `2` uninstall, `3` upgrade (aage 4 aur 5 bhi aayenge). Options ke saath (jaise `--yes`) menu nahi aata. Upgrade: `git pull` (fast-forward) + packages + restart; admin account, database, VMs aur OS images nahi chhedta. Uninstall: panel band karke service hatata hai; database/.env aur VM disks sirf tab hatate hain jab aap `y` likhein.
+
 Panel control (install ke baad): `sudo bash install.sh --status` (chal raha hai ya nahi), `sudo bash install.sh --start`, `sudo bash install.sh --stop`. Server restart ke baad panel phir se chalane ke liye `sudo bash install.sh --start`. Panel log: `logs/panel.log`.
 
-Installer terminal par sirf StarCloud logo aur step ka status dikhayega (raw output `logs/install.log` mein jayega; `--verbose` se sab screen par). Last mein summary box mein Panel URL aayega (Codespaces mein `https://<codespace>-8080.app.github.dev/login`). Ports tab mein port 8080 ko Public karein agar browser se khulna band ho.
+OS images (17) install ke baad background mein download hoti hain (`logs/os-images.log` mein progress; installer wait nahi karta). Installer terminal par sirf StarCloud logo aur step ka status dikhayega (raw output `logs/install.log` mein jayega; `--verbose` se sab screen par). Last mein summary box mein Panel URL aayega (Codespaces mein `https://<codespace>-8080.app.github.dev/login`). Ports tab mein port 8080 ko Public karein agar browser se khulna band ho.
 
 Installer admin username/password puchega. Enter dabane par `admin` / `admin` rahega (test ke liye). Phir:
 
