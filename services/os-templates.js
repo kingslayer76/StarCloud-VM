@@ -1,5 +1,5 @@
 // Built-in OS templates (cloud images). Single source of truth: the panel (app.js) and the
-// installer (install.sh --os-images) both read this file.
+// installer (installer.sh --os-images) both read this file.
 // Downloaded images are cached as <key>-template.qcow2 in <home>/vms/templates.
 //
 // Fields:

@@ -55,7 +55,7 @@ Rule: koi bhi zip ko uske code ke liye copy nahi kiya gaya. Sirf ideas aur UI/ro
 | A9 | Audit log | ✅ | Settings > General, latest 200 |
 | A10 | Per-VM security scan (miner, failed logins, cron) | ⬜ | Pending |
 | A11 | Discord webhook field (settings) | ⬜ | Pending (webhooks ka plan hai, bot nahi) |
-| A12 | Installer ek command se | ✅ | `install.sh` menu 1 install / 2 uninstall / 3 upgrade. Real Debian/Ubuntu VPS par test pending |
+| A12 | Installer ek command se | ✅ | `installer.sh` menu 1 install / 2 uninstall / 3 upgrade. Real Debian/Ubuntu VPS par test pending |
 
 ### 2.2 Batch 2 — VM lifecycle, monitoring, promo
 
