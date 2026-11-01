@@ -734,6 +734,97 @@ app.post('/api/login', (req, res) => {
   });
 });
 
+// ===== Self-service sign-up (username + password) =====
+const SIGNUP_WINDOW_MS = 15 * 60 * 1000;
+const SIGNUP_MAX_PER_WINDOW = 10;
+const signupAttempts = new Map(); // ip -> { count, resetAt }
+
+function signupRateLimited(ip) {
+  const now = Date.now();
+  const entry = signupAttempts.get(ip);
+  if (!entry || entry.resetAt < now) {
+    signupAttempts.set(ip, { count: 1, resetAt: now + SIGNUP_WINDOW_MS });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > SIGNUP_MAX_PER_WINDOW;
+}
+
+// Sign-up is ON unless the admin switched it off in Settings > Security.
+function isSignupOpen(cb) {
+  db.get(`SELECT setting_value FROM settings WHERE setting_key = 'signup_enabled'`, (err, row) => {
+    cb(!err && (!row || String(row.setting_value) !== '0'));
+  });
+}
+
+app.post('/api/auth/signup', (req, res) => {
+  if (req.session.userId) {
+    return res.status(409).json({ error: 'You are already logged in.' });
+  }
+  if (signupRateLimited(req.ip)) {
+    return res.status(429).json({ error: 'Too many sign-up attempts. Please try again after 15 minutes.' });
+  }
+  isSignupOpen((open) => {
+    if (!open) {
+      return res.status(403).json({ error: 'Sign-up is currently closed. Please contact the administrator.' });
+    }
+
+    const username = String((req.body && req.body.username) || '').trim();
+    const email = String((req.body && req.body.email) || '').trim();
+    const password = String((req.body && req.body.password) || '');
+
+    if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(username)) {
+      return res.status(400).json({ error: 'Username must be 3–32 characters: letters, numbers, _ . - only.' });
+    }
+    if (email && (email.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+      return res.status(400).json({ error: 'Please enter a valid email address or leave it empty.' });
+    }
+    if (password.length < 6 || password.length > 200) {
+      return res.status(400).json({ error: 'Password must be between 6 and 200 characters.' });
+    }
+
+    const clauses = ['lower(username) = lower(?)'];
+    const params = [username];
+    if (email) {
+      clauses.push('lower(email) = lower(?)');
+      params.push(email);
+    }
+    db.get(`SELECT username, email FROM users WHERE ${clauses.join(' OR ')} LIMIT 1`, params, (err, existing) => {
+      if (err) {
+        console.error('[Signup Error] Duplicate check failed:', err);
+        return res.status(500).json({ error: 'Sign-up failed. Please try again.' });
+      }
+      if (existing) {
+        const sameName = existing.username && existing.username.toLowerCase() === username.toLowerCase();
+        return res.status(409).json({
+          error: sameName ? 'This username is already taken.' : 'This email is already registered.'
+        });
+      }
+
+      const hash = bcrypt.hashSync(password, 10);
+      db.run(
+        `INSERT INTO users (username, password, email, role, is_active) VALUES (?, ?, ?, 'user', 1)`,
+        [username, hash, email || null],
+        function (insertErr) {
+          if (insertErr) {
+            if (/UNIQUE/i.test(insertErr.message)) {
+              return res.status(409).json({ error: 'This username or email is already registered.' });
+            }
+            console.error('[Signup Error] Insert failed:', insertErr);
+            return res.status(500).json({ error: 'Sign-up failed. Please try again.' });
+          }
+          const userId = this.lastID;
+          req.session.userId = userId;
+          req.session.username = username;
+          req.session.role = 'user';
+          console.log(`[Auth Success] New user ${userId} (${username}) signed up`);
+          res.json({ success: true, redirect: '/dashboard', user: { id: userId, username, role: 'user' } });
+        }
+      );
+    });
+  });
+});
+
 app.post('/api/logout', (req, res) => {
   console.log(`[Auth] User ${req.session.userId} (${req.session.username}) logged out`);
   req.session.destroy(() => {
@@ -1616,6 +1707,22 @@ app.post('/api/license/activate', (req, res) => {
   res.json({ success: true, message: 'License active', redirect: '/dashboard' });
 });
 
+
+
+app.get('/signup', (req, res) => {
+  if (req.session.userId) {
+    return res.redirect('/dashboard');
+  }
+  isSignupOpen((open) => {
+    res.render('users/signup', {
+      title: 'Sign Up - StarCloud Panel',
+      currentPage: 'signup',
+      signupOpen: open,
+      siteLogo: res.locals.siteLogo || process.env.DEFAULT_LOGO_URL || '/images/logo.png',
+      siteName: res.locals.siteName || process.env.PANEL_NAME || 'StarCloud Panel'
+    });
+  });
+});
 // Dashboard - Normal users only
 app.get('/dashboard', checkAuth, (req, res) => {
   // Show user dashboard (works for both regular users and admins)
@@ -1663,6 +1770,7 @@ app.get('/admin/vm-create', checkAuth, checkAdmin, (req, res) => {
 // VM Details (Admin only)
 app.get('/admin/vm/:id', checkAuth, checkAdmin, (req, res) => {
   res.render('admin/vm-detail', {
+    lxdTemplateKeys: Object.keys(OS_TEMPLATES),
     title: 'VM Details - StarCloud Panel',
     currentPage: 'vm-detail',
     vmId: req.params.id
@@ -1821,6 +1929,7 @@ app.get('/vms', checkAuth, (req, res) => {
 // User VM detail page
 app.get('/vm/:id', checkAuth, (req, res) => {
   res.render('users/vm-detail', {
+    lxdTemplateKeys: Object.keys(OS_TEMPLATES),
     title: 'VM Details - StarCloud Panel',
     currentPage: 'vm-detail',
     vmId: req.params.id,

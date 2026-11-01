@@ -78,6 +78,8 @@ Test ka level:
 | Installer OS images: default `all` (sare 12 OS download); `--os-images none` se skip, `ask` se poochhega; `--all-os` alias; `services/os-templates.js` single source; cache `~/vms/templates/<key>-template.qcow2`; existing files kept, one failure does not stop the rest | 🟡 | Pty run with fake curl: 11 ✔, 1 forced failure reported, summary correct; 'n' path skips. Sandbox ka network cloud hosts tak nahi jaata (real download VPS par verify karna hai) |
 | Installer animated StarCloud logo (rainbow repaint every 120 ms in a scroll region; paused during prompts; final colours kept) | ✅ | pyte terminal emulation: banner stays on top, cursor not moved by repaints (0 mismatches), region reset on exit |
 | OS templates: 17 built-in cloud images (Ubuntu 26.10/26.04/24.04/22.04, Debian 13/12/11, CentOS Stream 10, AlmaLinux 10/9, Rocky 10/9, Fedora 44, openSUSE Leap 16.0 + Tumbleweed, Alpine 3.24, Arch). Removed (old/EOL-soon): AlmaLinux 8, Rocky 8, CentOS Stream 9, Fedora 43, Leap 15.6. Fedora/Alpine use folder-listing resolver for build numbers. Gentoo: admin custom URL se (UEFI). Slackware: skip (no official cloud image) |
+| Self-service signup (`/signup`, username + password, email optional, auto-login) + Settings > Security on/off | ✅ | curl + jsdom PASS; Discord signup button same page |
+| LXD-ready badge + quickstart on VM detail (built-in OS templates) | ✅ | jsdom user/admin PASS |
 | Installer ka panel background service (`install.sh --start/--stop/--status`, `setsid` + PID file) | 🟡 | Sandbox: install ke baad panel pty band hone par bhi chalta hai (pid check + login 200), `--stop`/`--start` cycle ✅. systemd unit file `systemd-analyze` ✅; real `systemctl` start real server par pending |
 | `STARCLOUD_DATA_DIR` installer `.env` mein (DB project ke andar) | ✅ | Code + dry run |
 | Live: `/api/admin/operations` JSON shape | ✅ | `capabilities`, `maintenance`, `vms` keys |
@@ -175,7 +177,7 @@ Note: Batch 1 pending #7 (edit 200 par seed fail) bhi yahin fix hoga.
 | 4.2 | UPI manual confirmation (admin confirm karega; website par payment gateway nahi) | User ka faisla: manual UPI |
 | 4.3 | Support: Discord par manual (website par ticket system nahi) | User ka faisla (29 Oct) |
 | 4.4 | Email verification (Brevo SMTP, toggle) | Master §2 |
-| 4.5 | Invoices / GST | Master §9 — user se poochhna hai (Q1) |
+| 4.5 | Invoices / GST | Master §9 — decision: abhi skip (sales < ₹20 lakh/yr threshold; CA se confirm) |
 
 Hata diya gaya: custom price per order (D-5), order record table (D-6), Razorpay / website payment gateway.
 
@@ -186,7 +188,7 @@ Hata diya gaya: custom price per order (D-5), order record table (D-6), Razorpay
 | 5.1 | VDS: CPU pinning (vcpupin), guaranteed RAM, hugepages optional, host-passthrough, CPU overallocation nahi | Master §1, §9.1 |
 | 5.2 | LXD Bot Hosting (Linux LXC containers, sirf Bot Hosting product mein) | Master §1.1B; **HARD RULE: sold VPS/VDS hamesha KVM VM, kabhi LXC nahi** |
 | 5.3 | Bot templates (eggs): Discord.js, Discord.py, Node, Python, n8n; auto-restart, GitHub deploy | Master §1.1B |
-| 5.4 | LXD-ready badge + quickstart box (VPS/VDS ke andar LXD, optional) | Master §1.1A |
+| 5.4 | ✅ LXD-ready badge + quickstart box (VM detail, built-in templates) | Master §1.1A; customer khud run karta hai |
 | 5.5 | Port-forward manager (visual, bulk ranges) | Master §6 |
 | 5.6 | rDNS / PTR editor | Master §6 |
 | 5.7 | Per-VM firewall UI (nftables) | Master §6 |

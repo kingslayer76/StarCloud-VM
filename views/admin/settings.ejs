@@ -393,6 +393,15 @@
               <div class="settings-row-control"><button class="btn btn-outline btn-sm" onclick="openModal('changePasswordModal')" style="display: flex; align-items: center; gap: 6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 0-7.8 7.8 5.5 5.5 0 0 0 7.8-7.8z"/><path d="M15 5l4 4"/></svg> Change Password</button></div>
             </div>
             <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Public Sign-up</div><div class="settings-row-desc">Let new users create an account with username and password (or Discord) from /signup</div></div>
+              <div class="settings-row-control">
+                <select class="form-control" id="setting_signup_enabled" data-key="signup_enabled" style="max-width: 160px;">
+                  <option value="1" selected>On (allow sign-up)</option>
+                  <option value="0">Off (admin creates accounts)</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row">
               <div class="settings-row-info"><div class="settings-row-label">Active Sessions</div><div class="settings-row-desc">View and manage logins</div></div>
               <div class="settings-row-control"><div style="font-size: 13px; color: var(--text-secondary);"><span class="badge-dot"></span>Managed by server</div></div>
             </div>

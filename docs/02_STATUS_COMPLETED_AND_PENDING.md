@@ -1,4 +1,4 @@
-# StarCloud Panel: completed, verified, pending (2026-10-31)
+# StarCloud Panel: completed, verified, pending (2026-11-01)
 
 Ye file user ke "sab features ki list" request ke liye hai. Detail `docs/01_FEATURE_STATUS_AND_BATCHES.md` mein hai.
 
@@ -27,6 +27,10 @@ Ye file user ke "sab features ki list" request ke liye hai. Detail `docs/01_FEAT
 | File manager UI | Default folder, listing render | jsdom PASS |
 | Ownership | Customer sirf apni VM; admin sab | Earlier test PASS |
 | Audit, maintenance, emergency, capacity, KVM lock, duplicate name, SSH port check | Pehle se | Earlier tests PASS |
+| Signup (username/password) | `/signup` page (login jaisa design), `POST /api/auth/signup`: username 3–32 (`a-zA-Z0-9_.-`), email optional, password min 6, dup username/email (case-insensitive), bcrypt, role `user`, auto-login. Login page par "Create an account" link. Rate limit: 10 per IP per 15 min | Browser-side jsdom validation PASS; curl: bad input 400, create 200, dup 409, auto-login session PASS |
+| Sign-up on/off | Settings > Security > "Public Sign-up" (On/Off). Off par `/signup` par band message aur API 403. Default On | curl on/off PASS |
+| Discord signup/login button | Signup page par "Sign up with Discord" (Discord enabled ho tab dikhta hai). Discord setup: Settings > Discord (Client ID, secret, redirect URI) | Button logic same as login; Settings > Discord UI abhi browser se verify nahi hua |
+| LXD-ready badge + quickstart | VM detail (user + admin) par "✅ LXD ready" card, sirf built-in OS template wale VM par (custom/unknown OS par nahi). Commands: `sudo snap install lxd`, `sudo lxd init --auto`, `lxc launch ubuntu:24.04 test`. Recommend 2 GB RAM, 20 GB disk | jsdom: user + admin page PASS; custom VM par card nahi PASS |
 
 **Note:** Screenshots jo aapne bheje the wo purane build (Oct 30, 18:20–19:20 IST) ke the. Usme SSH UI (`Connecting to SSH Server`) aur Operations page purane the. Current branch mein wo change ho chuke hain. Naya code chalane ke liye `git pull` + panel restart zaroori hai.
 
@@ -51,10 +55,10 @@ Ye file user ke "sab features ki list" request ke liye hai. Detail `docs/01_FEAT
 - `genisoimage`/cloud-localds check installer mein (sandbox mein missing tha)
 - Edit par seed fail hone par warning (edit ab bhi 200 deta hai)
 
-### LXD (user ki request: VPS ke andar `lxd init` chale)
+### LXD (VPS ke andar LXD)
 - Sold product hamesha KVM VM rahega (HARD RULE). LXD guest ke andar chalega.
-- Abhi nahi bana: LXD install + `lxd init --auto` cloud-init se, LXD-ready badge, quickstart box.
-- Sawaal: neeche dekhein.
+- Decision: customer khud LXD run karega. Panel auto-install nahi karta; "LXD ready" badge + quickstart box hai.
+- Pending: custom (admin-added) OS template par badge nahi dikhta; VM list mein badge nahi.
 
 ### Gentoo / other OS
 - Gentoo: admin custom URL se add kar sakta hai, par official image UEFI hai. UEFI boot support abhi nahi hai.
@@ -82,6 +86,9 @@ Multi-node cluster, storage VPS, managed DB hosting, one-click apps, reseller, t
 Windows RDP / XRDP / Cloud PC; tmate; custom price per order; order table; owner telemetry; "Pi S"; game-server hosting; LXC ko VPS ke roop mein bechna; backdoor/magic password.
 
 ## E. Aapse poochhna hai
-1. **LXD:** kya aapko chahiye ki har VPS ke andar LXD apne aap install ho aur `lxd init` ho jaye (cloud-init se), ya sirf "LXD-ready" option ho jisme customer khud run kare?
-2. **Signup:** abhi sirf Discord se account banta hai. Kya normal username/password signup page bhi chahiye?
-3. **Invoices/GST:** Batch 4 ke liye abhi bhi jawab pending hai.
+**Jawab mil gaye (done):**
+1. **LXD:** Customer khud LXD run karega. Badge + quickstart box add ho gaya.
+2. **Signup:** Username/password signup + Discord signup dono hain. Admin Settings > Security se band kar sakta hai.
+3. **Invoices/GST:** Abhi skip. Aapka business: sirf Discord se India ke customers, service revenue. Sales threshold ₹20 lakh/saal (most states; Manipur, Mizoram, Nagaland, Tripura mein ₹10 lakh) se kam ho to GST registration aur GST invoice zaroori nahi. Threshold cross hone par dono zaroori. **Apne CA se ek baar confirm karein** (state/service ke hisaab se rules badal sakte hain).
+
+**Abhi aapse koi sawaal pending nahi.** Discord setup ka jawab (Client ID/secret/redirect URI) Settings > Discord mein dena hoga; agar Discord login chalu na ho to batayein.
