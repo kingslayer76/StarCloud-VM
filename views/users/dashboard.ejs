@@ -641,6 +641,7 @@
 
     <div class="admin-content">
 
+      <%- include('../partials/welcome-banner') %>
       <!-- Enhanced Header (No purple background, no server icon) -->
       <div class="page-header-enhanced">
         <div style="position: relative; z-index: 1;">
@@ -792,7 +793,7 @@ function renderVMCard(vm) {
       <div class="vm-card-header">
         <div class="vm-title-block">
           <div class="vm-os-icon">
-            <img src="${displayIcon}" alt="${escHtml(vm.template_name || 'OS')}" onerror="this.src='https://i.imgur.com/wu0Ob6B.png'">
+            <img src="${displayIcon}" alt="${escHtml(vm.template_name || 'OS')}" onerror="this.style.visibility='hidden'">
           </div>
           <div style="min-width: 0; flex: 1;">
             <div class="vm-name-enhanced">${escHtml(vm.vm_name)}</div>

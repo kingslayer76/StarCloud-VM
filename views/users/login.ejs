@@ -420,8 +420,10 @@ async function handleLogin(e) {
       btn.innerHTML = '✅ Success! Redirecting...';
       btn.style.background = 'var(--gradient-green)';
       
+      // Admins land on the admin panel; everyone else on the user dashboard.
+      const goTo = (data.user && data.user.role === 'admin') ? '/admin/dashboard' : '/dashboard';
       setTimeout(() => {
-        window.location.href = '/dashboard';
+        window.location.href = goTo;
       }, 600);
     } else {
       card.classList.add('shake');

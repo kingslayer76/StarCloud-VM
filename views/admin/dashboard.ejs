@@ -779,6 +779,7 @@
 
     <div class="admin-content">
 
+      <%- include('../partials/welcome-banner') %>
       <!-- Enhanced Header -->
       <div class="page-header-enhanced">
         <div style="position: relative; z-index: 1;">
@@ -921,10 +922,12 @@
               <span class="status-label">Memory Usage</span>
               <span class="status-value" id="statusMemory">—</span>
             </div>
+            <% if (showPanelVersion) { %>
             <div class="status-item">
               <span class="status-label">Panel Version</span>
-              <span class="status-value"><%= panelVersion || 'V2.0' %></span>
+              <span class="status-value"><%= panelVersion || 'V1.0' %></span>
             </div>
+            <% } %>
           </div>
         </div>
       </div>
@@ -1081,7 +1084,7 @@ function renderVMCard(vm) {
       <div class="vm-card-header">
         <div class="vm-title-block">
           <div class="vm-os-icon">
-            <img src="${displayIcon}" alt="${escHtml(vm.template_name || 'OS')}" onerror="this.src='https://i.imgur.com/wu0Ob6B.png'">
+            <img src="${displayIcon}" alt="${escHtml(vm.template_name || 'OS')}" onerror="this.style.visibility='hidden'">
           </div>
           <div style="min-width: 0; flex: 1;">
             <div class="vm-name-enhanced">${escHtml(vm.vm_name)}</div>

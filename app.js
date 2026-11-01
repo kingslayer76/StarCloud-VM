@@ -666,7 +666,7 @@ function initializeDatabase() {
             if (insErr) return console.error('Admin account creation failed:', insErr.message);
             console.log(`✓ Admin account created: ${initialAdminUser} (role: admin)`);
             if (initialAdminPass === 'admin') {
-              console.warn('⚠ Default password "admin" is in use. Change it from the Profile page now.');
+              console.warn('⚠ Default password "admin" is in use. Change it in Settings > Security now.');
             }
             if (process.env.STARCLOUD_ADMIN_PASSWORD) scrubAdminPasswordFromEnv();
           });
@@ -1643,7 +1643,9 @@ app.use((req, res, next) => {
   } : null;
   
   // Panel version from .env
-  res.locals.panelVersion = process.env.PANEL_VERSION || 'V2.0';
+  res.locals.panelVersion = process.env.PANEL_VERSION || 'V1.0';
+  // Version is hidden everywhere unless the admin switches show_panel_version ON (Settings > General).
+  res.locals.showPanelVersion = false;
   
   // Set default logo and site name
   res.locals.siteLogo = process.env.DEFAULT_LOGO_URL || '/images/logo.png';
@@ -1658,7 +1660,10 @@ app.use((req, res, next) => {
       if (!err2 && row2 && row2.setting_value) {
         res.locals.siteName = row2.setting_value;
       }
-      next();
+      db.get(`SELECT setting_value FROM settings WHERE setting_key = 'show_panel_version' LIMIT 1`, (err3, row3) => {
+        res.locals.showPanelVersion = !err3 && !!row3 && String(row3.setting_value) === '1';
+        next();
+      });
     });
   });
 });
@@ -1725,7 +1730,9 @@ app.get('/signup', (req, res) => {
 });
 // Dashboard - Normal users only
 app.get('/dashboard', checkAuth, (req, res) => {
-  // Show user dashboard (works for both regular users and admins)
+  // Admins only see admin pages.
+  if (req.session.role === 'admin') return res.redirect('/admin/dashboard');
+  // Show user dashboard for regular users
   res.render('users/dashboard', {
     title: 'My VMs - StarCloud Panel',
     currentPage: 'dashboard',
@@ -1849,6 +1856,14 @@ app.get('/admin/users/:id/edit', checkAuth, checkAdmin, (req, res) => {
 });
 
 // Settings (admin only)
+app.get('/admin/system-info', checkAuth, checkAdmin, (req, res) => {
+  res.render('admin/system-info', {
+    title: 'System Info - StarCloud Panel',
+    currentPage: 'system-info',
+    user: { username: req.session.username, role: req.session.role }
+  });
+});
+
 app.get('/admin/settings', checkAuth, checkAdmin, (req, res) => {
   res.render('admin/settings', {
     title: 'Settings - StarCloud Panel',
@@ -1916,6 +1931,7 @@ app.get('/admin/templates/builtin/:key/edit', checkAuth, checkAdmin, (req, res) 
 
 // User VMs list
 app.get('/vms', checkAuth, (req, res) => {
+  if (req.session.role === 'admin') return res.redirect('/admin/vms');
   res.render('users/vms', {
     title: 'My Virtual Machines - StarCloud Panel',
     currentPage: req.session.role === 'admin' ? 'my-vms' : 'vms',
@@ -1928,6 +1944,7 @@ app.get('/vms', checkAuth, (req, res) => {
 
 // User VM detail page
 app.get('/vm/:id', checkAuth, (req, res) => {
+  if (req.session.role === 'admin') return res.redirect(`/admin/vm/${encodeURIComponent(req.params.id)}`);
   res.render('users/vm-detail', {
     lxdTemplateKeys: Object.keys(OS_TEMPLATES),
     title: 'VM Details - StarCloud Panel',
@@ -1946,6 +1963,7 @@ app.get('/vm/:id', checkAuth, (req, res) => {
 
 // User profile page
 app.get('/profile', checkAuth, (req, res) => {
+  if (req.session.role === 'admin') return res.redirect('/admin/settings#security');
   res.render('users/profile', {
     title: 'My Profile - StarCloud Panel',
     currentPage: req.session.role === 'admin' ? 'my-profile' : 'profile',
@@ -4391,7 +4409,8 @@ app.get('/api/settings', (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     
     const settings = {
-      panel_version: 'V2.0',
+      panel_version: 'V1.0',
+      show_panel_version: '0',
       panel_title: 'StarCloud Panel',
       panel_description: 'Professional VM Management Panel',
       site_icon_url: '/images/logo.png',

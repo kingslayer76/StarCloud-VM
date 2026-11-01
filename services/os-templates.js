@@ -14,7 +14,7 @@ const OS_TEMPLATES = {
   ubuntu_26_10_cloud: {
     name: 'Ubuntu 26.10 (Stonking Stingray)',
     type: 'cloud-init',
-    icon: '🟠',
+    icon: '/images/os/ubuntu.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -25,7 +25,7 @@ const OS_TEMPLATES = {
   ubuntu_26_04_cloud: {
     name: 'Ubuntu 26.04 LTS (Resolute Raccoon)',
     type: 'cloud-init',
-    icon: '🟠',
+    icon: '/images/os/ubuntu.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -36,7 +36,7 @@ const OS_TEMPLATES = {
   ubuntu_24_cloud: {
     name: 'Ubuntu 24.04 LTS (Noble Numbat)',
     type: 'cloud-init',
-    icon: '🟠',
+    icon: '/images/os/ubuntu.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -47,7 +47,7 @@ const OS_TEMPLATES = {
   ubuntu_22_cloud: {
     name: 'Ubuntu 22.04 LTS (Jammy Jellyfish)',
     type: 'cloud-init',
-    icon: '🟠',
+    icon: '/images/os/ubuntu.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -60,7 +60,7 @@ const OS_TEMPLATES = {
   debian_13_cloud: {
     name: 'Debian 13 (Trixie)',
     type: 'cloud-init',
-    icon: '🌀',
+    icon: '/images/os/debian.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -71,7 +71,7 @@ const OS_TEMPLATES = {
   debian_12_cloud: {
     name: 'Debian 12 (Bookworm)',
     type: 'cloud-init',
-    icon: '🌀',
+    icon: '/images/os/debian.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -82,7 +82,7 @@ const OS_TEMPLATES = {
   debian_11_cloud: {
     name: 'Debian 11 (Bullseye)',
     type: 'cloud-init',
-    icon: '🌀',
+    icon: '/images/os/debian.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -95,7 +95,7 @@ const OS_TEMPLATES = {
   centos_stream_10_cloud: {
     name: 'CentOS Stream 10',
     type: 'cloud-init',
-    icon: '💠',
+    icon: '/images/os/centos.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -109,7 +109,7 @@ const OS_TEMPLATES = {
   almalinux_10_cloud: {
     name: 'AlmaLinux 10',
     type: 'cloud-init',
-    icon: '🦙',
+    icon: '/images/os/almalinux.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -120,7 +120,7 @@ const OS_TEMPLATES = {
   almalinux_9_cloud: {
     name: 'AlmaLinux 9',
     type: 'cloud-init',
-    icon: '🦙',
+    icon: '/images/os/almalinux.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -133,7 +133,7 @@ const OS_TEMPLATES = {
   rocky_10_cloud: {
     name: 'Rocky Linux 10',
     type: 'cloud-init',
-    icon: '🪨',
+    icon: '/images/os/rockylinux.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -144,7 +144,7 @@ const OS_TEMPLATES = {
   rocky_9_cloud: {
     name: 'Rocky Linux 9',
     type: 'cloud-init',
-    icon: '🪨',
+    icon: '/images/os/rockylinux.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -157,7 +157,7 @@ const OS_TEMPLATES = {
   fedora_44_cloud: {
     name: 'Fedora 44 (Cloud Base)',
     type: 'cloud-init',
-    icon: '🎩',
+    icon: '/images/os/fedora.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -172,7 +172,7 @@ const OS_TEMPLATES = {
   opensuse_leap_16_cloud: {
     name: 'openSUSE Leap 16.0',
     type: 'cloud-init',
-    icon: '🦎',
+    icon: '/images/os/opensuse.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -183,7 +183,7 @@ const OS_TEMPLATES = {
   opensuse_tumbleweed_cloud: {
     name: 'openSUSE Tumbleweed (rolling)',
     type: 'cloud-init',
-    icon: '🦎',
+    icon: '/images/os/opensuse.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -196,7 +196,7 @@ const OS_TEMPLATES = {
   alpine_3_24_cloud: {
     name: 'Alpine Linux 3.24',
     type: 'cloud-init',
-    icon: '🏔️',
+    icon: '/images/os/alpinelinux.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,
@@ -211,7 +211,7 @@ const OS_TEMPLATES = {
   arch_linux_cloud: {
     name: 'Arch Linux (rolling)',
     type: 'cloud-init',
-    icon: '🔷',
+    icon: '/images/os/archlinux.svg',
     disk_size: '20G',
     memory: 2048,
     cpus: 2,

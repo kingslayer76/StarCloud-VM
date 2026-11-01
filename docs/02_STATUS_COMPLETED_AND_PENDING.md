@@ -10,11 +10,14 @@ Ye file user ke "sab features ki list" request ke liye hai. Detail `docs/01_FEAT
 | Login welcome | 2 lines, English: "Welcome to StarCloud Panel. Manage your virtual machines in one place." + "Inspired by HopingBoyz · Built by KingSlayer" | Login HTML |
 | Logo | Aapka `StarCloud-Logo.png` (512px `public/images/logo.png`), generated logo hata diya | `/images/logo.png` 200 |
 | Dark theme only | Light/theme switch nahi; "shape" option nahi | Header code + HTML |
-| Admin sidebar | My Profile, My Virtual Machines hain; "Back to User Panel" nahi | Admin HTML |
+| Admin sidebar | Sirf admin pages. My Profile / My Virtual Machines hata diye. Admin login par `/admin/dashboard` khulta hai; `/dashboard`, `/vms`, `/vm/:id`, `/profile` admin ko admin pages par bhejte hain | `scripts/check-admin-user-ui.sh` + jsdom 27/27 |
 | Badges "1" | Sidebar mein koi count badge nahi | Admin HTML |
-| Operations | Host virtualization → System Info; Maintenance, Emergency control, Audit log → Settings > General | Settings HTML (tab-general / tab-system) |
+| Operations | Host virtualization + panel info + live stats → System Info (`/admin/system-info`, own page, sidebar bottom). Maintenance, Emergency control, Audit log → Settings > General. About aur System Info tabs Settings se hataye | Settings + System Info HTML |
+| Panel version | V1.0 (default). Kahin bhi nahi dikhta; Settings > General > "Show panel version" ON karne par sidebar, dashboard, System Info par dikhta hai (default OFF) | Curl + jsdom |
+| Top bar | "Online" pill aur bell hataye. Dark theme only | jsdom |
+| Welcome banner | Admin aur user dashboard par 2 line welcome (login jaisa text) | jsdom |
 | System Settings | Click par General tab khulta hai (Discord nahi) | Code default `general` |
-| OS templates | 17 built-in (list neeche), emoji ke saath | `/api/os-templates` = 17 |
+| OS templates | 17 built-in (list neeche). Har OS ka official logo (Ubuntu, Debian, CentOS, AlmaLinux, Rocky, Fedora, openSUSE, Alpine, Arch) emoji ki jagah. Logos Simple Icons (CC0) se, `public/images/os/` mein | `/api/os-templates` = 17; logo render jsdom 17/17; logo preview check |
 | Installer | Default: sare OS download (`--os-images none` se skip); animated multi-color logo | Pehle ke pty/pyte tests |
 | VM create password | 8-char minimum hata diya (sirf required) | Create route + form |
 | CPU model | Intel Xeon (Broadwell, Skylake, Cascade Lake, Ice Lake, Cooper Lake, Sapphire Rapids, Emerald Rapids) + AMD EPYC (Naples, Rome, Milan, Genoa); sirf wahi dikhte hain jo host QEMU support karta hai; search box; custom CPU name bhi | `/api/cpu-models` filter test; jsdom search test 8/8 PASS |

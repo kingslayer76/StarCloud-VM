@@ -994,7 +994,7 @@ function renderVMCard(vm) {
       <div class="vm-card-header">
         <div class="vm-title-block">
           <div class="vm-os-icon">
-            <img src="${displayIcon}" alt="OS" onerror="this.src='https://i.imgur.com/wu0Ob6B.png'">
+            <img src="${displayIcon}" alt="OS" onerror="this.style.visibility='hidden'">
           </div>
           <div style="min-width: 0; flex: 1;">
             <div class="vm-name-enhanced">${escHtml(vm.vm_name)}</div>
@@ -1089,7 +1089,7 @@ function renderListView(vms, container) {
                 <td>
                   <div style="display: flex; align-items: center; gap: 12px;">
                     <div class="vm-os-icon" style="width: 36px; height: 36px; padding: 5px;">
-                      <img src="${displayIcon}" alt="OS" onerror="this.src='https://i.imgur.com/wu0Ob6B.png'">
+                      <img src="${displayIcon}" alt="OS" onerror="this.style.visibility='hidden'">
                     </div>
                     <div>
                       <a href="/vm/${vm.vm_id}" class="vm-name-link">${escHtml(vm.vm_name)}</a>

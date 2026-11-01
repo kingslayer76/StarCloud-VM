@@ -1281,7 +1281,7 @@ function updatePreview() {
   const osLogoBox = document.getElementById('osLogoBox');
   if (osLogoBox && template && osTemplates[template]) {
     const tmpl = osTemplates[template];
-    const iconUrl = tmpl.icon && tmpl.icon.startsWith('http') ? tmpl.icon : 'https://i.imgur.com/wu0Ob6B.png';
+    const iconUrl = osIconSrc(tmpl.icon);
     osLogoBox.innerHTML = `<img src="${iconUrl}" style="width: 48px; height: 48px; object-fit: contain; border-radius: 8px; padding: 4px; background: white;" onerror="this.src='https://i.imgur.com/wu0Ob6B.png';" alt="${tmpl.name}">`;
   } else if (osLogoBox) {
     osLogoBox.innerHTML = '<svg width="30" height="30" style="color: #6366F1;"><use href="#i-server"/></svg>';
