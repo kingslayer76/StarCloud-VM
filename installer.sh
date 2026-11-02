@@ -9,7 +9,7 @@
 #                                   keeps the admin account, database, VMs and OS images
 #   sudo bash installer.sh --admin-user X --admin-pass Y --yes   unattended install
 #   bash installer.sh --skip-system   only .env + Node packages (no apt, no service)
-#   sudo bash installer.sh --start | --stop | --status   control the panel (after install)
+#   sudo bash installer.sh --start | --stop | --restart | --status   control the panel (after install)
 #
 #   Options:
 #     --admin-user NAME   admin username (3-32 chars: letters, digits, _ . -)
@@ -392,6 +392,27 @@ control_stop() {
   stop_panel_background || true
 }
 
+control_restart() {
+  [ -f "$ENV_FILE" ] || die "The panel is not installed yet. Run: sudo bash installer.sh"
+  if service_installed; then
+    systemctl restart "$SERVICE_NAME" && echo "service '${SERVICE_NAME}' restarted"
+    return 0
+  fi
+  control_stop
+  sleep 1
+  control_start
+}
+
+# Runs one panel control action: start | stop | restart | status. Used by the menu and the flags.
+run_control() {
+  case "$1" in
+    start)   control_start ;;
+    stop)    control_stop ;;
+    restart) control_restart ;;
+    status)  control_status ;;
+  esac
+}
+
 control_status() {
   local p state
   p="$(panel_pid || true)"
@@ -497,18 +518,24 @@ choose_action() {
   printf '\n  %sWhat do you want to do?%s\n' "$C_BOLD" "$C_RESET"
   printf '     %s1%s  Install StarCloud VM\n' "$C_ACCENT" "$C_RESET"
   printf '     %s2%s  Uninstall StarCloud VM\n' "$C_ACCENT" "$C_RESET"
-  printf '     %s3%s  Upgrade StarCloud VM\n\n' "$C_ACCENT" "$C_RESET"
+  printf '     %s3%s  Upgrade StarCloud VM\n' "$C_ACCENT" "$C_RESET"
+  printf '     %s4%s  Start the panel\n' "$C_ACCENT" "$C_RESET"
+  printf '     %s5%s  Stop the panel\n' "$C_ACCENT" "$C_RESET"
+  printf '     %s6%s  Restart the panel\n\n' "$C_ACCENT" "$C_RESET"
   while :; do
-    ask -r -p "  Type 1, 2 or 3 [1]: " choice || choice=""
+    ask -r -p "  Type 1 to 6 [1]: " choice || choice=""
     choice="${choice//[[:space:]]/}"
     case "${choice:-1}" in
       1) MODE="install"; return 0 ;;
       2) MODE="uninstall"; return 0 ;;
       3) MODE="upgrade"; return 0 ;;
+      4) MODE="start"; return 0 ;;
+      5) MODE="stop"; return 0 ;;
+      6) MODE="restart"; return 0 ;;
     esac
     tries=$((tries + 1))
     [ "$tries" -lt 5 ] || die "No valid choice. Run the installer again: sudo bash installer.sh"
-    ui_warn "Please type 1, 2 or 3."
+    ui_warn "Please type a number from 1 to 6."
   done
 }
 
@@ -621,6 +648,7 @@ while [ $# -gt 0 ]; do
     --no-pull)     NO_PULL=true; shift ;;
     --start)       MODE="start"; EXPLICIT_MODE=true; shift ;;
     --stop)        MODE="stop"; EXPLICIT_MODE=true; shift ;;
+    --restart)     MODE="restart"; EXPLICIT_MODE=true; shift ;;
     --status)      MODE="status"; EXPLICIT_MODE=true; shift ;;
     --os-worker)   MODE="os-worker"; shift ;;
     -h|--help)     usage; exit 0 ;;
@@ -634,15 +662,11 @@ if [ "$MODE" = "os-worker" ]; then
 fi
 
 case "$MODE" in
-  start|stop|status)
+  start|stop|restart|status)
     PANEL_PORT="${PANEL_PORT:-$(read_env_value PORT 8080)}"
     [ -t 1 ] && show_logo
     rc=0
-    case "$MODE" in
-      start)  control_start || rc=$? ;;
-      stop)   control_stop || rc=$? ;;
-      status) control_status || rc=$? ;;
-    esac
+    run_control "$MODE" || rc=$?
     exit "$rc"
     ;;
 esac
@@ -666,6 +690,10 @@ fi
 case "$MODE" in
   uninstall) do_uninstall; exit $? ;;
   upgrade)   upgrade_prepare ;;
+  start|stop|restart)
+    PANEL_PORT="${PANEL_PORT:-$(read_env_value PORT 8080)}"
+    rc=0; run_control "$MODE" || rc=$?
+    exit "$rc" ;;
 esac
 log "mode: $MODE"
 
@@ -1091,6 +1119,7 @@ if [ "$SERVICE_KIND" = "systemd" ]; then
 else
   printf '     start                    sudo bash %s/installer.sh --start\n' "$APP_DIR"
   printf '     stop                     sudo bash %s/installer.sh --stop\n' "$APP_DIR"
+  printf '     restart                  sudo bash %s/installer.sh --restart\n' "$APP_DIR"
   printf '     status                   bash %s/installer.sh --status\n' "$APP_DIR"
   printf '     live panel log           tail -f %s\n' "$PANEL_LOG"
 fi
