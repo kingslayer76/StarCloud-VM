@@ -92,20 +92,17 @@ trap 'on_error $LINENO' ERR
 
 # ---------------------------------------------------------------- logo -------
 # The banner is the word STARCLOUD in block letters, in ONE colour: the panel's accent blue
-# (#0087ff, the same as --accent-blue in public/css/admin.css). The installer prints it itself,
-# in the same place for every mode (menu, install, upgrade, uninstall, status). It does not use a
-# background process, so it looks the same whether a command is running or not.
-# On a terminal the letters fill in once (S A C O D bottom -> top, T R L U top -> bottom, one
-# letter after another) and then stay. When the output is piped or saved to a file, the banner is
-# printed once as plain text (no colour codes). On a narrow terminal (under 88 columns) the plain
-# word "StarCloud" is used instead.
+# (#0087ff, the same as --accent-blue in public/css/admin.css). It is printed once, as plain
+# static text, at the top of every mode (menu, install, upgrade, uninstall, status). There is no
+# animation: the installer never moves the cursor back up over the banner, so nothing shakes or
+# leaves a stray cursor. Piped output gets the same text without colour codes. On a narrow
+# terminal (under 88 columns) the plain word "StarCloud" is used instead.
 LOGO_ACCENT=33                 # xterm-256 index of #0087ff
 LOGO_LETTERS=9
 LOGO_H=6
 LOGO_GAP=" "
 LOGO_GREY=240                  # not-yet-painted letter cells
 LOGO_SUBTITLE="Virtual Machine Panel  ·  Installer"
-LOGO_ROWS=10
 EOL=""           # "erase to end of line" (terminal only)
 CR_EOL=""        # "return + erase line" (terminal only)
 LOGO_CELLS=(
@@ -143,28 +140,22 @@ logo_setup() {
     LOGO_H=6
     LOGO_GAP=" "
   fi
-  LOGO_ROWS=$((LOGO_H + 4))
 }
 
-# logo_draw FILL_0 ... FILL_8 : prints the banner. FILL_i = how many rows of letter i are painted.
-# Always prints exactly LOGO_ROWS lines, so the sweep can move the cursor back up and repaint.
+# logo_draw: prints the banner once, every letter in the accent colour. No cursor movement, so
+# it cannot shift or flicker, and it looks the same in every terminal (VS Code, PuTTY, tmux, ...).
 logo_draw() {
-  local -a fill=("$@")
-  local H="$LOGO_H" N="$LOGO_LETTERS" gr i cell p on line
+  local H="$LOGO_H" N="$LOGO_LETTERS" gr i cell line
   printf '\n'
   for ((gr = 0; gr < H; gr++)); do
     line="  "
     for ((i = 0; i < N; i++)); do
       cell="${LOGO_CELLS[$((i * H + gr))]}"
-      p="${fill[$i]:-0}"
-      if [ $((i % 2)) -eq 0 ]; then [ "$gr" -ge $((H - p)) ] && on=1 || on=0; else [ "$gr" -lt "$p" ] && on=1 || on=0; fi
       if [ -n "$C_RESET" ]; then
-        if [ "$on" -eq 1 ]; then line+="$(printf '\033[1;38;5;%sm' "$LOGO_ACCENT")"; else line+="$(printf '\033[38;5;%sm' "$LOGO_GREY")"; fi
-        line+="$cell$C_RESET"
+        line+="$(printf '\033[1;38;5;%sm' "$LOGO_ACCENT")$cell$C_RESET$LOGO_GAP"
       else
-        line+="$cell"
+        line+="$cell$LOGO_GAP"
       fi
-      line+="$LOGO_GAP"
     done
     printf '%s%s\n' "$line" "$EOL"
   done
@@ -173,27 +164,11 @@ logo_draw() {
   printf '%s\n' "$EOL"
 }
 
-# Shows the banner. On a terminal: sweep once, then keep it. Otherwise: one plain print.
+# Shows the banner once. Same output for menu, install, upgrade, uninstall and status.
 show_logo() {
   logo_setup
-  local -a fill=()
-  local i p
-  for ((i = 0; i < LOGO_LETTERS; i++)); do fill[$i]=0; done
   if [ -t 1 ] && [ "$VERBOSE" = false ]; then TERM="${TERM:-xterm-256color}" clear 2>/dev/null || true; fi
-  if [ -t 1 ] && [ -n "$C_RESET" ]; then
-    logo_draw "${fill[@]}"
-    for ((i = 0; i < LOGO_LETTERS; i++)); do
-      for ((p = 1; p <= LOGO_H; p++)); do
-        fill[$i]=$p
-        printf '\033[%dA' "$LOGO_ROWS"
-        logo_draw "${fill[@]}"
-        sleep 0.03
-      done
-    done
-  else
-    for ((i = 0; i < LOGO_LETTERS; i++)); do fill[$i]=$LOGO_H; done
-    logo_draw "${fill[@]}"
-  fi
+  logo_draw
 }
 
 # read wrapper (keeps the prompt's exit status)
