@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <link rel="icon" href="<%= siteLogo %>" type="image/png">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/admin.css">
+  <link rel="stylesheet" href="/vendor/xterm/xterm.css">
+  <style>
+    .ssh-form { display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end; margin-bottom:12px; }
+    .ssh-form .field { display:flex; flex-direction:column; gap:4px; min-width:180px; }
+    .ssh-form label { font-size:12px; color: var(--text-muted); }
+    .ssh-form input { padding:8px 10px; border-radius:8px; border:1px solid var(--border-subtle); background:#0c0c14; color: var(--text-primary); min-width:200px; }
+    .term-status { font-size:13px; color: var(--text-muted); margin-left:auto; }
+    .term-pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+    .term-pill.running { background:rgba(34,197,94,.15); color:#4ade80; }
+    .term-pill.stopped { background:rgba(148,163,184,.15); color:#cbd5e1; }
+    .term-box { background:#05050a; border:1px solid var(--border-subtle); border-radius:10px; padding:10px; height:calc(100vh - 290px); min-height:300px; }
+    .term-box .xterm { height:100%; }
+    .term-hint { font-size:12px; color: var(--text-muted); margin-top:8px; }
+  </style>
+</head>
+<body>
+<div class="admin-wrapper">
+  <% if (isAdmin) { %><%- include('partials/admin/sidebar') %><% } else { %><%- include('partials/users/sidebar') %><% } %>
+
+  <div class="admin-main">
+    <%- include('partials/admin/header') %>
+
+    <div class="admin-content">
+      <div class="page-header">
+        <div class="page-title-section">
+          <h1 class="page-title">SSH Terminal</h1>
+          <p class="page-subtitle">
+            VM <strong>#<%= vmId %></strong> — <%= vmName %>. Connects over the VM's own SSH server.
+            NAT VMs are reached through the panel host's forwarded SSH port; static-IP VMs are reached on their own address.
+          </p>
+        </div>
+        <div class="page-actions">
+          <a href="<%= isAdmin ? '/admin/vm/' + vmId : '/vm/' + vmId %>" class="btn btn-outline">Back to VM</a>
+          <a href="<%= isAdmin ? '/admin/vm/' + vmId + '/console' : '/vm/' + vmId + '/console' %>" class="btn btn-outline">Open Console</a>
+        </div>
+      </div>
+
+      <form class="ssh-form" id="sshForm" autocomplete="off">
+        <div class="field">
+          <label for="sshUser">Username</label>
+          <input id="sshUser" type="text" value="<%= vmUsername %>" placeholder="ubuntu" required>
+        </div>
+        <div class="field">
+          <label for="sshPass">Password</label>
+          <input id="sshPass" type="password" placeholder="VM password (empty = saved password)" autocomplete="new-password">
+        </div>
+        <button class="btn btn-primary" id="btnConnect" type="submit">Connect</button>
+        <button class="btn btn-outline" id="btnDisconnect" type="button" disabled>Disconnect</button>
+        <span class="term-pill <%= vmStatus === 'running' ? 'running' : 'stopped' %>" id="vmStatePill"><%= vmStatus === 'running' ? 'RUNNING' : 'STOPPED' %></span>
+        <span class="term-status" id="termStatus">Not connected</span>
+      </form>
+
+      <div class="term-box" id="termBox"></div>
+      <div class="term-hint">Use the username and password you set for this VM (shown on the VM page). The VM must be running.</div>
+    </div>
+    <%- include('partials/admin/footer') %>
+  </div>
+</div>
+
+<script src="/vendor/xterm/xterm.js"></script>
+<script src="/vendor/xterm/xterm-addon-fit.js"></script>
+<script>
+(function () {
+  const vmId = <%- JSON.stringify(String(vmId)) %>;
+  const box = document.getElementById('termBox');
+  const statusEl = document.getElementById('termStatus');
+  const btnConnect = document.getElementById('btnConnect');
+  const btnDisconnect = document.getElementById('btnDisconnect');
+  const pill = document.getElementById('vmStatePill');
+  let ws = null;
+
+  const term = new Terminal({
+    cursorBlink: true,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    fontSize: 14,
+    scrollback: 5000,
+    theme: { background: '#05050a', foreground: '#e2e8f0', cursor: '#a5b4fc' }
+  });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(box);
+  fit.fit();
+  term.writeln('\x1b[36mEnter the VM username and password above, then press Connect.\x1b[0m');
+
+  function setStatus(text) { statusEl.textContent = text; }
+  function setConnected(on) {
+    btnConnect.disabled = on;
+    btnDisconnect.disabled = !on;
+  }
+  function size() { return { cols: term.cols, rows: term.rows }; }
+
+  function disconnect() {
+    if (ws) { try { ws.close(); } catch (e) {} }
+  }
+
+  function connect(e) {
+    if (e) e.preventDefault();
+    const username = document.getElementById('sshUser').value.trim();
+    const password = document.getElementById('sshPass').value;
+    if (!username) { setStatus('Enter the VM username'); return; }
+    disconnect();
+    term.reset();
+    setConnected(true);
+    setStatus('Connecting…');
+
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '/ws/ssh/' + vmId);
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => {
+      ws.send(JSON.stringify(Object.assign({ type: 'connect', username, password }, size())));
+      term.focus();
+    };
+    ws.onmessage = (ev) => {
+      if (typeof ev.data === 'string') {
+        let msg = null;
+        try { msg = JSON.parse(ev.data); } catch (err) { return; }
+        if (msg.type !== 'status') return;
+        setStatus(msg.message || msg.state);
+        if (msg.state === 'connecting') return;
+        if (msg.state === 'connected') { pill.className = 'term-pill running'; pill.textContent = 'RUNNING'; return; }
+        if (msg.message) term.writeln('\r\n\x1b[33m' + msg.message + '\x1b[0m');
+        if (msg.state === 'error' || msg.state === 'closed') setConnected(false);
+        return;
+      }
+      term.write(new Uint8Array(ev.data));
+    };
+    ws.onclose = () => { setConnected(false); setStatus('Disconnected'); };
+    ws.onerror = () => { setStatus('Connection error. Is the panel reachable?'); setConnected(false); };
+  }
+
+  term.onData((data) => {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data }));
+  });
+  term.onResize(({ cols, rows }) => {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'resize', cols, rows }));
+  });
+  window.addEventListener('resize', () => { try { fit.fit(); } catch (e) {} });
+
+  document.getElementById('sshForm').addEventListener('submit', connect);
+  btnDisconnect.onclick = () => { disconnect(); setConnected(false); setStatus('Disconnected'); };
+})();
+</script>
+</body>
+</html>

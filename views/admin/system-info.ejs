@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+  <meta name="theme-color" content="#0a0a0f">
+  <title><%= title || 'System Info - StarCloud Panel' %></title>
+  <link rel="icon" href="<%= siteLogo %>" type="image/png">
+  <link rel="stylesheet" href="/css/admin.css">
+  <style>
+    .sysinfo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-bottom: 16px; }
+    .ops-banner { padding: 12px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 10px; }
+    .ops-banner.bad { background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.4); }
+    .ops-banner.good { background: rgba(34,197,94,.12); border: 1px solid rgba(34,197,94,.4); }
+    .ops-kv { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; padding: 8px 0; border-bottom: 1px solid var(--border-subtle); }
+    .ops-kv span:first-child { color: var(--text-muted); }
+    .ops-hint { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+    .sysinfo-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border-subtle); font-size: 13px; }
+    .sysinfo-row span:first-child { color: var(--text-muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+<div class="admin-wrapper">
+  <%- include('../partials/admin/sidebar') %>
+
+  <div class="admin-main">
+    <%- include('../partials/admin/header') %>
+
+    <div class="admin-content">
+
+      <div class="page-header">
+        <div class="page-title-section">
+          <h1 class="page-title" style="display: flex; align-items: center; gap: 10px;">
+            System Info
+          </h1>
+          <p class="page-subtitle">Host virtualization, panel stack and live numbers. Read only.</p>
+        </div>
+      </div>
+
+      <div class="sysinfo-grid">
+        <!-- Host virtualization (KVM) -->
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">Host virtualization (KVM)</h3></div>
+          <div class="card-body">
+            <div id="capBox">Checking host…</div>
+            <div class="ops-hint">KVM = Kernel-based Virtual Machine, the hardware acceleration that makes VMs fast. Without it, VMs run in slow software emulation.</div>
+          </div>
+        </div>
+
+        <!-- Panel info -->
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">Panel info</h3></div>
+          <div class="card-body">
+            <% if (showPanelVersion) { %>
+            <div class="sysinfo-row"><span>Version</span><span><%= panelVersion %></span></div>
+            <% } %>
+            <div class="sysinfo-row"><span>Framework</span><span>Express + EJS</span></div>
+            <div class="sysinfo-row"><span>Database</span><span>SQLite</span></div>
+            <div class="sysinfo-row"><span>Hypervisor</span><span>QEMU/KVM</span></div>
+            <div class="sysinfo-row" style="border-bottom: none;"><span>Cloud Init</span><span style="color: var(--accent-green);">✅ Supported</span></div>
+          </div>
+        </div>
+
+        <!-- Live stats -->
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">Live stats</h3></div>
+          <div class="card-body">
+            <div id="systemLiveStats"><div style="text-align: center; padding: 20px;"><div class="spinner" style="margin: 0 auto;"></div></div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <%- include('../partials/admin/footer') %>
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+  async function loadHost() {
+    try {
+      const res = await fetch('/api/admin/operations', { credentials: 'same-origin' });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || ('Request failed (' + res.status + ')'));
+      const c = d.capabilities;
+      let html = '';
+      if (c.kvmAvailable) {
+        html += '<div class="ops-banner good"><strong>KVM is available.</strong> VMs can use hardware acceleration.</div>';
+      } else {
+        html += '<div class="ops-banner bad"><strong>KVM is NOT available on this host.</strong> VMs use slow software emulation.</div>';
+      }
+      if (c.reasons && c.reasons.length) {
+        html += '<ul style="font-size:12px; margin:6px 0 10px 18px;">' + c.reasons.map(r => '<li>' + esc(r) + '</li>').join('') + '</ul>';
+      }
+      html += `<div class="ops-kv"><span>CPU vendor</span><span>${esc(c.cpuVendor)}</span></div>`;
+      html += `<div class="ops-kv"><span>Hardware virtualization flag</span><span>${esc(c.virtFlag || 'none')}</span></div>`;
+      html += `<div class="ops-kv"><span>/dev/kvm usable</span><span>${c.devKvmWritable ? 'yes' : 'no'}</span></div>`;
+      html += `<div class="ops-kv"><span>Host nested KVM module</span><span>${c.hostNestedOn ? 'on' : 'off'}</span></div>`;
+      if (c.installReport) {
+        html += `<div class="ops-kv"><span>Installer KVM check</span><span>${c.installReport.kvm ? 'yes' : 'no'} (${esc(c.installReport.checkedAt)})</span></div>`;
+      }
+      html += `<div class="ops-kv"><span>VMs (total / running)</span><span>${d.vms.total} / ${d.vms.running}</span></div>`;
+      $('capBox').innerHTML = html;
+    } catch (e) {
+      $('capBox').textContent = 'Could not load: ' + e.message;
+    }
+  }
+
+  async function loadLive() {
+    const el = $('systemLiveStats');
+    try {
+      const res = await fetch('/api/vms', { credentials: 'same-origin' });
+      const vms = res.ok ? await res.json() : [];
+      const running = vms.filter(v => v.status === 'running').length;
+      el.innerHTML = `
+        <div class="sysinfo-row"><span>Total VMs</span><span>${vms.length}</span></div>
+        <div class="sysinfo-row"><span>Running VMs</span><span>${running}</span></div>
+        <div class="sysinfo-row" style="border-bottom: none;"><span>Panel status</span><span style="color: var(--accent-green);">🟢 Online</span></div>`;
+    } catch (e) {
+      el.innerHTML = '<div style="color: var(--text-muted); font-size: 12px;">Could not load stats</div>';
+    }
+  }
+
+  loadHost();
+  loadLive();
+  setInterval(loadLive, 30000);
+})();
+</script>
+</body>
+</html>

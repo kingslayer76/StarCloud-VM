@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <link rel="icon" href="<%= siteLogo %>" type="image/png">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/admin.css">
+  <link rel="stylesheet" href="/vendor/xterm/xterm.css">
+  <style>
+    .term-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
+    .term-status { font-size:13px; color: var(--text-muted); margin-left:auto; }
+    .term-pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; }
+    .term-pill.running { background:rgba(34,197,94,.15); color:#4ade80; }
+    .term-pill.stopped { background:rgba(148,163,184,.15); color:#cbd5e1; }
+    .term-box { background:#05050a; border:1px solid var(--border-subtle); border-radius:10px; padding:10px; height:calc(100vh - 230px); min-height:320px; }
+    .term-box .xterm { height:100%; }
+    .term-hint { font-size:12px; color: var(--text-muted); margin-top:8px; }
+  </style>
+</head>
+<body>
+<div class="admin-wrapper">
+  <% if (isAdmin) { %><%- include('partials/admin/sidebar') %><% } else { %><%- include('partials/users/sidebar') %><% } %>
+
+  <div class="admin-main">
+    <%- include('partials/admin/header') %>
+
+    <div class="admin-content">
+      <div class="page-header">
+        <div class="page-title-section">
+          <h1 class="page-title">Console</h1>
+          <p class="page-subtitle">
+            VM <strong>#<%= vmId %></strong> — <%= vmName %>.
+            This is the VM's serial console, the same as a physical server's screen. Log in with the VM's username and password.
+          </p>
+        </div>
+        <div class="page-actions">
+          <a href="<%= isAdmin ? '/admin/vm/' + vmId : '/vm/' + vmId %>" class="btn btn-outline">Back to VM</a>
+          <a href="<%= isAdmin ? '/admin/vm/' + vmId + '/ssh' : '/vm/' + vmId + '/ssh' %>" class="btn btn-outline">Open SSH</a>
+        </div>
+      </div>
+
+      <div class="term-toolbar">
+        <span id="vmStatePill" class="term-pill <%= vmStatus === 'running' ? 'running' : 'stopped' %>"><%= vmStatus === 'running' ? 'RUNNING' : 'STOPPED' %></span>
+        <button class="btn btn-outline" id="btnReconnect" type="button">Reconnect</button>
+        <button class="btn btn-outline" id="btnClear" type="button">Clear</button>
+        <span class="term-status" id="termStatus">Connecting…</span>
+      </div>
+
+      <div class="term-box" id="termBox"></div>
+      <div class="term-hint">Click inside the terminal and type. Ctrl+C, Ctrl+D and Tab work as in a normal terminal. If the screen is blank, press Enter.</div>
+    </div>
+    <%- include('partials/admin/footer') %>
+  </div>
+</div>
+
+<script src="/vendor/xterm/xterm.js"></script>
+<script src="/vendor/xterm/xterm-addon-fit.js"></script>
+<script>
+(function () {
+  const vmId = <%- JSON.stringify(String(vmId)) %>;
+  const box = document.getElementById('termBox');
+  const statusEl = document.getElementById('termStatus');
+  const pill = document.getElementById('vmStatePill');
+  let ws = null;
+
+  const term = new Terminal({
+    cursorBlink: true,
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    fontSize: 14,
+    scrollback: 5000,
+    theme: { background: '#05050a', foreground: '#e2e8f0', cursor: '#a5b4fc' }
+  });
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(box);
+  fit.fit();
+
+  function setStatus(text) { statusEl.textContent = text; }
+
+  function connect() {
+    if (ws) { try { ws.close(); } catch (e) {} }
+    term.reset();
+    setStatus('Connecting…');
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '/ws/console/' + vmId);
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => { setStatus('Connected'); term.focus(); };
+    ws.onmessage = (ev) => {
+      if (typeof ev.data === 'string') {
+        let msg = null;
+        try { msg = JSON.parse(ev.data); } catch (e) { return; }
+        if (msg.type !== 'status') return;
+        if (msg.state === 'stopped') { pill.className = 'term-pill stopped'; pill.textContent = 'STOPPED'; }
+        if (msg.state === 'connected') { pill.className = 'term-pill running'; pill.textContent = 'RUNNING'; }
+        setStatus(msg.message || msg.state);
+        if (msg.message && msg.state !== 'connected') term.writeln('\r\n\x1b[33m' + msg.message + '\x1b[0m');
+        return;
+      }
+      term.write(new Uint8Array(ev.data));
+    };
+    ws.onclose = () => { setStatus('Disconnected. Click Reconnect.'); };
+    ws.onerror = () => { setStatus('Connection error. Is the panel reachable?'); };
+  }
+
+  term.onData((data) => {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'input', data }));
+  });
+
+  document.getElementById('btnReconnect').onclick = connect;
+  document.getElementById('btnClear').onclick = () => term.clear();
+  window.addEventListener('resize', () => { try { fit.fit(); } catch (e) {} });
+
+  connect();
+})();
+</script>
+</body>
+</html>

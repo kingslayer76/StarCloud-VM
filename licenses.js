@@ -11,7 +11,7 @@ const fs = require('fs');
 const LICENSE_SERVER_URL = '';          // No server needed
 const RECHECK_INTERVAL = 999999;
 const MAX_ENVELOPE_AGE = 999999;
-const PANEL_VERSION = 'V2.0-Free';
+const PANEL_VERSION = 'V1.0';
 
 const DB_PATH = 'hvm.db';
 

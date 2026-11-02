@@ -23,6 +23,9 @@ const { Client } = require('ssh2');
 const { detectKvm, KVM_BLOCK_MESSAGE } = require('./services/capabilities');
 const { checkCapacity } = require('./services/capacity');
 const { initAuditTable } = require('./services/audit');
+const { createRuntime, QEMU_BIN } = require('./services/vm-runtime');
+const { attachTerminals } = require('./services/vm-terminal');
+const { canAccessVm } = require('./services/vm-access');
 require('dotenv').config();
 const licenses = require("./licenses");
 
@@ -60,9 +63,16 @@ function logError(component, vm_id, action, error) {
   }
 }
 
+// A bug in one request must not take the whole panel (and every running VM's UI) down.
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL-GUARD] Uncaught exception (panel kept running):', err && err.stack ? err.stack : err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL-GUARD] Unhandled promise rejection (panel kept running):', reason && reason.stack ? reason.stack : reason);
+});
+
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
 const PORT = process.env.PORT || 8080;
 
 // For binary: use home directory or custom location for database
@@ -108,6 +118,7 @@ const SESSION_SECRET = loadSessionSecret();
 const db = new sqlite3.Database(dbPath);
 
 const VM_DIR = path.join(os.homedir(), 'vms');
+const runtime = createRuntime({ runDir: VM_DIR });
 const TEMPLATES_DIR = path.join(VM_DIR, 'templates');
 const ISO_DIR = path.join(VM_DIR, 'iso');
 const CLOUDVM_DIR = path.join(VM_DIR, 'cloudvm');
@@ -127,58 +138,91 @@ if (!fs.existsSync(CLOUDVM_DIR)) {
 }
 
 // CPU Models available
+// CPU models offered to customers/admins. Keys are stored in the DB; "features" is the QEMU -cpu name.
+// Only current Intel Xeon and AMD EPYC families are listed (the old generic/legacy list was removed).
+const DEFAULT_CPU_MODEL = 'xeon-cascadelake';
 const CPU_MODELS = {
-  'host': {
-    name: 'Host CPU (Native)',
-    description: 'Use host CPU directly - best performance',
-    features: 'host'
+  'xeon-icelake': {
+    name: 'Intel Xeon Scalable 3rd Gen (Ice Lake)',
+    description: 'Intel Xeon Scalable, 3rd generation',
+    features: 'Icelake-Server'
   },
-  'max': {
-    name: 'Maximum Features',
-    description: 'Maximum supported features by QEMU',
-    features: 'max'
-  },
-  'qemu64': {
-    name: 'QEMU 64-bit',
-    description: 'Generic 64-bit processor',
-    features: 'qemu64'
-  },
-  'kvm64': {
-    name: 'KVM 64-bit',
-    description: 'Optimized for KVM',
-    features: 'kvm64'
-  },
-  'core2duo': {
-    name: 'Core 2 Duo',
-    description: 'Intel Core 2 Duo',
-    features: 'core2duo'
-  },
-  'corei7': {
-    name: 'Core i7',
-    description: 'Intel Core i7',
-    features: 'corei7'
-  },
-  'skylake': {
-    name: 'Skylake',
-    description: 'Intel Skylake',
-    features: 'Skylake-Client'
-  },
-  'cascadelake': {
-    name: 'Cascade Lake',
-    description: 'Intel Cascade Lake (Server)',
+  'xeon-cascadelake': {
+    name: 'Intel Xeon Scalable 2nd Gen (Cascade Lake)',
+    description: 'Intel Xeon Scalable, 2nd generation (default)',
     features: 'Cascadelake-Server'
   },
-  'opteron': {
-    name: 'Opteron',
-    description: 'AMD Opteron',
-    features: 'opteron'
+  'xeon-skylake': {
+    name: 'Intel Xeon Scalable 1st Gen (Skylake)',
+    description: 'Intel Xeon Scalable, 1st generation',
+    features: 'Skylake-Server'
   },
-  'epyc': {
-    name: 'EPYC',
-    description: 'AMD EPYC (Server)',
+  'xeon-sapphirerapids': {
+    name: 'Intel Xeon Scalable 4th Gen (Sapphire Rapids)',
+    description: 'Intel Xeon Scalable, 4th generation',
+    features: 'SapphireRapids'
+  },
+  'epyc-milan': {
+    name: 'AMD EPYC 7003 Series (Milan)',
+    description: 'AMD EPYC 7003 server processors',
+    features: 'EPYC-Milan'
+  },
+  'epyc-rome': {
+    name: 'AMD EPYC 7002 Series (Rome)',
+    description: 'AMD EPYC 7002 server processors',
+    features: 'EPYC-Rome'
+  },
+  'xeon-cooperlake': {
+    name: 'Intel Xeon Scalable 3rd Gen (Cooper Lake)',
+    description: 'Intel Xeon Scalable, Cooper Lake',
+    features: 'Cooperlake'
+  },
+  'xeon-emeraldrapids': {
+    name: 'Intel Xeon Scalable 5th Gen (Emerald Rapids)',
+    description: 'Intel Xeon Scalable, 5th generation',
+    features: 'EmeraldRapids'
+  },
+  'xeon-broadwell': {
+    name: 'Intel Xeon E5 v4 (Broadwell)',
+    description: 'Intel Xeon E5 v4 server processors',
+    features: 'Broadwell-IBRS'
+  },
+  'epyc-naples': {
+    name: 'AMD EPYC 7001 Series (Naples)',
+    description: 'AMD EPYC 7001 server processors',
     features: 'EPYC'
+  },
+  'epyc-genoa': {
+    name: 'AMD EPYC 9004 Series (Genoa)',
+    description: 'AMD EPYC 9004 server processors',
+    features: 'EPYC-Genoa'
   }
 };
+
+// Only offer CPU models that the host's QEMU really knows, so a VM never fails to start
+// because of an unsupported -cpu name. If QEMU cannot be probed, the full list is offered.
+function probeQemuCpuNames() {
+  try {
+    const out = require('child_process').execFileSync(QEMU_BIN, ['-cpu', 'help'], { encoding: 'utf8', timeout: 8000, stdio: ['ignore', 'pipe', 'ignore'] });
+    const names = new Set();
+    for (const line of out.split('\n')) {
+      const m = line.match(/^x86\s+(\S+)/);
+      if (m) names.add(m[1]);
+    }
+    return names.size ? names : null;
+  } catch (e) {
+    return null;
+  }
+}
+const HOST_QEMU_CPUS = probeQemuCpuNames();
+function availableCpuModels() {
+  const out = {};
+  for (const [key, m] of Object.entries(CPU_MODELS)) {
+    if (!HOST_QEMU_CPUS || HOST_QEMU_CPUS.has(m.features)) out[key] = m;
+  }
+  if (!Object.keys(out).length) return { ...CPU_MODELS };
+  return out;
+}
 
 // Machine Types available for QEMU
 const MACHINE_TYPES = {
@@ -284,90 +328,27 @@ const SMBIOS_PRODUCTS = [
   'Custom VM',
   'Cloud Instance'
 ];
-const OS_TEMPLATES = {
-  ubuntu_22_cloud: {
-    name: 'Ubuntu 22.04 LTS',
-    type: 'cloud-init',
-    icon: 'https://i.imgur.com/wu0Ob6B.png',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img',
-    username: 'ubuntu',
-    password: 'ubuntu'
-  },
-  ubuntu_24_cloud: {
-    name: 'Ubuntu 24.04 LTS',
-    type: 'cloud-init',
-    icon: 'https://i.imgur.com/wu0Ob6B.png',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img',
-    username: 'ubuntu',
-    password: 'ubuntu'
-  },
-  debian_12_cloud: {
-    name: 'Debian 12',
-    type: 'cloud-init',
-    icon: 'https://i.imgur.com/C4SiENP.png',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2',
-    username: 'debian',
-    password: 'debian'
-  },
-  fedora_40_cloud: {
-    name: 'Fedora 40',
-    type: 'cloud-init',
-    icon: 'https://i.imgur.com/iq4y3J8.png',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://download.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/x86_64/images/Fedora-Cloud-Base-40-1.14.x86_64.qcow2',
-    username: 'fedora',
-    password: 'fedora'
-  },
-  centos_9_cloud: {
-    name: 'CentOS Stream 9',
-    type: 'cloud-init',
-    icon: 'https://i.imgur.com/MgxK5WZ.png',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2',
-    username: 'centos',
-    password: 'centos'
-  },
-  almalinux_9_cloud: {
-    name: 'AlmaLinux 9',
-    type: 'cloud-init',
-    icon: 'https://i.imgur.com/YcYGa2c.png',
-    disk_size: '20G',
-    memory: 2048,
-    cpus: 2,
-    url: 'https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2',
-    username: 'almalinux',
-    password: 'almalinux'
-  }
-};
+// Built-in OS templates live in services/os-templates.js (also used by the installer)
+const { OS_TEMPLATES, resolveTemplateUrl } = require('./services/os-templates');
 
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(session({
+const sessionMiddleware = session({
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production',
+    // Only send the Secure flag when explicitly asked (COOKIE_SECURE=true, HTTPS only).
+    // NODE_ENV=production alone must not block logins over plain HTTP.
+    secure: process.env.COOKIE_SECURE === 'true',
     maxAge: 24 * 60 * 60 * 1000
   }
-}));
+});
+app.use(sessionMiddleware);
 
 // ---- Maintenance mode (admins keep full access; everyone else sees a notice) ----
 let maintenanceState = { enabled: false, message: '' };
@@ -396,9 +377,9 @@ app.use((req, res, next) => {
   const p = req.path;
   if (p.startsWith('/images/') || p.startsWith('/css/') || p.startsWith('/js/') || MAINTENANCE_OPEN_PATHS.includes(p)) return next();
   if (req.session && req.session.role === 'admin') return next();
-  const msg = maintenanceState.message || 'StarCloud is under maintenance. Please try again shortly.';
+  const msg = maintenanceState.message || 'StarCloud Panel is under maintenance. Please try again shortly.';
   if (p.startsWith('/api/')) return res.status(503).json({ error: 'Maintenance mode', message: msg });
-  res.status(503).send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Maintenance - StarCloud</title>
+  res.status(503).send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Maintenance - StarCloud Panel</title>
 <style>body{font-family:system-ui,sans-serif;background:#0a0a0f;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}h1{font-size:28px}p{color:#aaa;max-width:520px}</style>
 </head><body><div><h1>Under maintenance</h1><p>${String(msg).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</p></div></body></html>`);
 });
@@ -413,7 +394,6 @@ app.set('views', path.join(__dirname, 'views'));
 // VM Process Manager (Global)
 const vmProcesses = new Map();
 // Store QEMU process stdin for console input
-const qemuStdins = new Map();
 
 // Initialize Database
 // After the first admin is created, remove the plain-text initial password from .env
@@ -485,7 +465,7 @@ function initializeDatabase() {
       cpu_sockets INTEGER DEFAULT 1,
       cpu_cores INTEGER DEFAULT 2,
       cpu_threads INTEGER DEFAULT 1,
-      cpu_model TEXT DEFAULT 'host',
+      cpu_model TEXT DEFAULT 'xeon-cascadelake',
       custom_cpu_name TEXT,
       machine_type TEXT DEFAULT 'pc',
       board_name TEXT DEFAULT 'Main-Board',
@@ -643,7 +623,7 @@ function initializeDatabase() {
 
     // Initialize default site settings if not exist
     const defaultSettings = {
-      'site_name': 'StarCloud',
+      'site_name': 'StarCloud Panel',
       'site_description': 'Virtual Machine Management System',
       'site_icon_url': '/images/logo.png',
     };
@@ -655,6 +635,12 @@ function initializeDatabase() {
         }
       });
     });
+
+    // Upgrade old installs: replace the previous built-in branding defaults (only those exact values;
+    // anything an admin typed is left alone).
+    db.run(`UPDATE settings SET setting_value = 'StarCloud Panel' WHERE setting_key = 'site_name' AND setting_value = 'StarCloud'`);
+    db.run(`UPDATE settings SET setting_value = '/images/logo.png' WHERE setting_key = 'site_icon_url' AND setting_value = '/images/logo-cloud.png'`);
+    db.run(`UPDATE settings SET setting_value = 'StarCloud Panel' WHERE setting_key = 'panel_title' AND setting_value IN ('StarCloud Panel V2.0', 'StarCloud Panel V1.0')`);
 
     // Add Discord columns to users table if they don't exist
     db.all(`PRAGMA table_info(users)`, (err, columns) => {
@@ -680,7 +666,7 @@ function initializeDatabase() {
             if (insErr) return console.error('Admin account creation failed:', insErr.message);
             console.log(`✓ Admin account created: ${initialAdminUser} (role: admin)`);
             if (initialAdminPass === 'admin') {
-              console.warn('⚠ Default password "admin" is in use. Change it from the Profile page now.');
+              console.warn('⚠ Default password "admin" is in use. Change it in Settings > Security now.');
             }
             if (process.env.STARCLOUD_ADMIN_PASSWORD) scrubAdminPasswordFromEnv();
           });
@@ -745,6 +731,97 @@ app.post('/api/login', (req, res) => {
     req.session.role = user.role;
     console.log(`[Auth Success] User ${user.id} (${user.username}) logged in with role: ${user.role}`);
     res.json({ success: true, user: { id: user.id, username: user.username, role: user.role } });
+  });
+});
+
+// ===== Self-service sign-up (username + password) =====
+const SIGNUP_WINDOW_MS = 15 * 60 * 1000;
+const SIGNUP_MAX_PER_WINDOW = 10;
+const signupAttempts = new Map(); // ip -> { count, resetAt }
+
+function signupRateLimited(ip) {
+  const now = Date.now();
+  const entry = signupAttempts.get(ip);
+  if (!entry || entry.resetAt < now) {
+    signupAttempts.set(ip, { count: 1, resetAt: now + SIGNUP_WINDOW_MS });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > SIGNUP_MAX_PER_WINDOW;
+}
+
+// Sign-up is ON unless the admin switched it off in Settings > Security.
+function isSignupOpen(cb) {
+  db.get(`SELECT setting_value FROM settings WHERE setting_key = 'signup_enabled'`, (err, row) => {
+    cb(!err && (!row || String(row.setting_value) !== '0'));
+  });
+}
+
+app.post('/api/auth/signup', (req, res) => {
+  if (req.session.userId) {
+    return res.status(409).json({ error: 'You are already logged in.' });
+  }
+  if (signupRateLimited(req.ip)) {
+    return res.status(429).json({ error: 'Too many sign-up attempts. Please try again after 15 minutes.' });
+  }
+  isSignupOpen((open) => {
+    if (!open) {
+      return res.status(403).json({ error: 'Sign-up is currently closed. Please contact the administrator.' });
+    }
+
+    const username = String((req.body && req.body.username) || '').trim();
+    const email = String((req.body && req.body.email) || '').trim();
+    const password = String((req.body && req.body.password) || '');
+
+    if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(username)) {
+      return res.status(400).json({ error: 'Username must be 3–32 characters: letters, numbers, _ . - only.' });
+    }
+    if (email && (email.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+      return res.status(400).json({ error: 'Please enter a valid email address or leave it empty.' });
+    }
+    if (password.length < 6 || password.length > 200) {
+      return res.status(400).json({ error: 'Password must be between 6 and 200 characters.' });
+    }
+
+    const clauses = ['lower(username) = lower(?)'];
+    const params = [username];
+    if (email) {
+      clauses.push('lower(email) = lower(?)');
+      params.push(email);
+    }
+    db.get(`SELECT username, email FROM users WHERE ${clauses.join(' OR ')} LIMIT 1`, params, (err, existing) => {
+      if (err) {
+        console.error('[Signup Error] Duplicate check failed:', err);
+        return res.status(500).json({ error: 'Sign-up failed. Please try again.' });
+      }
+      if (existing) {
+        const sameName = existing.username && existing.username.toLowerCase() === username.toLowerCase();
+        return res.status(409).json({
+          error: sameName ? 'This username is already taken.' : 'This email is already registered.'
+        });
+      }
+
+      const hash = bcrypt.hashSync(password, 10);
+      db.run(
+        `INSERT INTO users (username, password, email, role, is_active) VALUES (?, ?, ?, 'user', 1)`,
+        [username, hash, email || null],
+        function (insertErr) {
+          if (insertErr) {
+            if (/UNIQUE/i.test(insertErr.message)) {
+              return res.status(409).json({ error: 'This username or email is already registered.' });
+            }
+            console.error('[Signup Error] Insert failed:', insertErr);
+            return res.status(500).json({ error: 'Sign-up failed. Please try again.' });
+          }
+          const userId = this.lastID;
+          req.session.userId = userId;
+          req.session.username = username;
+          req.session.role = 'user';
+          console.log(`[Auth Success] New user ${userId} (${username}) signed up`);
+          res.json({ success: true, redirect: '/dashboard', user: { id: userId, username, role: 'user' } });
+        }
+      );
+    });
   });
 });
 
@@ -986,7 +1063,7 @@ function renderDiscordHandoff(req, res) {
   }
   return res.render('discord-account', {
     title: 'Discord Account - StarCloud Panel',
-    siteName: res.locals.siteName || 'StarCloud',
+    siteName: res.locals.siteName || 'StarCloud Panel',
     siteLogo: res.locals.siteLogo || '/images/logo.png',
     pending: req.session.pendingDiscordAuth,
     isLoggedIn: !!req.session.userId
@@ -1372,7 +1449,7 @@ app.post('/api/admin/templates/:key/download', checkAuth, checkAdmin, async (req
       console.log(`[TEMPLATE] Starting download of ${templateKey} from ${template.url}`);
 
       // Download the template
-      await downloadTemplateFromURL(template.url, localPath);
+      await downloadTemplateFromURL(await resolveTemplateUrl(template), localPath);
 
       console.log(`[TEMPLATE] Download complete for ${templateKey}`);
 
@@ -1518,7 +1595,7 @@ app.post('/api/admin/templates/cache/clear', checkAuth, checkAdmin, (req, res) =
 
 // Get CPU Models
 app.get('/api/cpu-models', (req, res) => {
-  res.json(CPU_MODELS);
+  res.json(availableCpuModels());
 });
 
 // Get SMBIOS options
@@ -1566,11 +1643,13 @@ app.use((req, res, next) => {
   } : null;
   
   // Panel version from .env
-  res.locals.panelVersion = process.env.PANEL_VERSION || 'V2.0';
+  res.locals.panelVersion = process.env.PANEL_VERSION || 'V1.0';
+  // Version is hidden everywhere unless the admin switches show_panel_version ON (Settings > General).
+  res.locals.showPanelVersion = false;
   
   // Set default logo and site name
   res.locals.siteLogo = process.env.DEFAULT_LOGO_URL || '/images/logo.png';
-  res.locals.siteName = process.env.PANEL_NAME || 'StarCloud';
+  res.locals.siteName = process.env.PANEL_NAME || 'StarCloud Panel';
   
   // Load site settings from database (blocking, so sidebar reflects changes immediately)
   db.get(`SELECT setting_value FROM settings WHERE setting_key = 'site_icon_url' LIMIT 1`, (err, row) => {
@@ -1581,13 +1660,32 @@ app.use((req, res, next) => {
       if (!err2 && row2 && row2.setting_value) {
         res.locals.siteName = row2.setting_value;
       }
-      next();
+      db.get(`SELECT setting_value FROM settings WHERE setting_key = 'show_panel_version' LIMIT 1`, (err3, row3) => {
+        res.locals.showPanelVersion = !err3 && !!row3 && String(row3.setting_value) === '1';
+        next();
+      });
     });
   });
 });
 
 // License check middleware — silently bypassed
 app.use((req, res, next) => { next(); });
+
+// VM ownership guard. Every user-facing VM path (/vm/:id..., /api/vms/:id...)
+// must belong to the logged-in user, unless the user is an admin.
+// Non-owners get a 404 so VM existence is not revealed.
+app.use((req, res, next) => {
+  const m = req.path.match(/^\/(?:api\/vms|vm)\/([^/]+)(?:\/|$)/);
+  if (!m || !req.session || !req.session.userId) return next(); // anonymous -> checkAuth redirects
+  if (req.session.role === 'admin') return next();
+  db.get(`SELECT owner_id FROM vms WHERE vm_id = ?`, [m[1]], (err, vm) => {
+    if (!err && vm && Number(vm.owner_id) === Number(req.session.userId)) return next();
+    if (req.path.startsWith('/api/')) {
+      return res.status(404).json({ error: 'VM not found or access denied' });
+    }
+    return res.status(404).send('VM not found or access denied');
+  });
+});
 
 // Login page
 app.get('/login', (req, res) => {
@@ -1598,7 +1696,7 @@ app.get('/login', (req, res) => {
     title: 'Login - StarCloud Panel',
     currentPage: 'login',
     siteLogo: res.locals.siteLogo || process.env.DEFAULT_LOGO_URL || '/images/logo.png',
-    siteName: res.locals.siteName || process.env.PANEL_NAME || 'StarCloud'
+    siteName: res.locals.siteName || process.env.PANEL_NAME || 'StarCloud Panel'
   });
 });
 
@@ -1614,9 +1712,27 @@ app.post('/api/license/activate', (req, res) => {
   res.json({ success: true, message: 'License active', redirect: '/dashboard' });
 });
 
+
+
+app.get('/signup', (req, res) => {
+  if (req.session.userId) {
+    return res.redirect('/dashboard');
+  }
+  isSignupOpen((open) => {
+    res.render('users/signup', {
+      title: 'Sign Up - StarCloud Panel',
+      currentPage: 'signup',
+      signupOpen: open,
+      siteLogo: res.locals.siteLogo || process.env.DEFAULT_LOGO_URL || '/images/logo.png',
+      siteName: res.locals.siteName || process.env.PANEL_NAME || 'StarCloud Panel'
+    });
+  });
+});
 // Dashboard - Normal users only
 app.get('/dashboard', checkAuth, (req, res) => {
-  // Show user dashboard (works for both regular users and admins)
+  // Admins only see admin pages.
+  if (req.session.role === 'admin') return res.redirect('/admin/dashboard');
+  // Show user dashboard for regular users
   res.render('users/dashboard', {
     title: 'My VMs - StarCloud Panel',
     currentPage: 'dashboard',
@@ -1661,20 +1777,39 @@ app.get('/admin/vm-create', checkAuth, checkAdmin, (req, res) => {
 // VM Details (Admin only)
 app.get('/admin/vm/:id', checkAuth, checkAdmin, (req, res) => {
   res.render('admin/vm-detail', {
+    lxdTemplateKeys: Object.keys(OS_TEMPLATES),
     title: 'VM Details - StarCloud Panel',
     currentPage: 'vm-detail',
     vmId: req.params.id
   });
 });
 
-// VM Console (Admin only)
-app.get('/admin/vm/:id/console', checkAuth, checkAdmin, (req, res) => {
-  res.render('admin/vm-console', {
-    title: 'VM Console - StarCloud Panel',
-    currentPage: 'vm-console',
-    vmId: req.params.id
-  });
-});
+
+// ---- Browser terminals: serial console and SSH (owner or admin) ----
+function renderVmTerminal(view, title, currentPage, isAdmin) {
+  return (req, res) => {
+    db.get(`SELECT vm_id, vm_name, owner_id, status, username FROM vms WHERE vm_id = ?`, [req.params.id], (err, vm) => {
+      if (err || !vm || !canAccessVm(req.session, vm)) {
+        return res.status(404).render('users/404', { title: 'VM Not Found - StarCloud Panel', message: 'VM not found or access denied' });
+      }
+      res.render(view, {
+        title: `${title} - ${vm.vm_name} - StarCloud Panel`,
+        currentPage,
+        isAdmin,
+        vmId: vm.vm_id,
+        vmName: vm.vm_name,
+        vmStatus: vm.status,
+        vmUsername: vm.username || '',
+        userId: req.session.userId,
+        user: { username: req.session.username, role: req.session.role }
+      });
+    });
+  };
+}
+app.get('/vm/:id/console', checkAuth, renderVmTerminal('vm-console', 'Console', 'vm-console', false));
+app.get('/vm/:id/ssh', checkAuth, renderVmTerminal('vm-ssh', 'SSH', 'vm-ssh', false));
+app.get('/admin/vm/:id/console', checkAuth, checkAdmin, renderVmTerminal('vm-console', 'Console', 'vm-console', true));
+app.get('/admin/vm/:id/ssh', checkAuth, checkAdmin, renderVmTerminal('vm-ssh', 'SSH', 'vm-ssh', true));
 
 // VM Edit Configuration Page (Admin only)
 app.get('/admin/vm/:id/edit', checkAuth, checkAdmin, (req, res) => {
@@ -1721,6 +1856,14 @@ app.get('/admin/users/:id/edit', checkAuth, checkAdmin, (req, res) => {
 });
 
 // Settings (admin only)
+app.get('/admin/system-info', checkAuth, checkAdmin, (req, res) => {
+  res.render('admin/system-info', {
+    title: 'System Info - StarCloud Panel',
+    currentPage: 'system-info',
+    user: { username: req.session.username, role: req.session.role }
+  });
+});
+
 app.get('/admin/settings', checkAuth, checkAdmin, (req, res) => {
   res.render('admin/settings', {
     title: 'Settings - StarCloud Panel',
@@ -1788,9 +1931,10 @@ app.get('/admin/templates/builtin/:key/edit', checkAuth, checkAdmin, (req, res) 
 
 // User VMs list
 app.get('/vms', checkAuth, (req, res) => {
+  if (req.session.role === 'admin') return res.redirect('/admin/vms');
   res.render('users/vms', {
     title: 'My Virtual Machines - StarCloud Panel',
-    currentPage: 'vms',
+    currentPage: req.session.role === 'admin' ? 'my-vms' : 'vms',
     user: {
       username: req.session.username,
       role: req.session.role
@@ -1800,7 +1944,9 @@ app.get('/vms', checkAuth, (req, res) => {
 
 // User VM detail page
 app.get('/vm/:id', checkAuth, (req, res) => {
+  if (req.session.role === 'admin') return res.redirect(`/admin/vm/${encodeURIComponent(req.params.id)}`);
   res.render('users/vm-detail', {
+    lxdTemplateKeys: Object.keys(OS_TEMPLATES),
     title: 'VM Details - StarCloud Panel',
     currentPage: 'vm-detail',
     vmId: req.params.id,
@@ -1812,53 +1958,15 @@ app.get('/vm/:id', checkAuth, (req, res) => {
   });
 });
 
-// User VM console page
-app.get('/vm/:id/console', checkAuth, (req, res) => {
-  res.render('users/vm-console', {
-    title: 'VM Console - StarCloud Panel',
-    currentPage: 'vm-console',
-    vmId: req.params.id,
-    userId: req.session.userId,
-    user: {
-      username: req.session.username,
-      role: req.session.role
-    }
-  });
-});
 
-// User VM SSH connection page
-app.get('/vm/:id/ssh', checkAuth, (req, res) => {
-  res.render('users/vm-ssh', {
-    title: 'SSH Connection - StarCloud Panel',
-    currentPage: 'vm-ssh',
-    vmId: req.params.id,
-    userId: req.session.userId,
-    user: {
-      username: req.session.username,
-      role: req.session.role
-    }
-  });
-});
 
-// Admin VM SSH connection page
-app.get('/admin/vm/:id/ssh', checkAuth, checkAdmin, (req, res) => {
-  res.render('admin/vm-ssh', {
-    title: 'SSH Connection - StarCloud Admin Panel',
-    currentPage: 'vm-ssh',
-    vmId: req.params.id,
-    userId: req.session.userId,
-    user: {
-      username: req.session.username,
-      role: req.session.role
-    }
-  });
-});
 
 // User profile page
 app.get('/profile', checkAuth, (req, res) => {
+  if (req.session.role === 'admin') return res.redirect('/admin/settings#security');
   res.render('users/profile', {
     title: 'My Profile - StarCloud Panel',
-    currentPage: 'profile',
+    currentPage: req.session.role === 'admin' ? 'my-profile' : 'profile',
     user: {
       username: req.session.username,
       role: req.session.role,
@@ -2090,51 +2198,6 @@ app.get('/api/vms/:vm_id/console', checkAuth, (req, res) => {
   }
 });
 
-// VM CONSOLE COMMAND - Send command to VM via serial console
-app.post('/api/vms/:vm_id/console/command', checkAuth, async (req, res) => {
-  const vm_id = req.params.vm_id;
-  const { command } = req.body;
-  const userId = req.session.userId;
-
-  if (!command) {
-    return res.status(400).json({ error: 'Command required' });
-  }
-
-  let query = `SELECT * FROM vms WHERE vm_id = ?`;
-  let params = [vm_id];
-  
-  // Normal users can only send commands to their own VMs
-  if (req.session.role !== 'admin') {
-    query += ` AND owner_id = ?`;
-    params.push(userId);
-  }
-
-  db.get(query, params, async (err, vm) => {
-    if (err || !vm) return res.status(404).json({ error: 'VM not found or access denied' });
-
-    if (vm.status !== 'running') {
-      return res.status(400).json({ error: 'VM is not running' });
-    }
-
-    try {
-      // Command is sent via WebSocket to console
-      // Append to log so it appears in console
-      const logFile = path.join(VM_DIR, `vm-${vm_id}.log`);
-      fs.appendFileSync(logFile, command);
-      
-      console.log(`[VM-${vm_id}] Command executed: ${command}`);
-      res.json({ 
-        success: true, 
-        message: 'Command sent to VM console',
-        command: command,
-        vmId: vm_id
-      });
-    } catch (error) {
-      console.error(`[VM-${vm_id}] Error sending command:`, error.message);
-      res.status(500).json({ error: 'Failed to send command: ' + error.message });
-    }
-  });
-});
 
 // GET VM EDIT CONFIG (retrieve editable fields)
 app.get('/api/vms/:vm_id/edit', checkAuth, (req, res) => {
@@ -2261,9 +2324,10 @@ async function resizeDisk(vm_id, diskFilePath, newSize) {
 // Regenerate cloud-init seed for a VM
 
 // UPDATE VM CONFIGURATION (PUT request)
-app.put('/api/vms/:vm_id/edit', checkAuth, (req, res) => {
+app.put('/api/vms/:vm_id/edit', checkAuth, async (req, res) => {
   const vm_id = req.params.vm_id;
   const userId = req.session.userId;
+  if (typeof req.body.vm_name === 'string') req.body.vm_name = req.body.vm_name.trim();
   const {
     vm_name, hostname, memory, cpus, cpu_sockets, cpu_cores, cpu_threads, cpu_model,
     custom_cpu_name, username, password,
@@ -2275,6 +2339,17 @@ app.put('/api/vms/:vm_id/edit', checkAuth, (req, res) => {
     ssh_port, ssh_port_static,
     owner_id
   } = req.body;
+
+  // Renaming to a name that another VM already uses: clear message instead of a raw SQLite error
+  if (vm_name) {
+    try {
+      if (await dbGetPromise(`SELECT vm_id FROM vms WHERE vm_name = ? AND vm_id != ?`, [vm_name, vm_id])) {
+        return res.status(409).json({ error: nameTakenMessage(vm_name), code: 'NAME_TAKEN' });
+      }
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
 
   let query = `SELECT status, template_type, seed_file FROM vms WHERE vm_id = ?`;
   let params = [vm_id];
@@ -2311,10 +2386,7 @@ app.put('/api/vms/:vm_id/edit', checkAuth, (req, res) => {
     const validatedCores = cpu_cores && cpu_cores >= 1 ? cpu_cores : undefined;
     const validatedThreads = cpu_threads && cpu_threads >= 1 ? cpu_threads : undefined;
 
-    // Never allow a weak password through the edit API either.
-    if (password !== undefined && String(password).length > 0 && String(password).length < 8) {
-      return res.status(400).json({ error: 'VM password must be at least 8 characters' });
-    }
+    // VM password: any non-empty value is accepted (no minimum length).
 
     // Build update query dynamically
     const updates = [];
@@ -2333,16 +2405,15 @@ app.put('/api/vms/:vm_id/edit', checkAuth, (req, res) => {
     if (password) { updates.push('password = ?'); values.push(password); }
     if (enable_acpi !== undefined) { updates.push('enable_acpi = ?'); values.push(toggleFlag(enable_acpi, 1)); }
     // KVM block (same rule as create): no KVM on this host = cannot turn KVM or nested KVM ON
+    // One switch: nested KVM follows KVM On / Off (both columns get the same value)
     const editCaps = detectKvm();
-    if (!editCaps.kvmAvailable && ((enable_kvm !== undefined && toggleFlag(enable_kvm, 0) === 1) ||
-        (nested_kvm !== undefined && toggleFlag(nested_kvm, 0) === 1))) {
+    if (!editCaps.kvmAvailable && enable_kvm !== undefined && toggleFlag(enable_kvm, 0) === 1) {
       return res.status(409).json({ error: KVM_BLOCK_MESSAGE, code: 'KVM_BLOCKED' });
     }
     if (enable_kvm !== undefined) {
-      updates.push('enable_kvm = ?'); values.push(editCaps.kvmAvailable ? toggleFlag(enable_kvm, 1) : 0);
-    }
-    if (nested_kvm !== undefined) {
-      updates.push('nested_kvm = ?'); values.push(editCaps.nestedAvailable ? toggleFlag(nested_kvm, 0) : 0);
+      const kvmValue = editCaps.kvmAvailable ? toggleFlag(enable_kvm, 1) : 0;
+      updates.push('enable_kvm = ?'); values.push(kvmValue);
+      updates.push('nested_kvm = ?'); values.push(kvmValue);
     }
     if (extra_args !== undefined) { updates.push('extra_args = ?'); values.push(extra_args || ''); }
     if (network_type) { updates.push('network_type = ?'); values.push(network_type); }
@@ -2461,11 +2532,13 @@ app.get('/api/vms/:vm_id/stats', checkAuth, async (req, res) => {
         pid: vmProcesses.get(vm.vm_id) || null
       };
 
-      if (vm.status === 'running' && vmProcesses.has(vm.vm_id)) {
-        const pidFile = path.join(VM_DIR, `vm-${vm.vm_id}.pid`);
+      const livePid = runtime.status(vm.vm_id);
+      if (livePid) {
+        stats.status = 'running';
+        stats.pid = livePid;
         try {
-          if (fs.existsSync(pidFile)) {
-            const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim());
+          {
+            const pid = livePid;
             const { stdout } = await execFilePromise('ps', ['-p', String(pid), '-o', '%cpu,%mem,etime']);
             const lines = stdout.trim().split('\n');
             if (lines.length > 0) {
@@ -2538,9 +2611,6 @@ app.post('/api/vms/:vm_id/reinstall', checkAuth, async (req, res) => {
         let template = null;
         let isCloudInit = false;
         let templateName = 'Custom OS';
-        if (new_password && String(new_password).length < 8) {
-          return res.status(400).json({ error: 'New password must be at least 8 characters' });
-        }
         const fallbackPassword = vm.password || crypto.randomBytes(12).toString('base64url');
         let username = new_username || 'root';
         let password = new_password || fallbackPassword;
@@ -2740,8 +2810,17 @@ app.post('/api/vms/:vm_id/reinstall', checkAuth, async (req, res) => {
   }
 });
 
+// Friendly messages for duplicate names / ports (no raw SQLite text in the UI)
+function nameTakenMessage(name) {
+  return `A VM named "${name}" already exists. Use another name. If you just clicked Create, the first attempt may still be running: check All VMs.`;
+}
+function dbGetPromise(sql, params) {
+  return new Promise((resolve, reject) => db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row))));
+}
+
 // VM CREATE (Admin only)
 app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
+  if (typeof req.body.vm_name === 'string') req.body.vm_name = req.body.vm_name.trim();
   const { 
     vm_name, os_template, hostname, custom_memory, custom_cpus,
     iso_file, custom_username, custom_password, disk_size,
@@ -2767,10 +2846,42 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
     return res.status(400).json({ error: 'Please select a template or upload ISO' });
   }
 
-  // Owner decision D-15 / D-24: the admin must set a VM password (>= 8 chars).
-  // Weak template defaults (ubuntu/ubuntu, debian/debian, 'password') are never used.
-  if (typeof custom_password !== 'string' || custom_password.length < 8) {
-    return res.status(400).json({ error: 'VM password is required and must be at least 8 characters' });
+  // The admin must set a VM password. There is no minimum length; template default passwords are never used.
+  if (typeof custom_password !== 'string' || custom_password.length === 0) {
+    return res.status(400).json({ error: 'VM password is required' });
+  }
+
+  if (!vm_name) {
+    return res.status(400).json({ error: 'VM name is required' });
+  }
+  // Login user and hostname are written into cloud-init; accept only safe Linux names.
+  if (custom_username !== undefined && custom_username !== '' && !/^[a-zA-Z_][a-zA-Z0-9_-]{0,31}$/.test(String(custom_username).trim())) {
+    return res.status(400).json({ error: 'Username must start with a letter or _, use only letters, digits, _ or -, and be at most 32 characters', code: 'USERNAME_INVALID' });
+  }
+  if (hostname !== undefined && hostname !== '' && !/^[a-zA-Z0-9][a-zA-Z0-9-]{0,62}$/.test(String(hostname).trim())) {
+    return res.status(400).json({ error: 'Hostname may use only letters, digits and - (max 63 characters)', code: 'HOSTNAME_INVALID' });
+  }
+  try {
+    if (await dbGetPromise(`SELECT vm_id FROM vms WHERE vm_name = ?`, [vm_name])) {
+      return res.status(409).json({ error: nameTakenMessage(vm_name), code: 'NAME_TAKEN' });
+    }
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+
+  // SSH port (optional): must be 1024-65535 and not used by another VM
+  const requestedSsh = ssh_port_static || ssh_port;
+  if (requestedSsh) {
+    const sshNum = parseInt(requestedSsh, 10);
+    if (!Number.isInteger(sshNum) || sshNum < 1024 || sshNum > 65535) {
+      return res.status(400).json({ error: 'SSH port must be a number from 1024 to 65535' , code: 'SSH_PORT_RANGE'});
+    }
+    try {
+      const clash = await dbGetPromise(`SELECT vm_id FROM vms WHERE ssh_port = ? OR ssh_port_static = ?`, [sshNum, sshNum]);
+      if (clash) return res.status(409).json({ error: `SSH port ${sshNum} is already used by another VM. Choose another port.`, code: 'SSH_PORT_TAKEN' });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
   }
 
   // Validate memory - remove strict limits, allow any positive value
@@ -2836,7 +2947,7 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
   const sockets = cpu_sockets || 1;
   const cores = cpu_cores || cpuCount;
   const threads = cpu_threads || 1;
-  const cpuModelToUse = cpu_model && CPU_MODELS[cpu_model] ? cpu_model : 'host';
+  const cpuModelToUse = cpu_model && availableCpuModels()[cpu_model] ? cpu_model : DEFAULT_CPU_MODEL;
   const diskSizeVal = disk_size || (template ? template.disk_size : '20G');
   const netType = network_type || 'nat';
   const macAddr = mac_address || generateMACAddress();
@@ -2844,18 +2955,16 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
 
   // KVM block: on a host without KVM, a request to turn KVM (or nested KVM) ON is refused.
   // Creating a VM with KVM OFF (software emulation) is still allowed.
+  // One switch in the panel: "KVM On / Off". Nested KVM follows it (ON = this VM can run its own VMs).
+  // nested_kvm is still stored (same value) so older code and data stay consistent.
   const hostCaps = detectKvm();
   const kvmRequested = enable_kvm !== undefined && toggleFlag(enable_kvm, 0) === 1;
-  const nestedRequested = nested_kvm !== undefined && toggleFlag(nested_kvm, 0) === 1;
-  if (!hostCaps.kvmAvailable && (kvmRequested || nestedRequested)) {
+  if (!hostCaps.kvmAvailable && kvmRequested) {
     console.warn('[Create] KVM blocked: host has no KVM');
     return res.status(409).json({ error: KVM_BLOCK_MESSAGE, code: 'KVM_BLOCKED' });
   }
-  if (nestedRequested && !kvmRequested && hostCaps.kvmAvailable && toggleFlag(enable_kvm, 1) === 0) {
-    return res.status(400).json({ error: 'Nested KVM needs KVM On / Off to be ON', code: 'NESTED_NEEDS_KVM' });
-  }
   const kvmOn = hostCaps.kvmAvailable ? toggleFlag(enable_kvm, 1) : 0;
-  const nestedOn = hostCaps.nestedAvailable && kvmOn ? toggleFlag(nested_kvm, 0) : 0;
+  const nestedOn = kvmOn;
 
   // Capacity guard: refuse if the host cannot hold this VM's RAM / vCPUs
   const capacityError = await checkCapacity(db, { memoryMb: memory, vcpus: cpuCount });
@@ -2893,7 +3002,10 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
       macAddr, bridge_device || 'vmbr0', vlan_id || null, vmOwner
     ],
     async function(err) {
-      if (err) return res.status(500).json({ error: err.message });
+      if (err) {
+        if (/UNIQUE/i.test(err.message)) return res.status(409).json({ error: nameTakenMessage(vm_name), code: 'NAME_TAKEN' });
+        return res.status(500).json({ error: err.message });
+      }
       
       const vm_id = this.lastID;
       // Cloud-init images go to /cloudvm, ISO images go to /iso
@@ -3158,7 +3270,7 @@ app.post('/api/vms/:vm_id/stop', checkAuth, (req, res) => {
     params.push(userId);
   }
   
-  db.get(query, params, (err, vm) => {
+  db.get(query, params, async (err, vm) => {
     if (err || !vm) {
       console.error(`[API Error] /api/vms/${req.params.vm_id}/stop: VM not found or access denied`);
       return res.status(404).json({ error: 'VM not found or access denied' });
@@ -3171,7 +3283,7 @@ app.post('/api/vms/:vm_id/stop', checkAuth, (req, res) => {
 
     try {
       console.log(`[API] Stopping VM ${vm.vm_id} (${vm.vm_name}) by user ${userId}`);
-      stopVmProcess(vm);
+      await stopVmProcess(vm);
       console.log(`[API Success] VM ${vm.vm_id} stopped successfully`);
       res.json({ success: true, message: `VM ${vm.vm_name} (ID:${vm.vm_id}) stopped` });
     } catch (error) {
@@ -3198,15 +3310,9 @@ app.post('/api/vms/:vm_id/restart', checkAuth, async (req, res) => {
       if (err || !vm) return res.status(404).json({ error: 'VM not found or access denied' });
 
       try {
-        const pidFile = path.join(VM_DIR, `vm-${vm.vm_id}.pid`);
-        if (fs.existsSync(pidFile)) {
-          const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim());
-          try {
-            process.kill(pid, 'SIGTERM');
-          } catch (e) {}
+        if (runtime.isRunning(vm.vm_id)) {
+          await runtime.stop(vm.vm_id);
         }
-        
-        await new Promise(resolve => setTimeout(resolve, 2000));
 
         const result = await startQemuVM(vm);
         if (result.success) {
@@ -3230,24 +3336,17 @@ app.post('/api/vms/:vm_id/restart', checkAuth, async (req, res) => {
 
 // VM DELETE (Using VM ID)
 app.delete('/api/vms/:vm_id', checkAuth, (req, res) => {
-  db.get(`SELECT * FROM vms WHERE vm_id = ?`, [req.params.vm_id], (err, vm) => {
+  db.get(`SELECT * FROM vms WHERE vm_id = ?`, [req.params.vm_id], async (err, vm) => {
     if (err || !vm) return res.status(404).json({ error: 'VM not found' });
 
     try {
-      const pidFile = path.join(VM_DIR, `vm-${vm.vm_id}.pid`);
-      if (fs.existsSync(pidFile)) {
-        const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim());
-        try {
-          process.kill(pid, 'SIGKILL');
-        } catch (e) {}
-      }
+      await runtime.stop(vm.vm_id, { graceMs: 5000 });
 
       if (fs.existsSync(vm.img_file)) fs.unlinkSync(vm.img_file);
       if (fs.existsSync(vm.seed_file)) fs.unlinkSync(vm.seed_file);
       if (fs.existsSync(vm.disk_file)) fs.unlinkSync(vm.disk_file);
 
       vmProcesses.delete(vm.vm_id);
-      qemuStdins.delete(vm.vm_id);
       db.run(`DELETE FROM vms WHERE vm_id = ?`, [vm.vm_id]);
       db.run(`DELETE FROM vm_logs WHERE vm_id = ?`, [vm.vm_id]);
       
@@ -3464,24 +3563,13 @@ app.get('/api/admin/dashboard', checkAuth, checkAdmin, (req, res) => {
 // HELPER FUNCTIONS
 
 // Stop a VM's QEMU process group and mark it stopped (used by the stop button and emergency stop)
-function stopVmProcess(vm) {
-  const pidFile = path.join(VM_DIR, `vm-${vm.vm_id}.pid`);
-  if (fs.existsSync(pidFile)) {
-    const pid = parseInt(fs.readFileSync(pidFile, 'utf8').trim());
-    try {
-      if (isWindows) {
-        execFile('taskkill', ['/F', '/PID', String(pid)], (err) => { if (err) console.warn(`[VM-${vm.vm_id}] taskkill failed:`, err.message); });
-      } else {
-        process.kill(-pid, 'SIGTERM');
-        setTimeout(() => { try { process.kill(-pid, 'SIGKILL'); } catch (e) {} }, 3000);
-      }
-    } catch (e) { /* process may already be dead */ }
-  }
+// Gracefully stop a VM (ACPI powerdown, then forced quit) and mark it stopped.
+async function stopVmProcess(vm) {
+  const stopped = await runtime.stop(vm.vm_id);
   vmProcesses.delete(vm.vm_id);
-  qemuStdins.delete(vm.vm_id);
   db.run(`UPDATE vms SET status = 'stopped' WHERE vm_id = ?`, [vm.vm_id]);
-  logVMAction(vm.vm_id, 'stop', 'stopped', `VM stopped`);
-  return true;
+  logVMAction(vm.vm_id, 'stop', stopped ? 'stopped' : 'warning', stopped ? 'VM stopped' : 'VM did not stop cleanly; process was killed');
+  return stopped;
 }
 
 // Start a VM for host operations (reboot-all); mirrors the start route's status update
@@ -3585,7 +3673,7 @@ async function downloadTemplate(sourceOrKey, targetPath) {
       // Check if it's a template key or a direct URL
       if (OS_TEMPLATES[sourceOrKey]) {
         const template = OS_TEMPLATES[sourceOrKey];
-        url = template.url;
+        url = await resolveTemplateUrl(template);
         templateName = template.name;
       } else if (sourceOrKey.startsWith('http')) {
         // It's a direct URL
@@ -3613,33 +3701,34 @@ function generateNATCloudInitConfig(vm) {
   const password = vm.password || 'password';
   const hostname = vm.hostname || 'starcloud-instance';
 
-  // Build users section - support root and custom users
+  // Build users section. Every user-controlled value is written as a JSON-quoted YAML string,
+  // so passwords with '#', ':', quotes or leading symbols reach chpasswd exactly as typed.
+  // The same chosen password is set for root and for the custom user, so either login works.
+  const q = (v) => JSON.stringify(String(v));
   let usersSection = `users:`;
   let chpasswdList = ``;
-  
+
   if (username.toLowerCase() === 'root') {
-    // If root user, configure root directly
     usersSection += `
   - name: root
     lock_passwd: false
     shell: /bin/bash
     homedir: /root`;
-    chpasswdList = `    - root:${password}`;
+    chpasswdList = `    - ${q('root:' + password)}`;
   } else {
-    // If custom user, create the user with sudo privileges
     usersSection += `
-  - name: ${username}
+  - name: ${q(username)}
     lock_passwd: false
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
     homedir: /home/${username}
     createhome: true
-    
+
   - name: root
     lock_passwd: false
     shell: /bin/bash`;
-    chpasswdList = `    - ${username}:${password}
-    - root:password`;
+    chpasswdList = `    - ${q(username + ':' + password)}
+    - ${q('root:' + password)}`;
   }
 
   const config = `#cloud-config
@@ -3647,7 +3736,7 @@ function generateNATCloudInitConfig(vm) {
 # ================================================
 # SYSTEM CONFIG
 # ================================================
-hostname: ${hostname}
+hostname: ${q(hostname)}
 manage_etc_hosts: true
 preserve_hostname: false
 
@@ -3720,33 +3809,34 @@ function generateStaticPublicIPv4CloudInitConfig(vm) {
     }, 0);
   }
 
-  // Build users section - support root and custom users
+  // Build users section. Every user-controlled value is written as a JSON-quoted YAML string,
+  // so passwords with '#', ':', quotes or leading symbols reach chpasswd exactly as typed.
+  // The same chosen password is set for root and for the custom user, so either login works.
+  const q = (v) => JSON.stringify(String(v));
   let usersSection = `users:`;
   let chpasswdList = ``;
-  
+
   if (username.toLowerCase() === 'root') {
-    // If root user, configure root directly
     usersSection += `
   - name: root
     lock_passwd: false
     shell: /bin/bash
     homedir: /root`;
-    chpasswdList = `    - root:${password}`;
+    chpasswdList = `    - ${q('root:' + password)}`;
   } else {
-    // If custom user, create the user with sudo privileges
     usersSection += `
-  - name: ${username}
+  - name: ${q(username)}
     lock_passwd: false
     shell: /bin/bash
     sudo: ALL=(ALL) NOPASSWD:ALL
     homedir: /home/${username}
     createhome: true
-    
+
   - name: root
     lock_passwd: false
     shell: /bin/bash`;
-    chpasswdList = `    - ${username}:${password}
-    - root:password`;
+    chpasswdList = `    - ${q(username + ':' + password)}
+    - ${q('root:' + password)}`;
   }
 
   const config = `#cloud-config
@@ -3754,7 +3844,7 @@ function generateStaticPublicIPv4CloudInitConfig(vm) {
 # ================================================
 # SYSTEM CONFIG
 # ================================================
-hostname: ${hostname}
+hostname: ${q(hostname)}
 manage_etc_hosts: true
 preserve_hostname: false
 
@@ -4115,27 +4205,28 @@ async function startQemuVM(vm) {
       const pidFile = path.join(VM_DIR, `vm-${vm.vm_id}.pid`);
       const logFile = path.join(VM_DIR, `vm-${vm.vm_id}.log`);
       
-      // Validate CPU model - fallback to 'host' if model not available
-      let cpuToUse = 'host';
+      // Validate CPU model - fall back to the default model if it is not available
+      // -cpu needs the QEMU model name (CPU_MODELS[key].features), not the panel key.
+      let cpuToUse = CPU_MODELS[DEFAULT_CPU_MODEL].features;
       if (vm.custom_cpu_name) {
         // Custom CPU name + CPU model - use both for full flexibility
         // Format: -cpu <cpu_model>,model-id=Custom Name
         // Note: No quotes needed when using spawn() array format
-        let baseCpuModel = 'host';
-        if (vm.cpu_model && CPU_MODELS[vm.cpu_model]) {
-          baseCpuModel = vm.cpu_model;
+        let baseCpuModel = CPU_MODELS[DEFAULT_CPU_MODEL].features;
+        if (vm.cpu_model && availableCpuModels()[vm.cpu_model]) {
+          baseCpuModel = availableCpuModels()[vm.cpu_model].features;
         }
         cpuToUse = `${baseCpuModel},model-id=${vm.custom_cpu_name}`;
         console.log(`[VM-${vm.vm_id}] Using custom CPU: ${vm.custom_cpu_name} (base: ${baseCpuModel})`);
-      } else if (vm.cpu_model && CPU_MODELS[vm.cpu_model]) {
-        cpuToUse = vm.cpu_model;
-        console.log(`[VM-${vm.vm_id}] Using preset CPU: ${cpuToUse}`);
+      } else if (vm.cpu_model && availableCpuModels()[vm.cpu_model]) {
+        cpuToUse = availableCpuModels()[vm.cpu_model].features;
+        console.log(`[VM-${vm.vm_id}] Using preset CPU: ${vm.cpu_model} (-cpu ${cpuToUse})`);
       } else if (vm.cpu_model) {
-        console.warn(`[VM-${vm.vm_id}] CPU model '${vm.cpu_model}' not found, falling back to 'host'`);
-        cpuToUse = 'host';
+        console.warn(`[VM-${vm.vm_id}] CPU model '${vm.cpu_model}' not found, falling back to '${DEFAULT_CPU_MODEL}'`);
+        cpuToUse = CPU_MODELS[DEFAULT_CPU_MODEL].features;
         // Also update the database to fix the VM's CPU model
-        db.run(`UPDATE vms SET cpu_model = 'host' WHERE vm_id = ?`, [vm.vm_id], (err) => {
-          if (!err) console.log(`[VM-${vm.vm_id}] Updated database: cpu_model -> 'host'`);
+        db.run(`UPDATE vms SET cpu_model = ? WHERE vm_id = ?`, [DEFAULT_CPU_MODEL, vm.vm_id], (err) => {
+          if (!err) console.log(`[VM-${vm.vm_id}] Updated database: cpu_model -> ${DEFAULT_CPU_MODEL}`);
         });
       }
       
@@ -4144,9 +4235,10 @@ async function startQemuVM(vm) {
       // KVM is only used when the host really has it (see services/capabilities.js)
       const hostCaps = detectKvm();
       const kvmAccelEnabled = hostCaps.kvmAvailable && toggleFlag(vm.enable_kvm, 1) === 1;
-      let effectiveCpu = kvmAccelEnabled ? cpuToUse : (cpuToUse === 'host' ? 'qemu64' : cpuToUse);
+      // Without KVM (TCG software emulation) named server CPUs are not reliable, so use the generic qemu64 model
+      let effectiveCpu = kvmAccelEnabled ? cpuToUse : 'qemu64';
       // Nested KVM: lets the guest run its own KVM (+vmx on Intel, +svm on AMD)
-      if (kvmAccelEnabled && toggleFlag(vm.nested_kvm, 0) === 1 && hostCaps.nestedFlag) {
+      if (kvmAccelEnabled && hostCaps.nestedFlag) {
         effectiveCpu = `${effectiveCpu},${hostCaps.nestedFlag}`;
         console.log(`[VM-${vm.vm_id}] Nested KVM: enabled (${hostCaps.nestedFlag})`);
       }
@@ -4155,8 +4247,7 @@ async function startQemuVM(vm) {
         `-smp`, `cores=${vm.cpu_cores},threads=${vm.cpu_threads},sockets=${vm.cpu_sockets}`,
         `-cpu`, effectiveCpu,
         `-name`, `vm-${vm.vm_id}`,
-        `-machine`, `${vm.machine_type || 'pc'},accel=${kvmAccelEnabled ? 'kvm:tcg' : 'tcg'}`,
-        `-nographic`
+        `-machine`, `${vm.machine_type || 'pc'},accel=${kvmAccelEnabled ? 'kvm:tcg' : 'tcg'}`
       ];
       if (kvmAccelEnabled) {
         args.push(`-enable-kvm`);
@@ -4264,8 +4355,6 @@ async function startQemuVM(vm) {
         console.log(`[VM-${vm.vm_id}] MAC Address: ${macAddress}`);
       }
       
-      // Serial console with monitor support - stdin/stdout for direct terminal access
-      args.push(`-serial`, `mon:stdio`);
       
       // Extra arguments if provided
       if (vm.extra_args) {
@@ -4273,7 +4362,7 @@ async function startQemuVM(vm) {
       }
 
       console.log(`[VM-${vm.vm_id}] CPU Config: ${vm.cpu_sockets} sockets x ${vm.cpu_cores} cores x ${vm.cpu_threads} threads = ${vm.cpus} total`);
-      const cpuDisplayName = vm.custom_cpu_name || vm.cpu_model || 'host';
+      const cpuDisplayName = vm.custom_cpu_name || vm.cpu_model || DEFAULT_CPU_MODEL;
       console.log(`[VM-${vm.vm_id}] CPU Model: ${cpuDisplayName}`);
       console.log(`[VM-${vm.vm_id}] SMBIOS: ${vm.smbios_manufacturer} ${vm.smbios_product} (${vm.smbios_serial})`);
       console.log(`[VM-${vm.vm_id}] Network Mode: ${vm.network_type === 'nat' ? 'NAT (User Mode)' : 'Static Public IPv4'}`);
@@ -4283,68 +4372,15 @@ async function startQemuVM(vm) {
       console.log(`[VM-${vm.vm_id}] Template: ${vm.template_type} (${vm.os_type})`);
       console.log(`[VM-${vm.vm_id}] Starting: ${vm.vm_name}`);
       console.log(`[VM-${vm.vm_id}] Image File: ${vm.img_file}`);
-      console.log(`[VM-${vm.vm_id}] Console: Direct terminal access via -nographic -serial mon:stdio`);
+      console.log(`[VM-${vm.vm_id}] Console: serial socket (browser terminal)`);
 
-      // Use spawn for background process execution
-      const qemuProcess = spawn('qemu-system-x86_64', args, {
-        stdio: ['pipe', 'pipe', 'pipe'],  // stdin: pipe (for console input), stdout: pipe, stderr: pipe
-        detached: true,  // Let process run independently
-        shell: false
+      runtime.launch(vm.vm_id, args).then((pid) => {
+        console.log(`[VM-${vm.vm_id}] ✓ Started with PID: ${pid}`);
+        resolve({ pid, success: true });
+      }).catch((error) => {
+        logError('QEMU', vm.vm_id, 'startup', error);
+        reject(error);
       });
-      
-      // Store stdin for console input
-      qemuStdins.set(vm.vm_id, qemuProcess.stdin);
-      qemuProcess.stdin.on('error', (err) => {
-        console.error(`[VM-${vm.vm_id}] stdin error:`, err.message);
-      });
-
-      const pid = qemuProcess.pid;
-      
-      // Save PID to file for later management
-      fs.writeFileSync(pidFile, pid.toString());
-      console.log(`[VM-${vm.vm_id}] ✓ Started with PID: ${pid}`);
-      
-      // Capture QEMU output to log file with rotation
-      const rotateLogIfNeeded = () => {
-        if (fs.existsSync(logFile)) {
-          const stat = fs.statSync(logFile);
-          if (stat.size > 10 * 1024 * 1024) {  // 10MB
-            const backupFile = `${logFile}.${Date.now()}.bak`;
-            fs.renameSync(logFile, backupFile);
-            console.log(`[VM-${vm.vm_id}] Log rotated: ${backupFile}`);
-          }
-        }
-      };
-      
-      if (qemuProcess.stdout) {
-        qemuProcess.stdout.on('data', (data) => {
-          rotateLogIfNeeded();
-          fs.appendFileSync(logFile, data.toString());
-        });
-      }
-      
-      if (qemuProcess.stderr) {
-        qemuProcess.stderr.on('data', (data) => {
-          rotateLogIfNeeded();
-          fs.appendFileSync(logFile, data.toString());
-        });
-      }
-      
-      // Handle process exit
-      qemuProcess.on('exit', (code, signal) => {
-        console.log(`[VM-${vm.vm_id}] Process exited with code ${code}, signal ${signal}`);
-        qemuStdins.delete(vm.vm_id);
-        try {
-          fs.unlinkSync(pidFile);
-        } catch (e) {}
-      });
-      
-      qemuProcess.on('error', (err) => {
-        console.error(`[VM-${vm.vm_id}] Process error: ${err.message}`);
-        logError('QEMU', vm.vm_id, 'startup', err);
-      });
-
-      resolve({ pid, success: true });
     } catch (error) {
       logError('QEMU', vm.vm_id, 'initialization', error);
       reject(new Error(`Failed to start VM: ${error.message}`));
@@ -4373,8 +4409,9 @@ app.get('/api/settings', (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     
     const settings = {
-      panel_version: 'V2.0',
-      panel_title: 'StarCloud Panel V2.0',
+      panel_version: 'V1.0',
+      show_panel_version: '0',
+      panel_title: 'StarCloud Panel',
       panel_description: 'Professional VM Management Panel',
       site_icon_url: '/images/logo.png',
       session_timeout: 24,
@@ -4622,129 +4659,9 @@ app.put('/api/user/password', checkAuth, (req, res) => {
   });
 });
 
-// ============= SSH CONNECTION API =============
-
-// SSH Connect endpoint - Test SSH connection
-app.post('/api/ssh/connect', checkAuth, (req, res) => {
-  const { vmId, host, port, username } = req.body;
-  const userId = req.session.userId;
-  
-  if (!vmId || !host || !port || !username) {
-    return res.status(400).json({ error: 'Missing connection parameters' });
-  }
-  
-  // Verify VM ownership
-  db.get(`SELECT * FROM vms WHERE vm_id = ? AND owner_id = ?`, [vmId, userId], (err, vm) => {
-    if (err || !vm) {
-      return res.status(403).json({ error: 'VM not found or access denied' });
-    }
-    
-    // Generate session ID
-    const sessionId = require('crypto').randomBytes(16).toString('hex');
-    
-    // Store connection info in memory
-    global.sshSessions = global.sshSessions || {};
-    global.sshSessions[sessionId] = {
-      vmId: vmId,
-      userId: userId,
-      host: host,
-      port: parseInt(port),
-      username: username,
-      password: null,
-      createdAt: Date.now(),
-      client: null
-    };
-    
-    // Try to create SSH connection to verify it works
-    const conn = new Client();
-    const connConfig = {
-      host: host,
-      port: parseInt(port),
-      username: username,
-      password: '',
-      tryKeyboard: true,
-      readyTimeout: 5000,
-      strict: false
-    };
-    
-    conn.on('ready', () => {
-      console.log(`[SSH] Connected to ${host}:${port}`);
-      global.sshSessions[sessionId].client = conn;
-      res.json({
-        success: true,
-        sessionId: sessionId,
-        message: 'SSH session created and connected'
-      });
-    });
-    
-    conn.on('error', (err) => {
-      console.log(`[SSH] Connection error: ${err.message}`);
-      delete global.sshSessions[sessionId];
-      res.status(500).json({ 
-        error: 'SSH connection failed: ' + err.message 
-      });
-    });
-    
-    conn.connect(connConfig);
-  });
-});
-
-// SSH Command endpoint - Execute command on VM
-app.post('/api/ssh/command', checkAuth, (req, res) => {
-  const { vmId, command } = req.body;
-  const userId = req.session.userId;
-  
-  if (!vmId || !command) {
-    return res.status(400).json({ error: 'Missing parameters' });
-  }
-  
-  // Find an active session for this VM
-  let session = null;
-  if (global.sshSessions) {
-    for (const [id, s] of Object.entries(global.sshSessions)) {
-      if (s.vmId === parseInt(vmId) && s.userId === userId && s.client) {
-        session = s;
-        break;
-      }
-    }
-  }
-  
-  if (!session || !session.client) {
-    return res.status(404).json({ error: 'SSH session not found. Connect first.' });
-  }
-  
-  // Execute command via SSH
-  session.client.exec(command, (err, stream) => {
-    if (err) {
-      return res.status(500).json({ 
-        error: 'Command execution failed: ' + err.message 
-      });
-    }
-    
-    let output = '';
-    let errorOutput = '';
-    
-    stream.on('close', () => {
-      res.json({
-        success: true,
-        output: output || errorOutput || '(no output)',
-        error: errorOutput || null
-      });
-    });
-    
-    stream.on('data', (data) => {
-      output += data.toString();
-    });
-    
-    stream.stderr.on('data', (data) => {
-      errorOutput += data.toString();
-    });
-  });
-});
-
 // ============= 404 HANDLER =============
 // Feature modules
-require('./routes/files')(app, { db });
+require('./routes/files')(app, { db, runtime });
 require('./routes/ops')(app, {
   db, checkAdmin,
   stopVmProcess, startVm: startVmForOps,
@@ -4759,300 +4676,23 @@ app.use((req, res) => {
 });
 
 // START SERVER
+// Make the DB status match real QEMU processes (panel may have restarted while VMs kept running)
+function reconcileVmStatuses() {
+  db.all(`SELECT vm_id, status FROM vms WHERE status IN ('running','stopped')`, (err, rows) => {
+    if (err || !rows) return;
+    rows.forEach((r) => {
+      const want = runtime.isRunning(r.vm_id) ? 'running' : 'stopped';
+      if (want !== r.status) db.run(`UPDATE vms SET status = ? WHERE vm_id = ?`, [want, r.vm_id]);
+    });
+  });
+}
 initializeDatabase();
 initAuditTable(db).catch(e => console.error('[Audit] table init failed:', e.message));
 loadMaintenanceState();
+reconcileVmStatuses();
 
-// WebSocket handler for VM console
-const vmConsoles = new Map();
-const sshSessions = new Map();
-
-wss.on('connection', (ws, req) => {
-  const url = req.url;
-  console.log(`[WebSocket] New connection: ${url}`);
-  
-  // SSH Terminal WebSocket - Path: /ssh-terminal
-  if (url.startsWith('/ssh-terminal')) {
-    console.log(`[SSH-Terminal] New SSH terminal connection`);
-    
-    ws.on('message', async (message) => {
-      try {
-        const msg = JSON.parse(message.toString());
-        
-        if (msg.type === 'connect') {
-          const { vmId, host, port, username, password } = msg;
-          
-          console.log(`[SSH-${vmId}] Initiating SSH connection to ${username}@${host}:${port}`);
-          
-          // Verify VM ownership
-          db.get(`SELECT owner_id FROM vms WHERE vm_id = ?`, [vmId], (err, vm) => {
-            if (err || !vm) {
-              ws.send(JSON.stringify({ type: 'error', message: 'VM not found' }));
-              return;
-            }
-            
-            // Create SSH client
-            const sshClient = new Client();
-            
-            sshClient.on('ready', () => {
-              console.log(`[SSH-${vmId}] SSH client ready, opening shell`);
-              
-              sshClient.shell({ term: 'xterm-256color' }, (err, stream) => {
-                if (err) {
-                  console.error(`[SSH-${vmId}] Shell error:`, err.message);
-                  ws.send(JSON.stringify({ type: 'error', message: 'Failed to open shell' }));
-                  sshClient.end();
-                  return;
-                }
-                
-                console.log(`[SSH-${vmId}] Shell opened successfully`);
-                ws.send(JSON.stringify({ type: 'connected' }));
-                
-                // Store session
-                const sessionId = `${vmId}-${Date.now()}`;
-                sshSessions.set(sessionId, { stream, client: sshClient, vmId });
-                
-                // Send raw data from SSH to WebSocket (binary, not JSON)
-                // This preserves ANSI escape codes for proper terminal rendering
-                stream.on('data', (data) => {
-                  if (ws.readyState === WebSocket.OPEN) {
-                    // Send raw binary data directly to xterm.js
-                    ws.send(data, { binary: true });
-                  }
-                });
-                
-                stream.on('close', () => {
-                  console.log(`[SSH-${vmId}] Shell closed`);
-                  sshClient.end();
-                  sshSessions.delete(sessionId);
-                  if (ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: 'closed' }));
-                  }
-                });
-                
-                stream.on('error', (err) => {
-                  console.error(`[SSH-${vmId}] Stream error:`, err.message);
-                  sshSessions.delete(sessionId);
-                  if (ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ type: 'error', message: err.message }));
-                  }
-                });
-                
-                // Store current session for this WebSocket
-                ws.sshSessionId = sessionId;
-              });
-            });
-            
-            sshClient.on('error', (err) => {
-              console.error(`[SSH-${vmId}] Connection error:`, err.message);
-              ws.send(JSON.stringify({ type: 'error', message: `SSH Connection failed: ${err.message}` }));
-              if (ws.readyState === WebSocket.OPEN) {
-                ws.close();
-              }
-            });
-            
-            sshClient.on('close', () => {
-              console.log(`[SSH-${vmId}] SSH connection closed`);
-              if (ws.readyState === WebSocket.OPEN) {
-                ws.close();
-              }
-            });
-            
-            // Connect to SSH server
-            sshClient.connect({
-              host: host,
-              port: parseInt(port),
-              username: username,
-              password: password,
-              readyTimeout: 30000,
-              algorithms: {
-                serverHostKey: ['ssh-rsa', 'ecdsa-sha2-nistp256', 'ssh-ed25519']
-              }
-            });
-          });
-        } else if (msg.type === 'input' && ws.sshSessionId) {
-          // Send user input to SSH shell (handle binary input)
-          const session = sshSessions.get(ws.sshSessionId);
-          if (session && session.stream) {
-            session.stream.write(msg.data);
-          }
-        }
-      } catch (err) {
-        console.error('[SSH-Terminal] Message error:', err.message);
-        ws.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }));
-      }
-    });
-    
-    ws.on('close', () => {
-      console.log(`[SSH-Terminal] WebSocket closed`);
-      if (ws.sshSessionId) {
-        const session = sshSessions.get(ws.sshSessionId);
-        if (session) {
-          try {
-            session.stream.end();
-            session.client.end();
-          } catch (e) {
-            console.error('[SSH-Terminal] Error closing session:', e.message);
-          }
-          sshSessions.delete(ws.sshSessionId);
-        }
-      }
-    });
-    
-    ws.on('error', (err) => {
-      console.error(`[SSH-Terminal] WebSocket error:`, err.message);
-    });
-    
-    return;
-  }
-  
-  // Extract vmId from URL path like /console/1 or just /1
-  let vmId = null;
-  if (url.includes('/console/')) {
-    vmId = url.split('/console/')[1].split('?')[0];
-  } else {
-    vmId = url.split('/').pop().split('?')[0];
-  }
-  
-  if (!vmId || vmId === '' || isNaN(vmId)) {
-    console.log(`[WebSocket] Invalid vmId: "${vmId}"`);
-    ws.send(JSON.stringify({ type: 'output', data: '\x1b[31m✗ Invalid VM ID\x1b[0m\r\n' }));
-    ws.close();
-    return;
-  }
-
-  console.log(`[Console-${vmId}] Client connected`);
-  
-  const logFile = path.join(VM_DIR, `vm-${vmId}.log`);
-  let lastSize = 0;
-  let watchInterval = null;
-
-  // Send initial content
-  db.get(`SELECT * FROM vms WHERE vm_id = ?`, [vmId], (err, vm) => {
-    if (err) {
-      console.error(`[Console-${vmId}] DB error:`, err.message);
-      ws.send(JSON.stringify({ type: 'output', data: `\x1b[31m✗ Database error\x1b[0m\r\n` }));
-      return;
-    }
-
-    if (!vm) {
-      console.log(`[Console-${vmId}] VM not found`);
-      ws.send(JSON.stringify({ type: 'output', data: `\x1b[31m✗ VM ${vmId} not found\x1b[0m\r\n` }));
-      return;
-    }
-
-    let intro = '';
-    if (vm.status === 'running') {
-      intro = `\x1b[32m✓ VM ${vmId} is RUNNING\x1b[0m\r\n`;
-    } else {
-      intro = `\x1b[33m⚠ VM ${vmId} is ${vm.status.toUpperCase()}\x1b[0m\r\n`;
-    }
-
-    // Read and send existing log
-    if (fs.existsSync(logFile)) {
-      try {
-        const content = fs.readFileSync(logFile, 'utf8');
-        lastSize = content.length;
-        ws.send(JSON.stringify({ 
-          type: 'output', 
-          data: intro + content 
-        }));
-        console.log(`[Console-${vmId}] Sent ${content.length} bytes of log`);
-      } catch (e) {
-        console.error(`[Console-${vmId}] Read error:`, e.message);
-        ws.send(JSON.stringify({ type: 'output', data: intro + '\x1b[33m(Log file error)\x1b[0m\r\n' }));
-      }
-    } else {
-      ws.send(JSON.stringify({ type: 'output', data: intro + '\x1b[36m[Console ready]\x1b[0m\r\n' }));
-    }
-
-    // Start watching for new output (50ms interval for near real-time)
-    watchInterval = setInterval(() => {
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        if (watchInterval) clearInterval(watchInterval);
-        return;
-      }
-
-      try {
-        if (fs.existsSync(logFile)) {
-          const stat = fs.statSync(logFile);
-          if (stat.size > lastSize) {
-            const fd = fs.openSync(logFile, 'r');
-            const buffer = Buffer.alloc(stat.size - lastSize);
-            fs.readSync(fd, buffer, 0, stat.size - lastSize, lastSize);
-            fs.closeSync(fd);
-            
-            lastSize = stat.size;
-            const newData = buffer.toString('utf8');
-            
-            // Send to all clients for this VM
-            if (vmConsoles.has(vmId)) {
-              vmConsoles.get(vmId).forEach(client => {
-                if (client.readyState === WebSocket.OPEN) {
-                  client.send(JSON.stringify({ type: 'output', data: newData }));
-                }
-              });
-            }
-          }
-        }
-      } catch (e) {
-        console.error(`[Console-${vmId}] Watch error:`, e.message);
-      }
-    }, 50);
-  });
-
-  // Store client
-  if (!vmConsoles.has(vmId)) {
-    vmConsoles.set(vmId, []);
-  }
-  vmConsoles.get(vmId).push(ws);
-
-  // Handle input from terminal
-  ws.on('message', (message) => {
-    try {
-      const msg = JSON.parse(message);
-      if (msg.type === 'input' && msg.data) {
-        // Append to log file
-        fs.appendFileSync(logFile, msg.data);
-        
-        // Broadcast to other clients
-        if (vmConsoles.has(vmId)) {
-          vmConsoles.get(vmId).forEach(client => {
-            if (client !== ws && client.readyState === WebSocket.OPEN) {
-              client.send(JSON.stringify({ type: 'output', data: msg.data }));
-            }
-          });
-        }
-        
-        console.log(`[Console-${vmId}] Input: ${msg.data.length} bytes`);
-      }
-    } catch (e) {
-      console.error(`[Console-${vmId}] Message parse error:`, e.message);
-    }
-  });
-
-  // Handle disconnect
-  ws.on('close', () => {
-    console.log(`[Console-${vmId}] Client disconnected`);
-    
-    if (vmConsoles.has(vmId)) {
-      const clients = vmConsoles.get(vmId);
-      const idx = clients.indexOf(ws);
-      if (idx > -1) {
-        clients.splice(idx, 1);
-      }
-      
-      // Clean up interval if no more clients
-      if (clients.length === 0) {
-        vmConsoles.delete(vmId);
-      }
-    }
-  });
-
-  ws.on('error', (error) => {
-    console.error(`[Console-${vmId}] WebSocket error:`, error.message);
-  });
-});
+// Browser terminals (serial console + SSH) over WebSocket, with session + owner checks
+attachTerminals({ server, sessionMiddleware, db, runtime });
 
 server.listen(PORT, async () => {
   try {
@@ -5068,15 +4708,15 @@ server.listen(PORT, async () => {
     if (!err && vms && vms.length > 0) {
       console.log(`[Startup] Found ${vms.length} VMs with invalid CPU models, fixing...`);
       vms.forEach(vm => {
-        console.warn(`[Startup] VM ${vm.vm_id}: CPU model '${vm.cpu_model}' is not available, resetting to 'host'`);
-        db.run(`UPDATE vms SET cpu_model = 'host' WHERE vm_id = ?`, [vm.vm_id]);
+        console.warn(`[Startup] VM ${vm.vm_id}: CPU model '${vm.cpu_model}' is not available, resetting to '${DEFAULT_CPU_MODEL}'`);
+        db.run(`UPDATE vms SET cpu_model = ? WHERE vm_id = ?`, [DEFAULT_CPU_MODEL, vm.vm_id]);
       });
     }
   });
 
   console.log(`
 ╔════════════════════════════════════════════════════════════╗
-║             StarCloud VM MANAGEMENT PANEL V2.0            ║
+║                  StarCloud Panel                          ║
 ║          Advanced VM Management & Control Panel            ║
 ╚════════════════════════════════════════════════════════════╝
 

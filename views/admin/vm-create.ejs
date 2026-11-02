@@ -198,13 +198,13 @@
                 <div class="form-group">
                   <label class="form-label">Password <span class="required">*</span></label>
                   <div style="position: relative;">
-                    <input type="password" class="form-control" id="custom_password" name="custom_password" placeholder="Minimum 8 characters (required)" minlength="8" required style="padding-right: 40px;">
+                    <input type="password" class="form-control" id="custom_password" name="custom_password" placeholder="Enter a VM password (required)" required style="padding-right: 40px;">
                     <button type="button" onclick="togglePw('custom_password', this)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; display:inline-flex;">
                       <svg width="16" height="16"><use href="#i-eye"/></svg>
                     </button>
                   </div>
                   <div class="form-hint" style="color: var(--text-muted); font-size: 12px; margin-top: 6px;">
-                    Required. Minimum 8 characters. Used for the VM's cloud-init login.
+                    Required. Used for the VM's login and SSH access.
                   </div>
                 </div>
               </div>
@@ -290,10 +290,12 @@
 
               <div class="form-group" style="margin-bottom: 0;">
                 <label class="form-label">CPU Model</label>
+                <input type="search" class="form-control" id="cpu_search" placeholder="Search CPU (e.g. Xeon, EPYC, Milan)" oninput="filterCpuOptions()" autocomplete="off" style="margin-bottom: 8px;">
                 <select class="form-control" name="cpu_model" id="cpu_model">
                   <!-- Loaded dynamically -->
                 </select>
-                <div class="form-hint">Use 'host' for best performance on physical hardware</div>
+                <div class="form-hint" id="cpuSearchCount"></div>
+                <div class="form-hint">Pick the CPU family your customers expect. Intel Xeon and AMD EPYC models are offered.</div>
               </div>
 
               <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-subtle);">
@@ -649,17 +651,8 @@
                     <input type="checkbox" class="toggle-input" name="enable_kvm" id="enable_kvm" value="1" checked>
                     <div class="toggle-track"><div class="toggle-thumb"></div></div>
                     <div style="flex: 1;">
-                      <div class="toggle-label" style="font-size: 13px; color: var(--text-primary);">KVM On / Off</div>
-                      <div id="kvmHint" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">KVM = hardware virtualization for fast VMs. Checking this host...</div>
-                    </div>
-                  </label>
-
-                  <label class="toggle-switch">
-                    <input type="checkbox" class="toggle-input" name="nested_kvm" id="enable_nested" value="1">
-                    <div class="toggle-track"><div class="toggle-thumb"></div></div>
-                    <div style="flex: 1;">
-                      <div class="toggle-label" style="font-size: 13px; color: var(--text-primary);">Nested KVM On / Off</div>
-                      <div id="nestedHint" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Lets software inside this VM run its own VMs. Needs host KVM and KVM On.</div>
+                      <div class="toggle-label" style="font-size: 13px; color: var(--text-primary);">KVM On / Off <span id="kvmStateText" style="font-weight: 700; margin-left: 6px;">On</span></div>
+                      <div id="kvmHint" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Hardware virtualization for fast VMs. ON also lets this VM run its own VMs (nested). Checking this host...</div>
                     </div>
                   </label>
                   <div id="kvmHostBanner" style="display: none; font-size: 12px; padding: 10px; border-radius: 8px; background: rgba(234,179,8,.12); border: 1px solid rgba(234,179,8,.4);"></div>
@@ -784,8 +777,7 @@ async function loadTemplates() {
     if (!grid) return;
     
     grid.innerHTML = Object.entries(osTemplates).map(([key, tmpl]) => {
-      const iconUrl = tmpl.icon && tmpl.icon.startsWith('http') ? tmpl.icon : 'https://i.imgur.com/wu0Ob6B.png';
-      const iconHtml = `<img src="${iconUrl}" style="width: 48px; height: 48px; object-fit: contain; border-radius: 8px; padding:4px; background:rgba(99,102,241,0.05);" onerror="this.src='https://i.imgur.com/wu0Ob6B.png';" alt="${tmpl.name}">`;
+      const iconHtml = `<img src="${osIconSrc(tmpl.icon)}" alt="" style="width: 48px; height: 48px; object-fit: contain; border-radius: 8px;">`;
       return `
       <label class="template-card">
         <input type="radio" name="_template" value="${key}" onchange="selectTemplate('${key}')">
@@ -835,17 +827,31 @@ function handleIsoSelect() {
   updatePreview();
 }
 
+let cpuModelCache = {};
 async function loadCPUModels() {
   try {
     const res = await fetch('/api/cpu-models');
     if (!res.ok) return;
-    const models = await res.json();
-    const sel = document.getElementById('cpu_model');
-    if (!sel) return;
-    sel.innerHTML = Object.entries(models).map(([key, m]) =>
-      `<option value="${key}" ${key === 'host' ? 'selected' : ''}>${m.name} — ${m.description}</option>`
-    ).join('');
+    cpuModelCache = await res.json();
+    filterCpuOptions();
   } catch(e) {}
+}
+// Search box: filters the CPU list by name, family, description or QEMU model name.
+function filterCpuOptions() {
+  const sel = document.getElementById('cpu_model');
+  if (!sel) return;
+  const q = (document.getElementById('cpu_search')?.value || '').trim().toLowerCase();
+  const previous = sel.value || 'xeon-cascadelake';
+  const all = Object.entries(cpuModelCache);
+  const matches = all.filter(([key, m]) => !q || `${key} ${m.name} ${m.description} ${m.features}`.toLowerCase().includes(q));
+  const count = document.getElementById('cpuSearchCount');
+  if (!matches.length) {
+    // Keep the current options so a search with no hits never clears the selection.
+    if (count) count.textContent = 'No CPU model matches this search';
+    return;
+  }
+  sel.innerHTML = matches.map(([key, m]) => `<option value="${key}" ${key === previous ? 'selected' : ''}>${m.name} — ${m.description}</option>`).join('');
+  if (count) count.textContent = `Showing ${matches.length} of ${all.length} CPU models`;
 }
 
 async function loadNetworkTypes() {
@@ -1107,7 +1113,7 @@ function buildReview() {
           <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color:#EC4899; margin-bottom: 10px; display:inline-flex; align-items:center; gap:6px;">${svg('i-cpu', 12)} Hardware</div>
           ${reviewRow('vCPUs', data.custom_cpus + ' vCPUs')}
           ${reviewRow('CPU Layout', data.cpu_sockets + 'S × ' + data.cpu_cores + 'C × ' + data.cpu_threads + 'T')}
-          ${reviewRow('CPU Model', data.cpu_model || 'host')}
+          ${reviewRow('CPU Model', data.cpu_model || 'xeon-cascadelake')}
           ${reviewRow('Custom CPU', data.custom_cpu_name ? '<span style="color:#6366F1; font-weight:600;">' + data.custom_cpu_name + '</span>' : 'Default (host)')}
           ${reviewRow('Memory', data.custom_memory + ' MB')}
           ${reviewRow('Disk Size', data.disk_size)}
@@ -1124,7 +1130,7 @@ function buildReview() {
           ${reviewRow('Manufacturer', data.smbios_manufacturer)}
           ${reviewRow('Product', data.smbios_product)}
           ${reviewRow('ACPI', data.enable_acpi ? 'Enabled' : 'Disabled')}
-          ${reviewRow('Nested KVM', data.nested_kvm ? 'On' : 'Off')}
+          ${reviewRow('KVM On / Off', data.enable_kvm ? 'On' : 'Off')}
         </div>
       </div>`;
   }
@@ -1146,8 +1152,8 @@ function getOwnerName(ownerId) {
 
 // KVM lock: host without KVM keeps the KVM options OFF and warns on each click (see /js/kvm-lock.js)
 KvmLock.init({
-  kvmId: 'enable_kvm', nestedId: 'enable_nested',
-  kvmHintId: 'kvmHint', nestedHintId: 'nestedHint', bannerId: 'kvmHostBanner'
+  kvmId: 'enable_kvm', stateId: 'kvmStateText',
+  kvmHintId: 'kvmHint', bannerId: 'kvmHostBanner'
 });
 
 function collectFormData() {
@@ -1160,11 +1166,10 @@ function collectFormData() {
   if (osTemplateInput && osTemplateInput.value) data.os_template = osTemplateInput.value;
   
   data.enable_kvm = document.getElementById('enable_kvm')?.checked ? 1 : 0;
-  data.nested_kvm = document.getElementById('enable_nested')?.checked ? 1 : 0;
   data.enable_acpi = document.getElementById('enable_acpi')?.checked ? 1 : 0;
   
-  if (!data.custom_password || String(data.custom_password).length < 8) {
-    return { __error: 'VM password is required and must be at least 8 characters' };
+  if (!data.custom_password) {
+    return { __error: 'VM password is required' };
   }
   
   const customCPUCheckbox = document.getElementById('enable_custom_cpu_name');
@@ -1276,7 +1281,7 @@ function updatePreview() {
   const osLogoBox = document.getElementById('osLogoBox');
   if (osLogoBox && template && osTemplates[template]) {
     const tmpl = osTemplates[template];
-    const iconUrl = tmpl.icon && tmpl.icon.startsWith('http') ? tmpl.icon : 'https://i.imgur.com/wu0Ob6B.png';
+    const iconUrl = osIconSrc(tmpl.icon);
     osLogoBox.innerHTML = `<img src="${iconUrl}" style="width: 48px; height: 48px; object-fit: contain; border-radius: 8px; padding: 4px; background: white;" onerror="this.src='https://i.imgur.com/wu0Ob6B.png';" alt="${tmpl.name}">`;
   } else if (osLogoBox) {
     osLogoBox.innerHTML = '<svg width="30" height="30" style="color: #6366F1;"><use href="#i-server"/></svg>';

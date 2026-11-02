@@ -286,6 +286,6 @@ Columns: **Feature** · **Source (pack / file)** · **HKVM status** · **HKVM me
 4. **Day 4:** boot log, expiry/renew/suspend, emergency ops, public IP pool.
 5. **Day 5:** coupons, giveaway codes, plans, orders (Discord ticket ID). (Custom price per order hata diya gaya hai.)
 6. **Day 6:** webhooks, security scan, sshx/tmate share, branding, i18n en/hi, premium motion/wallpaper sliders.
-7. **Day 7:** tests, CI, install.sh, docs, QA on KVM server.
+7. **Day 7:** tests, CI, installer.sh, docs, QA on KVM server.
 
 LATER: multi-node, migration, AI, Windows RDP, XRDP Cloud PC, sub-users, impersonation, referral.

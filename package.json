@@ -1,7 +1,7 @@
 {
   "name": "starcloud-panel-free",
   "version": "2.0.0-free",
-  "description": "StarCloud V2 Panel — Free Edition (no license required)",
+  "description": "StarCloud Panel: VM management panel (free edition, no license required)",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
