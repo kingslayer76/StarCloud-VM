@@ -3501,3 +3501,37 @@ select {
     will-change: auto;
   }
 }
+/* ============= PHONE FIXES (admin) =============
+   Inline 2-column grids (e.g. Create VM wizard) collapse to one column; the header keeps the
+   breadcrumb and user menu, the global search and fullscreen button move out of the way. */
+@media (max-width: 768px) {
+  .admin-content div[style*="grid-template-columns: 1fr 360px"],
+  .admin-content div[style*="grid-template-columns: 1fr 380px"],
+  .admin-content div[style*="grid-template-columns: 1fr 340px"],
+  .admin-content div[style*="grid-template-columns: 1fr 1fr"],
+  .admin-content div[style*="grid-template-columns: 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+  .admin-content div[style*="grid-template-columns: repeat(4, 1fr)"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .admin-content .radio-cards,
+  .admin-content .network-type-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .admin-header .header-search {
+    display: none;
+  }
+  .admin-header .header-right > .header-btn {
+    display: none;
+  }
+  .admin-header .breadcrumb {
+    min-width: 0;
+    overflow: hidden;
+  }
+  .admin-header .breadcrumb-item {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
