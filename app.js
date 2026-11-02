@@ -1120,6 +1120,26 @@ app.post('/api/unlink-discord-account', checkAuth, (req, res) => {
   });
 });
 
+// Host status for the admin dashboard card (CPU load and memory use).
+// CPU is a load-average estimate: 1-minute load divided by core count.
+app.get('/api/system/status', checkAuth, checkAdmin, (req, res) => {
+  try {
+    const cores = Math.max(1, os.cpus().length);
+    const load = os.loadavg()[0];
+    const cpuPct = Math.min(100, Math.round((load / cores) * 100));
+    const total = os.totalmem();
+    const used = total - os.freemem();
+    const memPct = total > 0 ? Math.round((used / total) * 100) : 0;
+    const gb = (b) => (b / 1073741824).toFixed(1);
+    res.json({
+      cpu: cpuPct + '% (' + cores + ' cores)',
+      memory: memPct + '% (' + gb(used) + ' / ' + gb(total) + ' GB)'
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not read host status' });
+  }
+});
+
 // Get Discord account info
 app.get('/api/discord-account-info', checkAuth, (req, res) => {
   const userId = req.session.userId;

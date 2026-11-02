@@ -900,6 +900,7 @@ body {
   padding-top: var(--header-height);
   min-height: 100vh;
   flex: 1;
+  min-width: 0; /* stop wide tables from pushing the main area past the viewport */
   background: transparent;
   position: relative;
   transition: margin-left var(--transition-normal);
@@ -909,6 +910,8 @@ body {
   padding: 26px 28px;
   animation: fadeIn 0.4s var(--ease-out);
   max-width: 1600px;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 

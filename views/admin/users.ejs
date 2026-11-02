@@ -190,6 +190,7 @@ function renderUsers() {
   }
 
   document.getElementById('usersTable').innerHTML = `
+    <div style="overflow-x: auto; -webkit-overflow-scrolling: touch;">
     <table class="table">
       <thead>
         <tr>
@@ -241,7 +242,8 @@ function renderUsers() {
           </tr>
         `).join('')}
       </tbody>
-    </table>`;
+    </table>
+    </div>`;
   
   // Load Discord avatars for all users
   setTimeout(() => {
