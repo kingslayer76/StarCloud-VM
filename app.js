@@ -4859,6 +4859,7 @@ app.put('/api/user/password', checkAuth, (req, res) => {
 // ============= 404 HANDLER =============
 // Feature modules
 require('./routes/files')(app, { db, runtime });
+require('./routes/monitoring')(app, { db, runtime });
 require('./routes/ops')(app, {
   db, checkAdmin,
   stopVmProcess, startVm: startVmForOps,

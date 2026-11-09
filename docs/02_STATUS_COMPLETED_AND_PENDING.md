@@ -52,13 +52,15 @@ Ye file user ke "sab features ki list" request ke liye hai. Detail `docs/01_FEAT
 ## C. Pending: abhi nahi bana
 
 ### Batch 1 (baki)
-- Per-VM security scan (miner, failed logins, cron)
-- Discord webhook field (settings mein)
-- CPU model select ki HKVM-style animation/tilt
-- Installer real test (Debian + systemd)
-- Real QEMU boot test
-- `genisoimage`/cloud-localds check installer mein (sandbox mein missing tha)
-- Edit par seed fail hone par warning (edit ab bhi 200 deta hai)
+- Per-VM security scan (miner, failed logins, cron) — pending
+- CPU model select ki HKVM-style animation/tilt — pending (cosmetic)
+- Installer real test (Debian + systemd) — pending, real VPS par karna hai
+- Real QEMU boot test — pending, KVM host chahiye
+- Done: Discord webhook field (Settings > Discord); installer tool check (`qemu-img`, `genisoimage`, `cloud-localds`); edit par seed fail hone par warning (edit 200 deta hai, warning ke saath)
+
+### Batch 2 (monitoring) — partial
+- Done: `GET /health` (public, sirf status + DB + uptime); `GET /metrics` (Prometheus text; admin session ya `METRICS_TOKEN` Bearer); boot log (`/vm/:id/bootlog`, `/admin/vm/:id/bootlog`, API `/api/vms/:id/bootlog`, 5 s refresh, owner/admin only). Test: `routes/monitoring.js`.
+- Pending: expiry/renew/suspend, bulk power UI, coupons, giveaway, single IPv4 + port block, IP pool, snapshots, backup/restore, status page, referral, flash sale, watchdog, host alerts.
 
 ### LXD (VPS ke andar LXD)
 - Sold product hamesha KVM VM rahega (HARD RULE). LXD guest ke andar chalega.
@@ -68,9 +70,6 @@ Ye file user ke "sab features ki list" request ke liye hai. Detail `docs/01_FEAT
 ### Gentoo / other OS
 - Gentoo: admin custom URL se add kar sakta hai, par official image UEFI hai. UEFI boot support abhi nahi hai.
 - Slackware: skip (official cloud image nahi).
-
-### Batch 2 (VM lifecycle, monitoring, promo) — sab pending
-Boot log viewer, expiry/renew/suspend, bulk power UI, coupons, giveaway, single IPv4 + port block, IP pool, snapshots, backup/restore, status page, referral, flash sale, watchdog, host alerts, `/health` + metrics.
 
 ### Batch 3 (auth, accounts, guest agent) — sab pending
 2FA, login lockout, password reset, email verify, sessions, owner tier, API keys, CSRF/validation, captcha, sub-users, impersonation, guest agent, file manager advanced (zip, editor, 200 MB chunked upload, Git), SFTP access, sshx link, noVNC.
