@@ -13,17 +13,17 @@ loc(){ curl -s -o /dev/null -w '%{redirect_url}' -b "$1" "$B$2"; }
 R=$(curl -s -c $ADM -H 'Content-Type: application/json' -d "{\"username\":\"admin\",\"password\":\"${ADMIN_PW:-admin}\"}" $B/api/login)
 ok "$(echo "$R" | grep -c '"role":"admin"')" "admin login returns role admin" "$R"
 ok "$([ "$(loc $ADM /dashboard)" = "$B/admin/dashboard" ] && echo 1)" "admin /dashboard -> /admin/dashboard" "$(loc $ADM /dashboard)"
-ok "$([ "$(loc $ADM /vms)" = "$B/admin/vms" ] && echo 1)" "admin /vms -> /admin/vms" "$(loc $ADM /vms)"
-ok "$([ "$(loc $ADM /profile)" = "$B/admin/settings#security" ] && echo 1)" "admin /profile -> settings security" "$(loc $ADM /profile)"
+ok "$([ "$(code $ADM /vms)" = "200" ] && echo 1)" "admin /vms page renders (My Virtual Machines)" "$(code $ADM /vms)"
+ok "$([ "$(code $ADM /profile)" = "200" ] && echo 1)" "admin /profile page renders (My Profile)" "$(code $ADM /profile)"
 ok "$([ "$(loc $ADM /vm/1)" = "$B/admin/vm/1" ] && echo 1)" "admin /vm/1 -> /admin/vm/1" "$(loc $ADM /vm/1)"
 ok "$([ "$(code $ADM /admin/dashboard)" = "200" ] && echo 1)" "admin dashboard 200" "$(code $ADM /admin/dashboard)"
 DASH=$(curl -s -b $ADM $B/admin/dashboard)
 ok "$(echo "$DASH" | grep -c 'Welcome to StarCloud Panel. Manage your virtual machines in one place.')" "admin dashboard welcome banner" ""
-ok "$(echo "$DASH" | grep -c 'Inspired by HopingBoyz · Built by KingSlayer')" "admin dashboard welcome credit" ""
+ok "$(echo "$DASH" | grep -c 'Made by KingSlayer · Inspired by HopingBoyz')" "admin dashboard welcome credit" ""
 ok "$([ "$(echo "$DASH" | grep -c 'Panel Version')" = 0 ] && echo 1)" "version hidden on admin dashboard (toggle OFF)" ""
 ok "$([ "$(echo "$DASH" | grep -c 'id="notifBtn"\|class="theme-switcher"\|id="darkThemeBtn"')" = 0 ] && echo 1)" "no bell / theme switcher in top bar" ""
 SB=$(curl -s -b $ADM $B/admin/dashboard)
-ok "$([ "$(echo "$SB" | grep -c 'nav-text">My Profile\|nav-text">My Virtual Machines')" = 0 ] && echo 1)" "admin sidebar has no My Profile / My VMs" ""
+ok "$([ "$(echo "$SB" | grep -c 'My Profile\|My Virtual Machines')" -ge 2 ] && echo 1)" "admin sidebar has My Virtual Machines and My Profile" ""
 ok "$(echo "$SB" | grep -c 'href="/admin/system-info"')" "sidebar System Info links to /admin/system-info" ""
 ok "$([ "$(echo "$SB" | grep -c 'V1\.0\|V2\.0')" = 0 ] && echo 1)" "no version text in admin sidebar (toggle OFF)" ""
 SET=$(curl -s -b $ADM $B/admin/settings)

@@ -24,6 +24,18 @@
     .fm-modal-box { width:min(900px,100%); max-height:90vh; display:flex; flex-direction:column; gap:10px; background:var(--bg-card,#14141c); border:1px solid var(--border-subtle); border-radius:12px; padding:16px; }
     .fm-modal textarea { width:100%; min-height:50vh; font-family: ui-monospace, monospace; font-size:13px; }
     .fm-hint { font-size:12px; color: var(--text-muted); }
+    .fm-progress { margin:8px 0; font-size:13px; }
+    .fm-progress-bar { height:8px; border-radius:6px; background:rgba(255,255,255,.08); overflow:hidden; }
+    .fm-progress-bar > div { height:100%; width:0; background:var(--accent,#3b82f6); transition:width .2s; }
+    .fm-progress-row { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:4px; flex-wrap:wrap; }
+    .fm-modal-box { width:min(900px,100%); }
+    @media (max-width: 640px) {
+      .fm-table th:nth-child(4), .fm-table td:nth-child(4) { display:none; }
+      .fm-table td { padding:6px 4px; }
+      .fm-actions { white-space:normal; }
+      .fm-actions .btn { margin:2px 2px 2px 0; padding:4px 8px; }
+      .fm-toolbar .fm-path { flex:1 1 100%; min-width:0; width:100%; order:-1; }
+    }
   </style>
 </head>
 <body>
@@ -51,10 +63,18 @@
           <button class="btn btn-outline btn-sm" id="fmGo">Open</button>
           <button class="btn btn-outline btn-sm" id="fmRefresh">Refresh</button>
           <button class="btn btn-outline btn-sm" id="fmMkdir">New folder</button>
-          <label class="btn btn-primary btn-sm" style="cursor:pointer;">
+          <button class="btn btn-outline btn-sm" id="fmNewFile">New file</button>
+          <label class="btn btn-primary btn-sm" id="fmUploadLabel" style="cursor:pointer;">
             Upload file
             <input type="file" id="fmUpload" style="display:none;">
           </label>
+        </div>
+        <div class="fm-toolbar">
+          <input class="input fm-search" id="fmSearch" placeholder="Filter this folder by name…" aria-label="Filter files by name" style="flex:1; min-width:180px;">
+        </div>
+        <div class="fm-progress" id="fmProgress" style="display:none;">
+          <div class="fm-progress-bar"><div id="fmProgressFill"></div></div>
+          <div class="fm-progress-row"><span id="fmProgressText"></span><button class="btn btn-ghost btn-sm" id="fmProgressCancel" type="button">Cancel upload</button></div>
         </div>
         <div class="fm-hint">Upload limit: <%= maxUploadMb %> MB per file. Text files up to <%= maxEditKb %> KB can be edited in the browser; other files download as-is.</div>
         <div class="fm-msg" id="fmMsg"></div>
@@ -158,6 +178,8 @@ function renderRows(entries) {
       </td>
     </tr>`;
   }).join('');
+  const q = $('fmSearch') ? $('fmSearch').value : '';
+  if (q) $('fmSearch').dispatchEvent(new Event('input'));
 }
 
 $('fmRows').addEventListener('click', async (ev) => {
@@ -172,8 +194,11 @@ $('fmRows').addEventListener('click', async (ev) => {
   const p = decodeURIComponent(btn.dataset.path);
   try {
     if (btn.dataset.act === 'rename') {
-      const to = prompt('New full path for this item:', p);
-      if (!to || to === p) return;
+      const oldName = p.split('/').pop();
+      const newName = prompt('New name for ' + oldName + ' (same folder):', oldName);
+      if (!newName || !newName.trim() || newName.trim() === oldName) return;
+      if (/[\/\0]/.test(newName.trim())) { msg('A name cannot contain / or be empty.', 'err'); return; }
+      const to = joinPath(parentOf(p), newName.trim());
       await api('POST', `${API}/rename`, { from: p, to });
       msg('Renamed.', 'ok');
     } else if (btn.dataset.act === 'chmod') {
@@ -197,20 +222,35 @@ async function openEditor(p) {
     $('fmEditTitle').textContent = 'Edit: ' + data.path;
     $('fmEditInfo').textContent = '';
     $('fmEditText').value = data.content;
+    editorOriginal = data.content;
+    $('fmEditInfo').textContent = 'Ctrl+S (or Cmd+S) saves';
     $('fmEditor').classList.add('open');
   } catch (e) {
     msg(e.message + ' — use Download to get this file.', 'err');
   }
 }
-$('fmEditCancel').onclick = () => $('fmEditor').classList.remove('open');
-$('fmEditSave').onclick = async () => {
+let editorOriginal = '';
+function closeEditor() { $('fmEditor').classList.remove('open'); editingPath = null; }
+$('fmEditCancel').onclick = () => {
+  if ($('fmEditText').value !== editorOriginal && !confirm('Discard your unsaved changes?')) return;
+  closeEditor();
+};
+async function saveEditor() {
+  if (!editingPath) return;
+  $('fmEditInfo').textContent = 'Saving…';
   try {
     await api('PUT', `${API}/write`, { path: editingPath, content: $('fmEditText').value });
-    $('fmEditor').classList.remove('open');
-    msg('Saved ' + editingPath, 'ok');
+    editorOriginal = $('fmEditText').value;
+    const saved = editingPath;
+    closeEditor();
+    msg('Saved ' + saved, 'ok');
     load(currentPath);
   } catch (e) { $('fmEditInfo').textContent = e.message; }
-};
+}
+$('fmEditSave').onclick = saveEditor;
+$('fmEditText').addEventListener('keydown', (ev) => {
+  if ((ev.ctrlKey || ev.metaKey) && (ev.key === 's' || ev.key === 'S')) { ev.preventDefault(); saveEditor(); }
+});
 
 $('fmGo').onclick = () => load($('fmPath').value.trim() || '/');
 $('fmPath').addEventListener('keydown', (e) => { if (e.key === 'Enter') load($('fmPath').value.trim() || '/'); });
@@ -225,23 +265,69 @@ $('fmMkdir').onclick = async () => {
     load(currentPath);
   } catch (e) { msg(e.message, 'err'); }
 };
-$('fmUpload').addEventListener('change', async (ev) => {
+$('fmNewFile').onclick = async () => {
+  const name = prompt('New file name (created inside ' + currentPath + '):');
+  if (!name || !name.trim()) return;
+  if (/[\/\0]/.test(name.trim())) { msg('A file name cannot contain /', 'err'); return; }
+  const target = joinPath(currentPath, name.trim());
+  try {
+    await api('POST', `${API}/create`, { path: target });
+    msg('File created. Opening editor…', 'ok');
+    await load(currentPath);
+    openEditor(target);
+  } catch (e) { msg(e.message, 'err'); }
+};
+
+let uploadXhr = null;
+function setUploading(on) {
+  $('fmProgress').style.display = on ? 'block' : 'none';
+  $('fmUploadLabel').style.opacity = on ? '0.5' : '1';
+  $('fmUpload').disabled = on;
+}
+$('fmProgressCancel').onclick = () => { if (uploadXhr) uploadXhr.abort(); };
+$('fmUpload').addEventListener('change', (ev) => {
   const file = ev.target.files[0];
   ev.target.value = '';
   if (!file) return;
   if (file.size > <%= maxUploadMb %> * 1048576) { msg('File is larger than <%= maxUploadMb %> MB', 'err'); return; }
-  $('fmStatus').textContent = 'Uploading ' + file.name + ' (' + fmtSize(file.size) + ') …';
-  try {
-    const target = joinPath(currentPath, file.name);
-    const res = await fetch(`${API}/upload?path=${encodeURIComponent(target)}`, {
-      method: 'POST', credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/octet-stream' }, body: file
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Upload failed');
-    msg('Uploaded ' + file.name, 'ok');
-    load(currentPath);
-  } catch (e) { msg(e.message, 'err'); $('fmStatus').textContent = ''; }
+  const target = joinPath(currentPath, file.name);
+  const exists = Array.from($('fmRows').querySelectorAll('.fm-name')).some(el => decodeURIComponent(el.dataset.path) === target);
+  if (exists && !confirm(file.name + ' already exists in this folder. Replace it?')) return;
+  setUploading(true);
+  $('fmProgressFill').style.width = '0%';
+  $('fmProgressText').textContent = 'Uploading ' + file.name + ' (' + fmtSize(file.size) + ') …';
+  const xhr = new XMLHttpRequest();
+  uploadXhr = xhr;
+  xhr.open('POST', `${API}/upload?path=${encodeURIComponent(target)}`);
+  xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+  xhr.upload.onprogress = (e) => {
+    if (!e.lengthComputable) return;
+    const pct = Math.round((e.loaded / e.total) * 100);
+    $('fmProgressFill').style.width = pct + '%';
+    $('fmProgressText').textContent = 'Uploading ' + file.name + ' — ' + pct + '% (' + fmtSize(e.loaded) + ' of ' + fmtSize(e.total) + ')';
+  };
+  const finish = () => { uploadXhr = null; setUploading(false); };
+  xhr.onload = () => {
+    finish();
+    let data = {};
+    try { data = JSON.parse(xhr.responseText); } catch (e) { /* not json */ }
+    if (xhr.status >= 200 && xhr.status < 300) { msg('Uploaded ' + file.name, 'ok'); load(currentPath); }
+    else msg(data.error || ('Upload failed (' + xhr.status + ')'), 'err');
+  };
+  xhr.onerror = () => { finish(); msg('Upload failed: connection lost. Check that the VM is running, then try again.', 'err'); };
+  xhr.onabort = () => { finish(); msg('Upload cancelled. A partly uploaded file may remain; delete it if you do not need it.', 'err'); };
+  xhr.send(file);
+});
+
+// Client-side filter of the rows already loaded for this folder
+$('fmSearch').addEventListener('input', () => {
+  const q = $('fmSearch').value.trim().toLowerCase();
+  document.querySelectorAll('#fmRows tr').forEach((tr) => {
+    const nameEl = tr.querySelector('.fm-name');
+    if (!nameEl) return;
+    const name = decodeURIComponent(nameEl.dataset.path).split('/').pop().toLowerCase();
+    tr.style.display = !q || name.includes(q) ? '' : 'none';
+  });
 });
 
 load(currentPath);

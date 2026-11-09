@@ -26,8 +26,9 @@ Ye file user ke "sab features ki list" request ke liye hai. Detail `docs/01_FEAT
 | Cloud-init | Password YAML-safe (pehle `#`, `: ` wale password galat parse hote the); custom user case mein root ka password ab wahi chosen password hai (pehle hardcoded `password` tha) | YAML parse test: 14/14 (root/custom x 7 passwords, NAT + static) |
 | SSH (browser) | Panel → VM SSH WebSocket. Sahi password, saved-password fallback, galat password message, VM stopped message | Real OpenSSH (sandbox sshd) PASS; stub guest PASS |
 | Console (browser) | Serial console: log replay + live + input | Fake serial socket PASS |
-| File manager backend | list, read, write, mkdir, rename, chmod, upload (300 KB + SHA match), download, delete, root guard, relative-path guard | Real OpenSSH: 16/16 PASS |
-| File manager UI | Default folder, listing render | jsdom PASS |
+| File manager backend | list, read, write, create (never overwrites), mkdir, rename, chmod, upload (60 MB SHA match), download (SHA match), delete (recursive), root guard, relative/NUL path guard, binary and >2 MB edit refused, chunked upload refused (411), owner-only access | SFTP test server (asyncssh chroot): 35/35 PASS. Fixed: readFile hang on files >256 KB; SFTP drop now returns an error instead of hanging |
+| File manager UI | New file/folder, filter, upload progress + cancel, overwrite confirm, Ctrl+S editor, discard confirm, rename by name, delete | Headless Chromium at 390 px and 985 px: 28/28 PASS, no JS errors, no page overflow |
+| File manager limits | Folder download not supported (download files one by one); no zip/unzip, search across subfolders, or Git clone yet | Pending (advanced items 3.12) |
 | Ownership | Customer sirf apni VM; admin sab | Earlier test PASS |
 | Audit, maintenance, emergency, capacity, KVM lock, duplicate name, SSH port check | Pehle se | Earlier tests PASS |
 | Installer | Menu 1 install / 2 uninstall / 3 upgrade / 4 start / 5 stop / 6 restart (flags: `--start`, `--stop`, `--restart`, `--status`). OS images background mein download (install hang nahi hota). Logo: STARCLOUD, ek theme color (#0087ff), static, ek baar print (koi animation, cursor movement ya background loop nahi; isse VS Code mein shake/white cursor wali problem khatam) | Local pty test: menu, uninstall, upgrade (git pull), background download (sandbox mein hosts unreachable: fail-path PASS) |

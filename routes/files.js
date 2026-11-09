@@ -68,6 +68,21 @@ module.exports = function mountFileManager(app, ctx) {
     res.json({ success: true, path: file });
   }));
 
+  // New empty file. Never overwrites: fails with 409 if the name already exists.
+  api.post('/create', withSftp(async (req, res, sftp) => {
+    const file = files.safePath(req.body.path);
+    const handle = await new Promise((resolve, reject) => {
+      sftp.open(file, 'wx', (err, h) => {
+        if (!err) return resolve(h);
+        if (err.code === 4 || err.code === 11) return reject(Object.assign(new Error('A file or folder with this name already exists'), { status: 409 }));
+        reject(Object.assign(new Error(err.message || 'Could not create the file'), { status: 500 }));
+      });
+    });
+    await new Promise((resolve) => sftp.close(handle, () => resolve()));
+    auditFromReq(db, req, 'file.create', `vm-${req.vm.vm_id}:${file}`, 'ok');
+    res.json({ success: true, path: file });
+  }));
+
   api.post('/mkdir', withSftp(async (req, res, sftp) => {
     const dir = files.safePath(req.body.path);
     await files.sftpCall(sftp, 'mkdir', dir);
