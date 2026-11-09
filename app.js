@@ -778,7 +778,6 @@ app.post('/api/login', (req, res) => {
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.role = user.role;
-    req.session.showWelcome = user.role === 'admin'; // one-time welcome popup on the admin dashboard
     console.log(`[Auth Success] User ${user.id} (${user.username}) logged in with role: ${user.role}`);
     res.json({ success: true, user: { id: user.id, username: user.username, role: user.role } });
   });
@@ -1814,10 +1813,15 @@ app.get('/dashboard', checkAuth, (req, res) => {
   });
 });
 // Admin Dashboard - Admin only
+// Admin welcome popup: shown once per calendar day (Asia/Kolkata, resets at 12:00 midnight IST).
+// Repeated logins on the same day do not show it again; a restart does not reset it.
+function istDateString() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
 app.get('/admin/dashboard', checkAuth, checkAdmin, (req, res) => {
-  const showWelcome = !!req.session.showWelcome;
-  delete req.session.showWelcome;
-  res.render('admin/dashboard', {
+  const today = istDateString();
+  const key = `welcome_popup_day_${req.session.userId}`;
+  const render = (showWelcome) => res.render('admin/dashboard', {
     showWelcome,
     title: 'Dashboard - StarCloud Panel',
     currentPage: 'dashboard',
@@ -1825,6 +1829,15 @@ app.get('/admin/dashboard', checkAuth, checkAdmin, (req, res) => {
       username: req.session.username,
       role: req.session.role
     }
+  });
+  db.get(`SELECT setting_value FROM settings WHERE setting_key = ?`, [key], (err, row) => {
+    if (err) return render(false);
+    if (row && row.setting_value === today) return render(false);
+    db.run(
+      `INSERT OR REPLACE INTO settings (setting_key, setting_value, updated_at) VALUES (?, ?, datetime('now'))`,
+      [key, today],
+      (e2) => render(!e2)
+    );
   });
 });
 
