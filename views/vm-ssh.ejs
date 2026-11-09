@@ -60,7 +60,7 @@
       </form>
 
       <div class="term-box" id="termBox"></div>
-      <div class="term-hint">Use the username and password you set for this VM (shown on the VM page). The VM must be running.</div>
+      <div class="term-hint">Connects automatically with the VM's saved password. Type a password above only if the VM has no saved one or you want to use a different login. The VM must be running.</div>
     </div>
     <%- include('partials/admin/footer') %>
   </div>
@@ -89,7 +89,14 @@
   term.loadAddon(fit);
   term.open(box);
   fit.fit();
-  term.writeln('\x1b[36mEnter the VM username and password above, then press Connect.\x1b[0m');
+  // Auto-connect when the VM is running. The browser sends no password, so the panel uses the
+  // password saved for this VM (same as the empty-password case below). Runs once per page load.
+  const AUTO_CONNECT = <%- JSON.stringify(vmStatus === 'running') %>;
+  if (AUTO_CONNECT) {
+    term.writeln('\x1b[36mConnecting to the VM automatically with its saved password…\x1b[0m');
+  } else {
+    term.writeln('\x1b[36mThe VM is stopped. Start it, then reload this page to connect.\x1b[0m');
+  }
 
   function setStatus(text) { statusEl.textContent = text; }
   function setConnected(on) {
@@ -147,6 +154,8 @@
 
   document.getElementById('sshForm').addEventListener('submit', connect);
   btnDisconnect.onclick = () => { disconnect(); setConnected(false); setStatus('Disconnected'); };
+
+  if (AUTO_CONNECT) connect(null);
 })();
 </script>
 </body>
