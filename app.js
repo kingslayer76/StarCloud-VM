@@ -2425,6 +2425,23 @@ app.put('/api/vms/:vm_id/edit', checkAuth, async (req, res) => {
     owner_id
   } = req.body;
 
+  // SSH port (optional on edit): same rule as create - 1024-65535 and not used by another VM.
+  // Empty value = keep the current port (the UI never asks the user to type it).
+  const editSshRaw = ssh_port_static !== undefined && ssh_port_static !== '' ? ssh_port_static
+    : (ssh_port !== undefined && ssh_port !== '' ? ssh_port : undefined);
+  if (editSshRaw !== undefined) {
+    const sshNum = Number(editSshRaw);
+    if (!Number.isInteger(sshNum) || sshNum < 1024 || sshNum > 65535) {
+      return res.status(400).json({ error: 'SSH port must be a number from 1024 to 65535', code: 'SSH_PORT_RANGE' });
+    }
+    try {
+      const clash = await dbGetPromise(`SELECT vm_id FROM vms WHERE (ssh_port = ? OR ssh_port_static = ?) AND vm_id != ?`, [sshNum, sshNum, vm_id]);
+      if (clash) return res.status(409).json({ error: `SSH port ${sshNum} is already used by another VM. Choose another port.`, code: 'SSH_PORT_TAKEN' });
+    } catch (e) {
+      return res.status(500).json({ error: e.message });
+    }
+  }
+
   // Renaming to a name that another VM already uses: clear message instead of a raw SQLite error
   if (vm_name) {
     try {
@@ -2521,8 +2538,11 @@ app.put('/api/vms/:vm_id/edit', checkAuth, async (req, res) => {
     if (smbios_serial) { updates.push('smbios_serial = ?'); values.push(smbios_serial); }
     
     // Handle SSH port - prefer ssh_port_static if provided, else use ssh_port
-    if (ssh_port_static !== undefined) { updates.push('ssh_port_static = ?'); values.push(ssh_port_static); }
-    if (ssh_port !== undefined) { updates.push('ssh_port = ?'); values.push(ssh_port); }
+    // Validated above; an empty value keeps the current port
+    if (editSshRaw !== undefined) {
+      updates.push('ssh_port = ?'); values.push(Number(editSshRaw));
+      updates.push('ssh_port_static = ?'); values.push(Number(editSshRaw));
+    }
     
     // Only admins can change owner
     if (owner_id !== undefined && req.session.role === 'admin') {
