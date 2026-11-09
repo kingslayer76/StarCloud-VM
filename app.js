@@ -2477,58 +2477,29 @@ app.put('/api/vms/:vm_id/edit', checkAuth, async (req, res) => {
     db.run(query, values, async (err) => {
       if (err) return res.status(500).json({ error: err.message });
       
+      // Rebuild the cloud-init seed with the new settings. Wait for the result so
+      // a failure is reported to the user instead of a silent 200 OK.
+      let seedWarning = '';
       try {
-        // ALWAYS regenerate cloud-init seed when editing ANY field on a cloud-init VM
-        // Delete old seed ISO and create new one with current config
-        console.log(`[VM-${vm_id}] Template type check: '${originalVm.template_type}'`);
-        
-        // Always regenerate regardless of template_type
-        console.log(`[VM-${vm_id}] ✓ Regenerating seed with current configuration...`);
-        
-        // Always delete old seed ISO first
         const seedIsoPath = path.join(VM_DIR, `vm-${vm_id}-seed.iso`);
-        console.log(`[VM-${vm_id}] Checking for old seed: ${seedIsoPath}`);
-        
         if (fs.existsSync(seedIsoPath)) {
-          try {
-            fs.unlinkSync(seedIsoPath);
-            console.log(`[VM-${vm_id}] ✓ Deleted old seed ISO: ${seedIsoPath}`);
-          } catch (delErr) {
+          try { fs.unlinkSync(seedIsoPath); } catch (delErr) {
             console.error(`[VM-${vm_id}] Failed to delete old seed: ${delErr.message}`);
           }
-        } else {
-          console.log(`[VM-${vm_id}] Old seed not found (OK if first time)`);
         }
-        
-        // Fetch updated VM with new config and create new seed ISO
-        db.get(`SELECT * FROM vms WHERE vm_id = ?`, [vm_id], (err, updatedVm) => {
-          if (err) {
-            console.error(`[VM-${vm_id}] Failed to fetch updated VM:`, err.message);
-            return;
-          }
-          
-          if (!updatedVm) {
-            console.error(`[VM-${vm_id}] Updated VM not found in database`);
-            return;
-          }
-          
-          console.log(`[VM-${vm_id}] Creating new seed ISO with config - network_type: ${updatedVm.network_type}, ipv4: ${updatedVm.ipv4_address}, gateway: ${updatedVm.ipv4_gateway || updatedVm.gateway}`);
-          
-          createCloudInitSeed(vm_id, updatedVm)
-            .then(() => {
-              console.log(`[VM-${vm_id}] ✓ New cloud-init seed ISO created successfully`);
-              logVMAction(vm_id, 'edit', 'success', `Cloud-init seed regenerated with updated configuration. Changes will apply on next VM boot.`);
-            })
-            .catch(seedErr => {
-              console.error(`[VM-${vm_id}] ✗ Failed to create cloud-init seed: ${seedErr.message}`);
-              logVMAction(vm_id, 'edit', 'warning', `Configuration updated but cloud-init seed creation failed: ${seedErr.message}`);
-            });
-        });
-      } catch (err) {
-        console.error(`[VM-${vm_id}] Error during seed regeneration:`, err.message);
+        const updatedVm = await new Promise((resolve, reject) =>
+          db.get(`SELECT * FROM vms WHERE vm_id = ?`, [vm_id], (e, row) => (e ? reject(e) : resolve(row)))
+        );
+        if (!updatedVm) throw new Error('updated VM not found in database');
+        await createCloudInitSeed(vm_id, updatedVm);
+        logVMAction(vm_id, 'edit', 'success', `Cloud-init seed regenerated with updated configuration. Changes will apply on next VM boot.`);
+      } catch (seedErr) {
+        console.error(`[VM-${vm_id}] ✗ Failed to create cloud-init seed: ${seedErr.message}`);
+        logVMAction(vm_id, 'edit', 'warning', `Configuration updated but cloud-init seed creation failed: ${seedErr.message}`);
+        seedWarning = `Settings were saved, but the cloud-init seed could not be rebuilt (${seedErr.message}). The new settings may not apply on the next boot. Fix the cause and save again.`;
       }
-      
-      res.json({ success: true, message: 'VM configuration updated', vm_id });
+
+      res.json({ success: true, message: 'VM configuration updated', vm_id, warning: seedWarning || undefined });
     });
   });
 });
@@ -4506,6 +4477,59 @@ app.put('/api/settings', checkAuth, checkAdmin, (req, res) => {
 // ============= DISCORD OAUTH SETTINGS API =============
 
 // Get Discord OAuth settings (admin only). Only explicit columns are read, so no secret leaks.
+// ===== Discord webhook (optional, D-16). Empty = nothing is ever sent. =====
+const DISCORD_WEBHOOK_RE = /^https:\/\/(discord|discordapp)\.com\/api\/(v\d+\/)?webhooks\/\d+\/[A-Za-z0-9_-]+$/;
+
+function getDiscordWebhookUrl(cb) {
+  db.get(`SELECT setting_value FROM settings WHERE setting_key = 'discord_webhook_url'`,
+    (err, row) => cb(err, row && row.setting_value ? row.setting_value : ''));
+}
+
+// Fire-and-forget alert helper for later features (webhook alerts). Sends nothing when no URL is saved.
+function sendDiscordWebhook(content) {
+  getDiscordWebhookUrl((err, url) => {
+    if (err || !url) return;
+    axios.post(url, { content: String(content).slice(0, 1900) }, { timeout: 8000 })
+      .catch(e => console.warn('[webhook] send failed:', e.message));
+  });
+}
+
+app.get('/api/admin/webhook-settings', checkAuth, checkAdmin, (req, res) => {
+  getDiscordWebhookUrl((err, url) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ url });
+  });
+});
+
+app.put('/api/admin/webhook-settings', checkAuth, checkAdmin, (req, res) => {
+  const url = String((req.body && req.body.url) || '').trim();
+  if (url && !DISCORD_WEBHOOK_RE.test(url)) {
+    return res.status(400).json({ error: 'Invalid Discord webhook URL. It should look like https://discord.com/api/webhooks/ID/TOKEN' });
+  }
+  db.run(
+    `INSERT OR REPLACE INTO settings (setting_key, setting_value, updated_at) VALUES ('discord_webhook_url', ?, datetime('now'))`,
+    [url],
+    (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ success: true, message: url ? 'Webhook saved' : 'Webhook cleared. Nothing will be sent.' });
+    }
+  );
+});
+
+app.post('/api/admin/webhook-test', checkAuth, checkAdmin, (req, res) => {
+  getDiscordWebhookUrl(async (err, url) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!url) return res.status(400).json({ error: 'No webhook URL saved yet' });
+    try {
+      await axios.post(url, { content: 'StarCloud Panel: webhook test message.' }, { timeout: 8000 });
+      res.json({ success: true, message: 'Test message sent to Discord' });
+    } catch (e) {
+      const code = e.response ? e.response.status : e.message;
+      res.status(502).json({ error: `Discord did not accept the message (${code})` });
+    }
+  });
+});
+
 app.get('/api/admin/discord-settings', checkAuth, checkAdmin, (req, res) => {
   db.get(`SELECT id, enabled, client_id, client_secret, redirect_uri, updated_at FROM discord_settings LIMIT 1`, (err, settings) => {
     if (err) return res.status(500).json({ error: err.message });

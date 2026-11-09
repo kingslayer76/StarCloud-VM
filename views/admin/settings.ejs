@@ -184,6 +184,29 @@
           </div>
         </div>
 
+        <!-- Discord webhook (optional) -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Discord Webhook (optional)</div>
+          </div>
+          <div class="card-body">
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <div class="settings-row-label">Webhook URL</div>
+                <div class="settings-row-desc">Leave empty to send nothing. Paste a channel webhook URL to receive alerts.</div>
+              </div>
+              <div class="settings-row-control">
+                <input type="text" class="form-control" id="webhook_url" placeholder="https://discord.com/api/webhooks/ID/TOKEN" autocomplete="off">
+              </div>
+            </div>
+            <div style="display:flex; gap:10px; margin-top:12px; flex-wrap:wrap;">
+              <button type="button" class="btn btn-primary btn-sm" onclick="saveWebhookSettings()">Save webhook</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="testWebhookSettings()">Send test message</button>
+              <span id="webhookStatus" style="font-size:13px; color: var(--text-secondary); align-self:center;"></span>
+            </div>
+          </div>
+        </div>
+
         <!-- Help Section -->
         <div class="card">
           <div class="card-header">
@@ -751,6 +774,48 @@
       if (modal) modal.classList.remove('show');
     };
   }
+})();
+</script>
+
+<script>
+(function () {
+  var statusEl = function () { return document.getElementById('webhookStatus'); };
+  function say(msg, ok) {
+    var el = statusEl();
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = ok ? '#10B981' : '#EF4444';
+  }
+  window.loadWebhookSettings = async function () {
+    try {
+      var res = await fetch('/api/admin/webhook-settings', { credentials: 'same-origin' });
+      if (!res.ok) return;
+      var data = await res.json();
+      var input = document.getElementById('webhook_url');
+      if (input) input.value = data.url || '';
+    } catch (e) { /* leave field empty */ }
+  };
+  window.saveWebhookSettings = async function () {
+    var url = document.getElementById('webhook_url').value.trim();
+    try {
+      var res = await fetch('/api/admin/webhook-settings', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: url })
+      });
+      var data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Save failed');
+      say(data.message, true);
+    } catch (e) { say(e.message, false); }
+  };
+  window.testWebhookSettings = async function () {
+    say('Sending...', true);
+    try {
+      var res = await fetch('/api/admin/webhook-test', { method: 'POST', credentials: 'same-origin' });
+      var data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Test failed');
+      say(data.message, true);
+    } catch (e) { say(e.message, false); }
+  };
+  document.addEventListener('DOMContentLoaded', function () { window.loadWebhookSettings(); });
 })();
 </script>
 </body>

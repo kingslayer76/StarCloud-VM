@@ -54,7 +54,7 @@ Rule: koi bhi zip ko uske code ke liye copy nahi kiya gaya. Sirf ideas aur UI/ro
 | A8 | Emergency Stop All / Reboot All | ✅ | Settings > General (System Info se duplicate "Stop All" hata diya) |
 | A9 | Audit log | ✅ | Settings > General, latest 200 |
 | A10 | Per-VM security scan (miner, failed logins, cron) | ⬜ | Pending |
-| A11 | Discord webhook field (settings) | ⬜ | Pending (webhooks ka plan hai, bot nahi) |
+| A11 | Discord webhook field (settings) | ✅ | Settings > Discord > Webhook. Khali = kuch nahi bheja jayega. "Send test message" button. Alerts baad ke batch mein is URL ko use karenge |
 | A12 | Installer ek command se | ✅ | `installer.sh` menu 1 install / 2 uninstall / 3 upgrade. Real Debian/Ubuntu VPS par test pending |
 
 ### 2.2 Batch 2 — VM lifecycle, monitoring, promo
@@ -132,9 +132,9 @@ Rule: koi bhi zip ko uske code ke liye copy nahi kiya gaya. Sirf ideas aur UI/ro
 
 ## 3. Totals (A–H list + 2.7 round items)
 
-- ✅ Done: 19 (A1, A3, A4, A5, A7, A8, A9, A12, B7, D5, plus the 9 items in 2.7)
+- ✅ Done: 20 (A1, A3, A4, A5, A7, A8, A9, A11, A12, B7, D5, plus the 9 items in 2.7)
 - 🟡 Partial: 4 (A2, B8, B10, E4)
-- ⬜ Pending: 34 (A10, A11, B1–B6, B9, B11, B12, C1–C4, D3, D4, D6, D7, E1, E2, E3, E6, F1–F10, G)
+- ⬜ Pending: 33 (A10, B1–B6, B9, B11, B12, C1–C4, D3, D4, D6, D7, E1, E2, E3, E6, F1–F10, G)
 - 🚫 Removed or out of scope: 5 (A6, D1, D2, E5, H1)
 
 ## 4. What you can run to check

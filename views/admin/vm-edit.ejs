@@ -903,8 +903,14 @@ async function saveChanges(e) {
     const result = await res.json();
     
     if (res.ok && result.success) {
-      alert.className = 'alert alert-success';
-      alert.innerHTML = `<span class="alert-icon"><i class="fas fa-check-circle" style="color: #10B981;"></i></span><span>Configuration saved successfully!</span>`;
+      if (result.warning) {
+        alert.className = 'alert alert-warning';
+        alert.innerHTML = `<span class="alert-icon"><i class="fas fa-exclamation-triangle" style="color: #F59E0B;"></i></span><span></span>`;
+        alert.querySelector('span:last-child').textContent = result.warning;
+      } else {
+        alert.className = 'alert alert-success';
+        alert.innerHTML = `<span class="alert-icon"><i class="fas fa-check-circle" style="color: #10B981;"></i></span><span>Configuration saved successfully!</span>`;
+      }
       alert.style.display = 'flex';
       if (typeof showToast === 'function') {
         showToast('VM configuration saved', 'success');

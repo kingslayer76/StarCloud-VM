@@ -111,7 +111,7 @@ Test ka level:
 | 4 | **Installer real test** | Debian + root + systemd + apt. Sandbox mein `/dev/kvm` nahi, isliye Codespaces par test | Pterodactyl-style installer (user ka faisla) |
 | 5 | **Real QEMU boot test** | VM create → boot → SSH. Nested guest test bhi | Sandbox-blocked |
 | 6 | **Cloud-init ISO tool** | Installer mein `genisoimage` ensure karna (sandbox mein missing) | Live log se pata chala |
-| 7 | **Known bug: edit 200 par seed fail** | Edit ne `200 success` diya, lekin cloud-init seed ISO nahi bana (tool missing). Edit ko warning dena chahiye | Batch 2 mein fix |
+| 7 | ~~Known bug: edit 200 par seed fail~~ | ✅ Fix ho gaya: edit ab seed rebuild ka result wait karta hai; fail par response mein `warning` aur edit page par yellow message. Test: genisoimage ki kami par warning aaya | Done |
 
 Pehle 3 deep features ka status:
 1. **File manager** — ✅ backend + pages; 🟡 real VM test pending.
@@ -249,7 +249,7 @@ Multi-node cluster + node agent + circuit breaker + live migration + auto-placem
 
 ## 11. Known issues / limits (abhi)
 
-1. Edit route 200 deta hai, bhale cloud-init seed na bane (Batch 1 pending #7).
+1. ~~Edit route 200 deta hai, bhale cloud-init seed na bane~~ ✅ fix ho gaya (warning dikhta hai).
 2. Sandbox mein: `/dev/kvm` nahi, QEMU nahi, `genisoimage` nahi, template download network par depend karta hai. Ye sab user ke Codespaces / real server par test hoga.
 3. Server restart par session memory store reset ho jata hai (login dobara karna padega). Batch 3 mein persistent session store.
 4. Default admin `admin/admin` (installer Enter par) — security risk hai (D-14). User ne ye rakhne ko kaha hai; baad mein badal sakte hain.
