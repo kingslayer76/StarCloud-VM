@@ -140,13 +140,13 @@ if (!fs.existsSync(CLOUDVM_DIR)) {
 // CPU Models available
 // CPU models offered to customers/admins. Keys are stored in the DB; "features" is the QEMU -cpu name.
 // Only current Intel Xeon and AMD EPYC families are listed (the old generic/legacy list was removed).
-const DEFAULT_CPU_MODEL = 'xeon-cascadelake';
+const DEFAULT_CPU_MODEL = 'intel-xeon-gold-6248';
 // Only two x86 machine types are offered: q35 (modern, default) and pc (i440fx, legacy).
 function safeMachineType(v) {
   return v === 'pc' ? 'pc' : 'q35';
 }
 
-const CPU_MODELS = {
+const LEGACY_CPU_MODELS = {
   'xeon-icelake': {
     name: 'Intel Xeon Scalable 3rd Gen (Ice Lake)',
     description: 'Intel Xeon Scalable, 3rd generation',
@@ -204,8 +204,35 @@ const CPU_MODELS = {
   }
 };
 
-// Only offer CPU models that the host's QEMU really knows, so a VM never fails to start
-// because of an unsupported -cpu name. If QEMU cannot be probed, the full list is offered.
+// Full CPU list (services/cpu-catalog.js). Shown in the create/edit form.
+const { CPU_CATALOG } = require('./services/cpu-catalog.js');
+const CPU_MODELS = {};
+for (const c of CPU_CATALOG) {
+  CPU_MODELS[c.key] = {
+    name: c.name,
+    description: c.vendor === 'amd' ? 'AMD EPYC server processor' : 'Intel Xeon server processor',
+    features: c.qemu,
+    vendor: c.vendor,
+    fallbacks: c.fallbacks || []
+  };
+}
+// Older model keys stay valid so existing VMs still start, but they are not offered for new VMs.
+for (const [k, m] of Object.entries(LEGACY_CPU_MODELS)) {
+  CPU_MODELS[k] = { ...m, hidden: true, vendor: m.name.startsWith('AMD') ? 'amd' : 'intel', fallbacks: [] };
+}
+
+// Host CPU vendor from /proc/cpuinfo ('intel' | 'amd' | null).
+function probeHostVendor() {
+  try {
+    const info = fs.readFileSync('/proc/cpuinfo', 'utf8');
+    if (/vendor_id\s*:\s*GenuineIntel/.test(info)) return 'intel';
+    if (/vendor_id\s*:\s*AuthenticAMD/.test(info)) return 'amd';
+  } catch (e) { /* not Linux or no cpuinfo */ }
+  return null;
+}
+const HOST_VENDOR = probeHostVendor();
+
+// Only the QEMU model names this host's QEMU knows. If QEMU cannot be probed, nothing is filtered.
 function probeQemuCpuNames() {
   try {
     const out = require('child_process').execFileSync(QEMU_BIN, ['-cpu', 'help'], { encoding: 'utf8', timeout: 8000, stdio: ['ignore', 'pipe', 'ignore'] });
@@ -220,13 +247,30 @@ function probeQemuCpuNames() {
   }
 }
 const HOST_QEMU_CPUS = probeQemuCpuNames();
+
+// The list shown to customers: every catalogue CPU, nothing hidden.
 function availableCpuModels() {
   const out = {};
   for (const [key, m] of Object.entries(CPU_MODELS)) {
-    if (!HOST_QEMU_CPUS || HOST_QEMU_CPUS.has(m.features)) out[key] = m;
+    if (!m.hidden) out[key] = m;
   }
-  if (!Object.keys(out).length) return { ...CPU_MODELS };
   return out;
+}
+
+// Pick the -cpu name for a VM at start time, so a VM never fails because of a name this host cannot use.
+//  - KVM on, and the CPU is from the other vendor: the guest gets the host CPU (-cpu host).
+//  - Otherwise: the model, or the first fallback that this QEMU knows.
+function resolveCpuFeatures(key, kvmOn) {
+  const m = CPU_MODELS[key] || CPU_MODELS[DEFAULT_CPU_MODEL];
+  if (kvmOn && HOST_VENDOR && m.vendor && m.vendor !== HOST_VENDOR) {
+    return { features: 'host', note: `${m.name} is ${m.vendor.toUpperCase()}; this host is ${HOST_VENDOR.toUpperCase()}, so the guest uses the host CPU` };
+  }
+  for (const f of [m.features, ...(m.fallbacks || [])]) {
+    if (!HOST_QEMU_CPUS || HOST_QEMU_CPUS.has(f)) {
+      return { features: f, note: f === m.features ? '' : `this QEMU does not know ${m.features}; using ${f}` };
+    }
+  }
+  return { features: 'qemu64', note: `no matching CPU model on this QEMU; using qemu64` };
 }
 
 // Machine Types available for QEMU
@@ -1621,7 +1665,8 @@ app.post('/api/admin/templates/cache/clear', checkAuth, checkAdmin, (req, res) =
 
 // Get CPU Models
 app.get('/api/cpu-models', (req, res) => {
-  res.json(availableCpuModels());
+  // ?all=1 also returns older hidden models (used only to show names on existing VMs)
+  res.json(req.query.all === '1' ? CPU_MODELS : availableCpuModels());
 });
 
 // Get SMBIOS options
@@ -2409,9 +2454,10 @@ app.put('/api/vms/:vm_id/edit', checkAuth, async (req, res) => {
       return res.status(400).json({ error: 'CPUs must be at least 1' });
     }
     
-    const validatedSockets = cpu_sockets && cpu_sockets >= 1 ? cpu_sockets : undefined;
-    const validatedCores = cpu_cores && cpu_cores >= 1 ? cpu_cores : undefined;
-    const validatedThreads = cpu_threads && cpu_threads >= 1 ? cpu_threads : undefined;
+    // One vCPU field: 1 socket, all vCPUs as cores, 1 thread (older sockets/cores/threads input is ignored).
+    const validatedSockets = validatedCpus ? 1 : undefined;
+    const validatedCores = validatedCpus ? validatedCpus : undefined;
+    const validatedThreads = validatedCpus ? 1 : undefined;
 
     // VM password: any non-empty value is accepted (no minimum length).
 
@@ -4243,27 +4289,10 @@ async function startQemuVM(vm) {
       
       // Validate CPU model - fall back to the default model if it is not available
       // -cpu needs the QEMU model name (CPU_MODELS[key].features), not the panel key.
-      let cpuToUse = CPU_MODELS[DEFAULT_CPU_MODEL].features;
-      if (vm.custom_cpu_name) {
-        // Custom CPU name + CPU model - use both for full flexibility
-        // Format: -cpu <cpu_model>,model-id=Custom Name
-        // Note: No quotes needed when using spawn() array format
-        let baseCpuModel = CPU_MODELS[DEFAULT_CPU_MODEL].features;
-        if (vm.cpu_model && availableCpuModels()[vm.cpu_model]) {
-          baseCpuModel = availableCpuModels()[vm.cpu_model].features;
-        }
-        cpuToUse = `${baseCpuModel},model-id=${vm.custom_cpu_name}`;
-        console.log(`[VM-${vm.vm_id}] Using custom CPU: ${vm.custom_cpu_name} (base: ${baseCpuModel})`);
-      } else if (vm.cpu_model && availableCpuModels()[vm.cpu_model]) {
-        cpuToUse = availableCpuModels()[vm.cpu_model].features;
-        console.log(`[VM-${vm.vm_id}] Using preset CPU: ${vm.cpu_model} (-cpu ${cpuToUse})`);
-      } else if (vm.cpu_model) {
-        console.warn(`[VM-${vm.vm_id}] CPU model '${vm.cpu_model}' not found, falling back to '${DEFAULT_CPU_MODEL}'`);
-        cpuToUse = CPU_MODELS[DEFAULT_CPU_MODEL].features;
-        // Also update the database to fix the VM's CPU model
-        db.run(`UPDATE vms SET cpu_model = ? WHERE vm_id = ?`, [DEFAULT_CPU_MODEL, vm.vm_id], (err) => {
-          if (!err) console.log(`[VM-${vm.vm_id}] Updated database: cpu_model -> ${DEFAULT_CPU_MODEL}`);
-        });
+      // The -cpu name is picked below, once we know whether KVM is used.
+      if (vm.cpu_model && !CPU_MODELS[vm.cpu_model]) {
+        console.warn(`[VM-${vm.vm_id}] CPU model '${vm.cpu_model}' not found, using '${DEFAULT_CPU_MODEL}'`);
+        db.run(`UPDATE vms SET cpu_model = ? WHERE vm_id = ?`, [DEFAULT_CPU_MODEL, vm.vm_id]);
       }
       
       // Build QEMU command line as array (safer than string concatenation).
@@ -4272,7 +4301,10 @@ async function startQemuVM(vm) {
       const hostCaps = detectKvm();
       const kvmAccelEnabled = hostCaps.kvmAvailable && toggleFlag(vm.enable_kvm, 1) === 1;
       // Without KVM (TCG software emulation) named server CPUs are not reliable, so use the generic qemu64 model
-      let effectiveCpu = kvmAccelEnabled ? cpuToUse : 'qemu64';
+      const cpuPick = resolveCpuFeatures(vm.cpu_model || DEFAULT_CPU_MODEL, kvmAccelEnabled);
+      if (cpuPick.note) console.log(`[VM-${vm.vm_id}] CPU: ${cpuPick.note}`);
+      // Without KVM (TCG software emulation) the generic qemu64 model is used.
+      let effectiveCpu = kvmAccelEnabled ? cpuPick.features : 'qemu64';
       // Nested KVM: lets the guest run its own KVM (+vmx on Intel, +svm on AMD)
       if (kvmAccelEnabled && hostCaps.nestedFlag) {
         effectiveCpu = `${effectiveCpu},${hostCaps.nestedFlag}`;

@@ -573,8 +573,8 @@
                 <div class="form-group">
                   <label class="form-label">Machine Type</label>
                   <select class="form-control" name="machine_type" id="machine_type">
-                    <option value="q35" selected>Q35: modern (recommended for VPS and VDS)</option>
-                    <option value="pc">i440fx: legacy (old Windows and old Linux)</option>
+                    <option value="q35" selected>[VPS] [VDS] Q35: modern, recommended</option>
+                    <option value="pc">[Legacy] i440fx: old OS only</option>
                   </select>
                   <div class="form-hint" style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.6;">
                     <strong>Q35</strong> works with almost every modern OS (Ubuntu, Debian, Rocky, Windows 10/11, Windows Server). Use it unless you know the OS needs old hardware.<br>
@@ -768,9 +768,9 @@ function filterCpuOptions() {
   const sel = document.getElementById('cpu_model');
   if (!sel) return;
   const q = (document.getElementById('cpu_search')?.value || '').trim().toLowerCase();
-  const previous = sel.value || 'xeon-cascadelake';
+  const previous = sel.value || 'intel-xeon-gold-6248';
   const all = Object.entries(cpuModelCache);
-  const matches = all.filter(([key, m]) => !q || `${key} ${m.name} ${m.description} ${m.features}`.toLowerCase().includes(q));
+  const matches = all.filter(([key, m]) => !q || `${key} ${m.name} ${m.features}`.toLowerCase().includes(q));
   const count = document.getElementById('cpuSearchCount');
   if (!matches.length) {
     // Keep the current options so a search with no hits never clears the selection.

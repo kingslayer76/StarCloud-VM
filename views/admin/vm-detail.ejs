@@ -217,6 +217,11 @@ async function loadVM() {
     vmData = await vmRes.json();
     const stats = statsRes && statsRes.ok ? await statsRes.json() : null;
     
+    // Show the CPU's full name (e.g. AMD EPYC 7313) instead of its internal key.
+    try {
+      const cr = await fetch('/api/cpu-models?all=1');
+      if (cr.ok) { const cm = await cr.json(); if (cm[vmData.cpu_model]) vmData.cpu_model_name = cm[vmData.cpu_model].name; }
+    } catch (e) { /* keep the key */ }
     renderPage(vmData, stats);
     setTimeout(() => loadISOStatus(), 400);
   } catch(e) {
@@ -399,7 +404,7 @@ function renderPage(vm, stats) {
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
             <div>
               <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #EC4899; margin-bottom: 12px; display:inline-flex; align-items:center; gap:6px;">${svg('i-cpu', 12)} CPU Configuration</div>
-              ${renderInfoRow('CPU Model', vm.cpu_model || 'xeon-cascadelake')}
+              ${renderInfoRow('CPU Model', vm.cpu_model_name || vm.cpu_model || 'intel-xeon-gold-6248')}
               ${renderInfoRow('Custom CPU', vm.custom_cpu_name || '—')}
               ${renderInfoRow('Sockets', vm.cpu_sockets || '1')}
               ${renderInfoRow('Cores', vm.cpu_cores || '2')}
