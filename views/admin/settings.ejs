@@ -319,7 +319,61 @@
             </div>
           </div>
         </div>
-      <!-- Moved from Operations: maintenance and emergency controls -->
+      </div>
+
+      <!-- BRANDING TAB -->
+      <div class="tab-pane" id="tab-branding">
+        <div class="settings-section">
+          <div class="settings-section-header">
+            <span class="settings-section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><circle cx="11" cy="11" r="2"/></svg></span>
+            <div><div class="settings-section-title">Site Icon</div></div>
+          </div>
+          <div class="settings-section-body">
+            <div class="settings-row">
+              <div class="settings-row-info"><div class="settings-row-label">Site Icon URL</div><div class="settings-row-desc">PNG/SVG path</div></div>
+              <div class="settings-row-control"><input type="text" class="form-control" id="setting_site_icon_url_branding" data-key="site_icon_url" placeholder="/public/images/logo.png"></div>
+            </div>
+          </div>
+        </div>
+        <!-- Upload your own logo -->
+        <div class="card" style="margin-bottom: 16px;">
+          <div class="card-header"><div class="card-title">Your Logo</div></div>
+          <div class="card-body">
+            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; line-height: 1.6;">
+              Upload your own logo (PNG, JPG or WebP, 2 MB max). It replaces the StarCloud logo on the login, sidebar and browser tab.
+              The credit line (Made by KingSlayer · Inspired by HopingBoyz) stays.
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+              <input type="file" id="logoFile" accept="image/png,image/jpeg,image/webp" class="form-control" style="max-width: 320px;">
+              <button type="button" class="btn btn-primary btn-sm" onclick="uploadLogo()">Upload logo</button>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="resetLogo()">Use StarCloud logo</button>
+            </div>
+            <div id="logoStatus" style="font-size: 13px; margin-top: 10px; color: var(--text-secondary);"></div>
+          </div>
+        </div>
+
+        <!-- Preview with SVG fallback + dynamic update -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Preview</div>
+          </div>
+          <div class="card-body">
+            <div style="padding: 20px; background: var(--bg-secondary); border-radius: var(--radius-md); text-align: center;">
+              <img id="previewIcon" src="" style="width: 48px; height: 48px; margin-bottom: 10px; border-radius: 8px; object-fit: cover; display: none;" onerror="this.style.display='none'; document.getElementById('previewIconFallback').style.display='block';">
+              <div style="font-size: 36px; margin-bottom: 10px; display: none; color: var(--accent-primary);" id="previewIconFallback">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              </div>
+              <div style="font-size: 16px; font-weight: 700;" id="previewTitle">StarCloud Panel</div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;" id="previewDesc">Virtual Machine Management System</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECURITY TAB -->
+      <div class="tab-pane" id="tab-security">
+        <!-- Maintenance, emergency controls and audit log (moved here from General) -->
+        <!-- Operations -->
       <div class="ops-grid" style="margin-top:16px;">
         <!-- Maintenance -->
         <div class="card">
@@ -367,42 +421,7 @@
           </table>
         </div>
       </div>
-      </div>
 
-      <!-- BRANDING TAB -->
-      <div class="tab-pane" id="tab-branding">
-        <div class="settings-section">
-          <div class="settings-section-header">
-            <span class="settings-section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><circle cx="11" cy="11" r="2"/></svg></span>
-            <div><div class="settings-section-title">Site Icon</div></div>
-          </div>
-          <div class="settings-section-body">
-            <div class="settings-row">
-              <div class="settings-row-info"><div class="settings-row-label">Site Icon URL</div><div class="settings-row-desc">PNG/SVG path</div></div>
-              <div class="settings-row-control"><input type="text" class="form-control" id="setting_site_icon_url_branding" data-key="site_icon_url" placeholder="/public/images/logo.png"></div>
-            </div>
-          </div>
-        </div>
-        <!-- Preview with SVG fallback + dynamic update -->
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Preview</div>
-          </div>
-          <div class="card-body">
-            <div style="padding: 20px; background: var(--bg-secondary); border-radius: var(--radius-md); text-align: center;">
-              <img id="previewIcon" src="" style="width: 48px; height: 48px; margin-bottom: 10px; border-radius: 8px; object-fit: cover; display: none;" onerror="this.style.display='none'; document.getElementById('previewIconFallback').style.display='block';">
-              <div style="font-size: 36px; margin-bottom: 10px; display: none; color: var(--accent-primary);" id="previewIconFallback">
-                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-              </div>
-              <div style="font-size: 16px; font-weight: 700;" id="previewTitle">StarCloud Panel</div>
-              <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;" id="previewDesc">Virtual Machine Management System</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- SECURITY TAB -->
-      <div class="tab-pane" id="tab-security">
         <div class="settings-section">
           <div class="settings-section-header">
             <span class="settings-section-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
@@ -494,7 +513,7 @@
       pane.classList.toggle('active', on);
     });
     if (history.replaceState) history.replaceState(null, '', '#' + tab);
-    if (tab === 'general' && window.loadOpsPanel) window.loadOpsPanel();
+    if (tab === 'security' && window.loadOpsPanel) window.loadOpsPanel();
     if (tab === 'discord') loadDiscordSettings();
   };
 
@@ -816,6 +835,47 @@
     } catch (e) { say(e.message, false); }
   };
   document.addEventListener('DOMContentLoaded', function () { window.loadWebhookSettings(); });
+})();
+</script>
+
+<script>
+(function () {
+  function logoSay(msg, ok) {
+    var el = document.getElementById('logoStatus');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.color = ok ? '#10B981' : '#EF4444';
+  }
+  function setLogoUrl(url) {
+    var input = document.getElementById('setting_site_icon_url_branding') || document.getElementById('setting_site_icon_url');
+    if (input) { input.value = url; input.dispatchEvent(new Event('input', { bubbles: true })); }
+  }
+  window.uploadLogo = function () {
+    var file = document.getElementById('logoFile').files[0];
+    if (!file) { logoSay('Choose an image file first.', false); return; }
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) { logoSay('Only PNG, JPG or WebP files are allowed.', false); return; }
+    if (file.size > 2 * 1024 * 1024) { logoSay('The logo must be 2 MB or smaller.', false); return; }
+    logoSay('Uploading...', true);
+    var reader = new FileReader();
+    reader.onload = async function () {
+      try {
+        var res = await fetch('/api/admin/branding/logo', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataUrl: reader.result }), credentials: 'same-origin'
+        });
+        var data = await res.json().catch(function () { return {}; });
+        if (!res.ok || !data.success) throw new Error(data.error || ('Upload failed (HTTP ' + res.status + ')'));
+        setLogoUrl(data.url);
+        logoSay('Logo updated. Reload the page to see it everywhere.', true);
+      } catch (e) { logoSay(e.message, false); }
+    };
+    reader.onerror = function () { logoSay('Could not read that file.', false); };
+    reader.readAsDataURL(file);
+  };
+  window.resetLogo = function () {
+    setLogoUrl('/images/logo.png');
+    logoSay('Set to the StarCloud logo. Click Save All Settings to keep it.', true);
+  };
 })();
 </script>
 </body>

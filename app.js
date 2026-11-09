@@ -34,7 +34,7 @@ const isWindows = process.platform === 'win32';
 const isLinux = process.platform === 'linux';
 
 // ============= CONSTANTS =============
-const DEFAULT_SSH_PORT = 2222;
+const DEFAULT_SSH_PORT = 2022; // first auto-assigned SSH port (see allocateSshPort)
 
 // ============= UTILITY FUNCTIONS =============
 
@@ -141,6 +141,11 @@ if (!fs.existsSync(CLOUDVM_DIR)) {
 // CPU models offered to customers/admins. Keys are stored in the DB; "features" is the QEMU -cpu name.
 // Only current Intel Xeon and AMD EPYC families are listed (the old generic/legacy list was removed).
 const DEFAULT_CPU_MODEL = 'xeon-cascadelake';
+// Only two x86 machine types are offered: q35 (modern, default) and pc (i440fx, legacy).
+function safeMachineType(v) {
+  return v === 'pc' ? 'pc' : 'q35';
+}
+
 const CPU_MODELS = {
   'xeon-icelake': {
     name: 'Intel Xeon Scalable 3rd Gen (Ice Lake)',
@@ -292,7 +297,7 @@ const NETWORK_TYPES = {
   static_public: {
     name: 'Static Public IPv4',
     description: 'Fixed public IP with bridge network',
-    icon: '<svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #10B981;"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.88 20.73 6.96M12 22.08v-9.53"/></svg>'
+    icon: '<svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #10B981;"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.88l8.73-5.92M12 22.08v-9.53"/></svg>'
   }
 };
 
@@ -332,7 +337,7 @@ const SMBIOS_PRODUCTS = [
 const { OS_TEMPLATES, resolveTemplateUrl } = require('./services/os-templates');
 
 // Middleware
-app.use(express.json());
+app.use(express.json({ limit: '3mb' })); // 3 MB: needed for the branding logo upload (base64)
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 const sessionMiddleware = session({
@@ -493,7 +498,7 @@ function initializeDatabase() {
       ipv4_netmask TEXT DEFAULT '255.255.255.0',
       dns_servers TEXT DEFAULT '8.8.8.8,8.8.4.4',
       ssh_port INTEGER,
-      ssh_port_static INTEGER DEFAULT 22,
+      ssh_port_static INTEGER,
       http_port INTEGER DEFAULT 80,
       ipv6_address TEXT,
       ipv6_gateway TEXT,
@@ -729,6 +734,7 @@ app.post('/api/login', (req, res) => {
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.role = user.role;
+    req.session.showWelcome = user.role === 'admin'; // one-time welcome popup on the admin dashboard
     console.log(`[Auth Success] User ${user.id} (${user.username}) logged in with role: ${user.role}`);
     res.json({ success: true, user: { id: user.id, username: user.username, role: user.role } });
   });
@@ -1764,7 +1770,10 @@ app.get('/dashboard', checkAuth, (req, res) => {
 });
 // Admin Dashboard - Admin only
 app.get('/admin/dashboard', checkAuth, checkAdmin, (req, res) => {
+  const showWelcome = !!req.session.showWelcome;
+  delete req.session.showWelcome;
   res.render('admin/dashboard', {
+    showWelcome,
     title: 'Dashboard - StarCloud Panel',
     currentPage: 'dashboard',
     user: {
@@ -1951,7 +1960,6 @@ app.get('/admin/templates/builtin/:key/edit', checkAuth, checkAdmin, (req, res) 
 
 // User VMs list
 app.get('/vms', checkAuth, (req, res) => {
-  if (req.session.role === 'admin') return res.redirect('/admin/vms');
   res.render('users/vms', {
     title: 'My Virtual Machines - StarCloud Panel',
     currentPage: req.session.role === 'admin' ? 'my-vms' : 'vms',
@@ -1983,7 +1991,6 @@ app.get('/vm/:id', checkAuth, (req, res) => {
 
 // User profile page
 app.get('/profile', checkAuth, (req, res) => {
-  if (req.session.role === 'admin') return res.redirect('/admin/settings#security');
   res.render('users/profile', {
     title: 'My Profile - StarCloud Panel',
     currentPage: req.session.role === 'admin' ? 'my-profile' : 'profile',
@@ -2435,7 +2442,6 @@ app.put('/api/vms/:vm_id/edit', checkAuth, async (req, res) => {
       updates.push('enable_kvm = ?'); values.push(kvmValue);
       updates.push('nested_kvm = ?'); values.push(kvmValue);
     }
-    if (extra_args !== undefined) { updates.push('extra_args = ?'); values.push(extra_args || ''); }
     if (network_type) { updates.push('network_type = ?'); values.push(network_type); }
     if (ipv4_address !== undefined) { updates.push('ipv4_address = ?'); values.push(ipv4_address); }
     if (ipv4_gateway !== undefined) { updates.push('ipv4_gateway = ?'); values.push(ipv4_gateway); }
@@ -2447,10 +2453,9 @@ app.put('/api/vms/:vm_id/edit', checkAuth, async (req, res) => {
     if (ipv6_gateway !== undefined) { updates.push('ipv6_gateway = ?'); values.push(ipv6_gateway); }
     if (mac_address) { updates.push('mac_address = ?'); values.push(mac_address); }
     if (vlan_id !== undefined) { updates.push('vlan_id = ?'); values.push(vlan_id); }
-    if (custom_cpu_name) { updates.push('custom_cpu_name = ?'); values.push(custom_cpu_name); }
     if (board_name) { updates.push('board_name = ?'); values.push(board_name); }
     if (product_name) { updates.push('product_name = ?'); values.push(product_name); }
-    if (machine_type) { updates.push('machine_type = ?'); values.push(machine_type); }
+    if (machine_type) { updates.push('machine_type = ?'); values.push(safeMachineType(machine_type)); }
     if (smbios_manufacturer) { updates.push('smbios_manufacturer = ?'); values.push(smbios_manufacturer); }
     if (smbios_product) { updates.push('smbios_product = ?'); values.push(smbios_product); }
     if (smbios_version) { updates.push('smbios_version = ?'); values.push(smbios_version); }
@@ -2808,8 +2813,69 @@ function nameTakenMessage(name) {
 function dbGetPromise(sql, params) {
   return new Promise((resolve, reject) => db.get(sql, params, (err, row) => (err ? reject(err) : resolve(row))));
 }
+function dbAllPromise(sql, params = []) {
+  return new Promise((resolve, reject) => db.all(sql, params, (err, rows) => (err ? reject(err) : resolve(rows || []))));
+}
 
 // VM CREATE (Admin only)
+// ===== Background VM creation jobs =====
+// The template download can take minutes. The create request now returns as soon
+// as the VM row exists, and the page polls /api/vms/:vm_id/create-status.
+const createJobs = new Map();
+function setCreateJob(vm_id, job) {
+  createJobs.set(vm_id, { ...job, updated: Date.now() });
+  if (job.state !== 'creating') {
+    setTimeout(() => createJobs.delete(vm_id), 15 * 60 * 1000).unref();
+  }
+}
+function failCreateJob(vm_id, message, files = []) {
+  console.error(`[VM-${vm_id}] create failed: ${message}`);
+  for (const f of files) {
+    try { if (f && fs.existsSync(f)) fs.unlinkSync(f); } catch (e) { /* best effort */ }
+  }
+  db.run(`DELETE FROM vms WHERE vm_id = ?`, [vm_id]);
+  setCreateJob(vm_id, { state: 'failed', error: message });
+}
+
+// SSH port allocation: the next free port from SSH_PORT_BASE upward. A port is free when no
+// VM uses it and the host is not listening on it. Deleting a VM frees its port for reuse.
+const SSH_PORT_BASE = 2022;
+function hostPortFree(port) {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.once('error', () => resolve(false));
+    srv.once('listening', () => srv.close(() => resolve(true)));
+    srv.listen(port, '0.0.0.0');
+  });
+}
+async function allocateSshPort() {
+  const rows = await dbAllPromise(`SELECT ssh_port, ssh_port_static FROM vms`);
+  const used = new Set();
+  for (const r of rows) {
+    if (r.ssh_port) used.add(Number(r.ssh_port));
+    if (r.ssh_port_static) used.add(Number(r.ssh_port_static));
+  }
+  for (let p = SSH_PORT_BASE; p <= 65535; p++) {
+    if (used.has(p)) continue;
+    if (await hostPortFree(p)) {
+      console.log(`[SSH] allocated port ${p}`);
+      return p;
+    }
+  }
+  throw new Error('No free SSH port is available');
+}
+
+app.get('/api/vms/:vm_id/create-status', checkAuth, checkAdmin, (req, res) => {
+  const id = parseInt(req.params.vm_id, 10);
+  const job = createJobs.get(id);
+  if (job) return res.json({ state: job.state, error: job.error || null });
+  db.get(`SELECT vm_id FROM vms WHERE vm_id = ?`, [id], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (row) return res.json({ state: 'ready', error: null });
+    res.status(404).json({ state: 'unknown', error: 'VM not found' });
+  });
+});
+
 app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
   if (typeof req.body.vm_name === 'string') req.body.vm_name = req.body.vm_name.trim();
   const { 
@@ -2935,9 +3001,10 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
 
   const memory = parseInt(custom_memory) || (template ? template.memory : 2048);
   const cpuCount = parseInt(custom_cpus) || (template ? template.cpus : 2);
-  const sockets = cpu_sockets || 1;
-  const cores = cpu_cores || cpuCount;
-  const threads = cpu_threads || 1;
+  // The form has one vCPU field: 1 socket, all vCPUs as cores, 1 thread.
+  const sockets = 1;
+  const cores = cpuCount;
+  const threads = 1;
   const cpuModelToUse = cpu_model && availableCpuModels()[cpu_model] ? cpu_model : DEFAULT_CPU_MODEL;
   const diskSizeVal = disk_size || (template ? template.disk_size : '20G');
   const netType = network_type || 'nat';
@@ -2962,7 +3029,8 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
   if (capacityError) return res.status(409).json({ error: capacityError, code: 'CAPACITY' });
   
   // Handle SSH port - prefer ssh_port_static if provided, else use ssh_port
-  const sshPortVal = ssh_port_static || ssh_port || 22;
+  // SSH port: an explicit value (API use) is validated above; otherwise allocate automatically.
+  const sshPortVal = requestedSsh ? parseInt(requestedSsh, 10) : await allocateSshPort();
   
   // Insert VM first to get vm_id
   db.run(
@@ -2980,13 +3048,13 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       vm_name, templateName, os_template || (isCloudInit ? 'cloud-init' : 'iso-installer'), hostname, 
-      username, password, memory, cpuCount, sockets, cores, threads, cpuModelToUse, custom_cpu_name || null,
-      machine_type || 'pc', board_name || 'Main-Board', product_name || 'Virtual Machine', custom_smbios_manufacturer || 'QEMU',
+      username, password, memory, cpuCount, sockets, cores, threads, cpuModelToUse, null, // custom CPU names were removed
+      safeMachineType(machine_type), board_name || 'Main-Board', product_name || 'Virtual Machine', custom_smbios_manufacturer || 'QEMU',
       diskSizeVal, '', '', '',
       'stopped', 0, 'localhost',
       smbios_manufacturer || 'QEMU', smbios_product || 'KVM Virtual Machine',
       smbios_version || '1.0', smbios_serial || `vm-${Date.now()}`,
-      extra_args || '', toggleFlag(enable_acpi, 1), kvmOn, nestedOn,
+      '', toggleFlag(enable_acpi, 1), kvmOn, nestedOn, // Extra Arguments were removed from the form
       netType, ipv4_address || null, ipv4_gateway || null, ipv4_netmask || '255.255.255.0',
       dns_servers || '8.8.8.8,8.8.4.4', dns_primary || '8.8.8.8', dns_secondary || '8.8.4.4', null, sshPortVal, http_port || 80,
       ipv6_address || null, ipv6_gateway || null,
@@ -2999,6 +3067,9 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
       }
       
       const vm_id = this.lastID;
+      // Answer now; the rest runs in the background (see create-status).
+      setCreateJob(vm_id, { state: 'creating' });
+      res.status(202).json({ success: true, async: true, vm_id: vm_id });
       // Cloud-init images go to /cloudvm, ISO images go to /iso
       const img_file = isCloudInit 
         ? path.join(CLOUDVM_DIR, `${os_template || 'custom'}-${vm_id}.qcow2`)
@@ -3012,10 +3083,7 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
           `UPDATE vms SET img_file = ?, seed_file = ?, disk_file = ? WHERE vm_id = ?`,
           [img_file, seed_file, disk_file, vm_id],
           async (err) => {
-            if (err) {
-              db.run(`DELETE FROM vms WHERE vm_id = ?`, [vm_id]);
-              return res.status(500).json({ error: err.message });
-            }
+            if (err) return failCreateJob(vm_id, err.message, [img_file, disk_file, seed_file]);
 
             try {
               // If using cloud-init template, check cache first
@@ -3163,39 +3231,16 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
               }
 
               logVMAction(vm_id, 'create', 'pending', `VM ${vm_name} (ID:${vm_id}) created from ${templateName}`);
-              res.json({ 
-                success: true, 
-                vm_id: vm_id, 
-                template: isCloudInit ? 'cloud-init' : 'iso-installer',
-                config: {
-                  cpus: cpuCount,
-                  sockets: sockets,
-                  cores: cores,
-                  threads: threads,
-                  cpu_model: cpuModelToUse,
-                  memory: memory,
-                  disk_size: diskSizeVal,
-                  network_type: netType,
-                  mac_address: macAddr,
-                  ipv4: ipv4_address,
-                  gateway: ipv4_gateway
-                }
-              });
+              setCreateJob(vm_id, { state: 'ready' });
             } catch (downloadError) {
               logError('TEMPLATE', vm_id, 'download', downloadError);
-              // Clean up partial files
-              if (fs.existsSync(img_file)) {
-                try { fs.unlinkSync(img_file); } catch (e) {}
-              }
-              db.run(`DELETE FROM vms WHERE vm_id = ?`, [vm_id]);
-              return res.status(500).json({ error: `Failed to download template: ${downloadError.message}` });
+              return failCreateJob(vm_id, `Failed to download template: ${downloadError.message}`, [img_file, disk_file, seed_file]);
             }
           }
         );
       } catch (error) {
         logError('VM', vm_id, 'creation', error);
-        db.run(`DELETE FROM vms WHERE vm_id = ?`, [vm_id]);
-        res.status(500).json({ error: error.message });
+        failCreateJob(vm_id, error.message, [img_file, disk_file, seed_file]);
       }
     }
   );
@@ -4310,7 +4355,7 @@ async function startQemuVM(vm) {
       
       if (vm.network_type === 'nat') {
         // NAT (User Mode) Network with SSH port forwarding only
-        const sshPort = vm.ssh_port || vm.ssh_port_static || 2222;
+        const sshPort = vm.ssh_port || vm.ssh_port_static || DEFAULT_SSH_PORT;
         
         // Add virtio network device
         args.push(`-device`, `virtio-net-pci,netdev=${netdevId},mac=${macAddress}`);
@@ -4477,6 +4522,49 @@ app.put('/api/settings', checkAuth, checkAdmin, (req, res) => {
 // ============= DISCORD OAUTH SETTINGS API =============
 
 // Get Discord OAuth settings (admin only). Only explicit columns are read, so no secret leaks.
+// ===== Branding: custom logo (replaces the default StarCloud logo everywhere) =====
+const LOGO_MAX_BYTES = 2 * 1024 * 1024;
+const LOGO_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' };
+const BRANDING_DIR = path.join(__dirname, 'public', 'uploads', 'branding');
+
+app.post('/api/admin/branding/logo', checkAuth, checkAdmin, (req, res) => {
+  const m = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=\r\n]+)$/.exec(String((req.body && req.body.dataUrl) || ''));
+  if (!m) return res.status(400).json({ error: 'Upload a PNG, JPG or WebP image' });
+  const ext = LOGO_TYPES[m[1]];
+  const buf = Buffer.from(m[2], 'base64');
+  if (!buf.length) return res.status(400).json({ error: 'The image is empty' });
+  if (buf.length > LOGO_MAX_BYTES) return res.status(413).json({ error: 'The logo must be 2 MB or smaller' });
+  // Check the file signature so a renamed non-image is refused.
+  const sig = buf.subarray(0, 12);
+  const isPng = sig[0] === 0x89 && sig[1] === 0x50 && sig[2] === 0x4e && sig[3] === 0x47;
+  const isJpg = sig[0] === 0xff && sig[1] === 0xd8;
+  const isWebp = sig.toString('ascii', 0, 4) === 'RIFF' && sig.toString('ascii', 8, 12) === 'WEBP';
+  if (!(isPng || isJpg || isWebp)) return res.status(400).json({ error: 'That file is not a valid image' });
+
+  try {
+    fs.mkdirSync(BRANDING_DIR, { recursive: true });
+    const name = `logo-${Date.now()}.${ext}`;
+    fs.writeFileSync(path.join(BRANDING_DIR, name), buf);
+    const url = `/uploads/branding/${name}`;
+    db.run(
+      `INSERT OR REPLACE INTO settings (setting_key, setting_value, updated_at) VALUES ('site_icon_url', ?, datetime('now'))`,
+      [url],
+      (err) => {
+        if (err) return res.status(500).json({ error: err.message });
+        // Remove older uploaded logos so the folder does not grow.
+        try {
+          for (const f of fs.readdirSync(BRANDING_DIR)) {
+            if (f !== name && /^logo-\d+\.(png|jpg|webp)$/.test(f)) fs.unlinkSync(path.join(BRANDING_DIR, f));
+          }
+        } catch (e) { /* best effort */ }
+        res.json({ success: true, url, message: 'Logo updated' });
+      }
+    );
+  } catch (e) {
+    res.status(500).json({ error: 'Could not save the logo: ' + e.message });
+  }
+});
+
 // ===== Discord webhook (optional, D-16). Empty = nothing is ever sent. =====
 const DISCORD_WEBHOOK_RE = /^https:\/\/(discord|discordapp)\.com\/api\/(v\d+\/)?webhooks\/\d+\/[A-Za-z0-9_-]+$/;
 

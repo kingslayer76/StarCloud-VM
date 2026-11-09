@@ -10,7 +10,7 @@
     '1. Enable Intel VT-x or AMD-V (SVM) in the BIOS/UEFI of the server.\n' +
     '2. Make sure /dev/kvm exists after a reboot.\n' +
     '3. Re-run the installer or restart the StarCloud panel. The lock is removed automatically.\n\n' +
-    'Until then, create VMs with KVM On / Off = OFF (slow software emulation).';
+    'Until then, VMs run with software emulation (slower).';
 
   // Shows "On" (green) or "Off" (grey) next to the label, and keeps it in sync with the switch
   function setState(input, stateEl) {
@@ -38,7 +38,7 @@
         alert(LONG_NOTICE + (reasons && reasons.length ? '\n\nDetails: ' + reasons.join(' ') : ''));
       }
     });
-    if (hint) hint.textContent = 'Locked OFF: this host has no KVM. Click for details.';
+    if (hint) hint.textContent = 'Not available on this host (no hardware virtualization). Click for details.';
   }
 
   async function init(opts) {
@@ -70,7 +70,7 @@
       return;
     }
     const kvmHint = document.getElementById(opts.kvmHintId);
-    if (kvmHint) kvmHint.textContent = 'Hardware virtualization (' + (caps.virtFlag === 'svm' ? 'AMD-V' : 'Intel VT-x') + ') is available on this host. ON also lets this VM run its own VMs (nested).';
+    if (kvmHint) kvmHint.textContent = 'Hardware virtualization (' + (caps.virtFlag === 'svm' ? 'AMD-V' : 'Intel VT-x') + ') is available on this host.';
     if (banner && !caps.hostNestedOn) {
       banner.style.display = 'block';
       banner.textContent = 'Host nested KVM module is OFF. VMs with KVM ON will not be able to run their own VMs until nested mode is enabled on the host (the installer can enable it, then reboot).';
