@@ -6,7 +6,7 @@ const files = require('../services/files');
 const { auditFromReq } = require('../services/audit');
 
 module.exports = function mountFileManager(app, ctx) {
-  const { db } = ctx;
+  const { db, runtime } = ctx;
 
   function apiAuth(req, res, next) {
     if (!req.session.userId) return res.status(401).json({ error: 'Login required' });
@@ -25,7 +25,7 @@ module.exports = function mountFileManager(app, ctx) {
   }
 
   function requireRunning(req, res, next) {
-    if (req.vm.status !== 'running') {
+    if (!runtime.isRunning(req.vm.vm_id)) {
       return res.status(409).json({ error: 'VM is stopped. Start the VM first, then open the file manager.' });
     }
     next();
@@ -65,6 +65,21 @@ module.exports = function mountFileManager(app, ctx) {
     const file = files.safePath(req.body.path);
     await files.writeText(sftp, file, req.body.content);
     auditFromReq(db, req, 'file.write', `vm-${req.vm.vm_id}:${file}`, 'ok');
+    res.json({ success: true, path: file });
+  }));
+
+  // New empty file. Never overwrites: fails with 409 if the name already exists.
+  api.post('/create', withSftp(async (req, res, sftp) => {
+    const file = files.safePath(req.body.path);
+    const handle = await new Promise((resolve, reject) => {
+      sftp.open(file, 'wx', (err, h) => {
+        if (!err) return resolve(h);
+        if (err.code === 4 || err.code === 11) return reject(Object.assign(new Error('A file or folder with this name already exists'), { status: 409 }));
+        reject(Object.assign(new Error(err.message || 'Could not create the file'), { status: 500 }));
+      });
+    });
+    await new Promise((resolve) => sftp.close(handle, () => resolve()));
+    auditFromReq(db, req, 'file.create', `vm-${req.vm.vm_id}:${file}`, 'ok');
     res.json({ success: true, path: file });
   }));
 

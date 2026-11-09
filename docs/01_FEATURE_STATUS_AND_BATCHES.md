@@ -61,7 +61,7 @@ Test ka level:
 | Feature | Status | Test |
 |---|---|---|
 | Host KVM detect (`/dev/kvm`, vmx/svm flag, nested) | ✅ | Live: `/api/admin/operations` → `capabilities.kvmAvailable=false` + reasons |
-| Installer KVM report → `data/install-kvm-report.json` | ✅ | `bash install.sh --skip-system` dry run; JSON valid |
+| Installer KVM report → `data/install-kvm-report.json` | ✅ | `bash installer.sh --skip-system` dry run; JSON valid |
 | KVM lock UI (locked option par har click warning; 3rd click permanent-block notice) | 🟡 | JS syntax ✅. **Browser click test pending** (Codespaces par) |
 | Create 409 `KVM_BLOCKED` (KVM ya nested ON maangne par, no-KVM host) | ✅ | Live curl: `enable_kvm=1` → 409; `nested_kvm=1` → 409; field na dene par KVM check pass |
 | Edit 409 `KVM_BLOCKED` | ✅ | Live curl: `PUT /api/vms/:id/edit` `enable_kvm=1` / `nested_kvm=1` → 409; `0` → 200 |
@@ -72,12 +72,34 @@ Test ka level:
 | Emergency stop-all / reboot-all (typed confirm "STOP ALL") | ✅ | Live: wrong confirm 400; "STOP ALL" → count=1, audited |
 | Audit log (table + page + CSV export) | ✅ | Live: JSON + CSV OK; anon 401 |
 | File manager — admin aur customer (sabhi users, D-17) | 🟡 | Live vs test SSH server (chroot): list/read/write/mkdir/rename/chmod/upload/download/delete; permission (customer sirf apna VM) ✅. **Real VM par test pending** |
-| Installer admin account setup (Enter = `admin`/`admin`, D-14 — security note) | ✅ | `install.sh` test: exit 0, `.env` mode 600 |
+| Installer admin account setup (Enter = `admin`/`admin`, D-14 — security note) | ✅ | `installer.sh` test: exit 0, `.env` mode 600 |
 | Installer terminal: sirf StarCloud logo + step status (spinner, ✔/✖); raw output `logs/install.log` mein; `--verbose` se screen par | ✅ | Local test: `script` (TTY) + fake apt-get, `--skip-system` aur full run; failure path: ✖ + log tail + exit code |
 | Installer preflight (root, OS, RAM/disk/CPU, KVM, systemd, internet, port 8080 check) + final summary box | ✅ | Sandbox run; real Codespaces/Debian run pending |
-| Installer systemd service (unit file) / background fallback (`start-panel.sh`) | 🟡 | Background path ✅ (sandbox). Unit file verify ✅ (`systemd-analyze`), real `systemctl` start pending (real server) |
+| Installer OS images: default `all` (sare 12 OS download); `--os-images none` se skip, `ask` se poochhega; `--all-os` alias; `services/os-templates.js` single source; cache `~/vms/templates/<key>-template.qcow2`; existing files kept, one failure does not stop the rest | 🟡 | Pty run with fake curl: 11 ✔, 1 forced failure reported, summary correct; 'n' path skips. Sandbox ka network cloud hosts tak nahi jaata (real download VPS par verify karna hai) |
+| Installer animated StarCloud logo (rainbow repaint every 120 ms in a scroll region; paused during prompts; final colours kept) | ✅ | pyte terminal emulation: banner stays on top, cursor not moved by repaints (0 mismatches), region reset on exit |
+| OS templates: 17 built-in cloud images (Ubuntu 26.10/26.04/24.04/22.04, Debian 13/12/11, CentOS Stream 10, AlmaLinux 10/9, Rocky 10/9, Fedora 44, openSUSE Leap 16.0 + Tumbleweed, Alpine 3.24, Arch). Removed (old/EOL-soon): AlmaLinux 8, Rocky 8, CentOS Stream 9, Fedora 43, Leap 15.6. Fedora/Alpine use folder-listing resolver for build numbers. Gentoo: admin custom URL se (UEFI). Slackware: skip (no official cloud image) |
+| Self-service signup (`/signup`, username + password, email optional, auto-login) + Settings > Security on/off | ✅ | curl + jsdom PASS; Discord signup button same page |
+| LXD-ready badge + quickstart on VM detail (built-in OS templates) | ✅ | jsdom user/admin PASS |
+| Installer ka panel background service (`installer.sh --start/--stop/--status`, `setsid` + PID file) | 🟡 | Sandbox: install ke baad panel pty band hone par bhi chalta hai (pid check + login 200), `--stop`/`--start` cycle ✅. systemd unit file `systemd-analyze` ✅; real `systemctl` start real server par pending |
 | `STARCLOUD_DATA_DIR` installer `.env` mein (DB project ke andar) | ✅ | Code + dry run |
 | Live: `/api/admin/operations` JSON shape | ✅ | `capabilities`, `maintenance`, `vms` keys |
+
+#### 3.1a Fix round (user screenshots, 2026-10-30)
+
+| Item | Status | Kya badla / test |
+|---|---|---|
+| **KVM ek hi switch** (user ka decision): "KVM On / Off" ke saath state text On/Off; "Nested KVM" toggle hata diya (create + edit). Nested ab KVM ke saath chalta hai (ON = VM ke andar VM). DB `nested_kvm` = `enable_kvm` (same value). | ✅ | Create/edit pages 200, nested toggle HTML mein nahi; inline JS `node --check` OK; API: no-KVM host par `enable_kvm=1` → 409 `KVM_BLOCKED`, `0` → 200. Browser click test pending |
+| Duplicate VM name → raw SQLite error hata kar saaf message (409 `NAME_TAKEN`), create + rename dono | ✅ | Live: `taken` naam par create 409; rename `other`→`taken` 409 |
+| Failed create ka row rollback (template download fail → row delete, naam free) | ✅ | Live: download fail (sandbox network) → 500, `newvm` list mein nahi, dubara same naam pe bhi naam ka error nahi |
+| SSH port validation: 1024–65535 aur kisi aur VM ka port nahi (400 `SSH_PORT_RANGE` / 409 `SSH_PORT_TAKEN`) | ✅ | Live: port 77 → 400; port 2222 (dusri VM par) → 409 |
+| Installer: user ke `hkvm-master-fix.sh` ke steps (libvirt + helper services, swap 4 GB sirf jab koi swap na ho, swappiness 10, `genisoimage` / `cloud-localds` / `qemu-img` check) | ✅ | Fake apt + fake tools run: 12/12 ✔; apt-fail path: ✖ + log tail; sandbox mein `mkswap` nahi → warning, swap skip (installer nahi ruka) |
+
+| **Installer ek hi file:** `start-panel.sh` hata kar `installer.sh` mein merge. Modes: `install` (default), `--start`, `--stop`, `--status`. Install ke baad panel turant chalta hai | ✅ | Full install under pty: 12/12 ✔, panel ONLINE; terminal band hone ke baad bhi RUNNING; `--stop` → `--start` → `--status` RUNNING, login 200 |
+| **Panel install ke baad band ho jata tha** (root cause: `nohup` bina `setsid` ke terminal band hone par process mar jata) | ✅ | `setsid nohup node app.js` ke saath survive karta hai (ppid 1); test: pty close ke baad login 200 |
+| **VM ownership (security):** customer doosre user ke VM ke `/api/vms/:id/*` aur `/vm/:id/*` (stats, logs, console, ssh, snapshots, ISO, command POST) dekh/chala sakta tha | ✅ | Global guard `app.js` (`VM ownership guard`): admin sab, customer sirf apna VM; non-owner → 404. Test: cust1 → admin VM 404 (11 routes + POST), own VM 200, admin 200, anon login redirect |
+| Admin + customer GET routes smoke test (sab pages/API) | ✅ | 34 admin pages 200; VM detail/edit/console/files/ssh 200; customer dashboard/vms/profile 200; `/api/discord-auth-url` 400 `Discord auth not configured` (Discord setup nahi hai, expected) |
+
+**User ko Codespaces/VPS par:** jo purana VM `test` (4096 MB) dikh raha tha, usko **All VMs** se delete karein, phir naya VM banayein. Guest RAM host RAM ka aadha rakhein (4 GB VPS par ~2048 MB guest).
 
 ### 3.2 Pending (Batch 1 ke andar hi baaki)
 
@@ -89,7 +111,7 @@ Test ka level:
 | 4 | **Installer real test** | Debian + root + systemd + apt. Sandbox mein `/dev/kvm` nahi, isliye Codespaces par test | Pterodactyl-style installer (user ka faisla) |
 | 5 | **Real QEMU boot test** | VM create → boot → SSH. Nested guest test bhi | Sandbox-blocked |
 | 6 | **Cloud-init ISO tool** | Installer mein `genisoimage` ensure karna (sandbox mein missing) | Live log se pata chala |
-| 7 | **Known bug: edit 200 par seed fail** | Edit ne `200 success` diya, lekin cloud-init seed ISO nahi bana (tool missing). Edit ko warning dena chahiye | Batch 2 mein fix |
+| 7 | ~~Known bug: edit 200 par seed fail~~ | ✅ Fix ho gaya: edit ab seed rebuild ka result wait karta hai; fail par response mein `warning` aur edit page par yellow message. Test: genisoimage ki kami par warning aaya | Done |
 
 Pehle 3 deep features ka status:
 1. **File manager** — ✅ backend + pages; 🟡 real VM test pending.
@@ -155,7 +177,7 @@ Note: Batch 1 pending #7 (edit 200 par seed fail) bhi yahin fix hoga.
 | 4.2 | UPI manual confirmation (admin confirm karega; website par payment gateway nahi) | User ka faisla: manual UPI |
 | 4.3 | Support: Discord par manual (website par ticket system nahi) | User ka faisla (29 Oct) |
 | 4.4 | Email verification (Brevo SMTP, toggle) | Master §2 |
-| 4.5 | Invoices / GST | Master §9 — user se poochhna hai (Q1) |
+| 4.5 | Invoices / GST | Master §9 — decision: abhi skip (sales < ₹20 lakh/yr threshold; CA se confirm) |
 
 Hata diya gaya: custom price per order (D-5), order record table (D-6), Razorpay / website payment gateway.
 
@@ -166,7 +188,7 @@ Hata diya gaya: custom price per order (D-5), order record table (D-6), Razorpay
 | 5.1 | VDS: CPU pinning (vcpupin), guaranteed RAM, hugepages optional, host-passthrough, CPU overallocation nahi | Master §1, §9.1 |
 | 5.2 | LXD Bot Hosting (Linux LXC containers, sirf Bot Hosting product mein) | Master §1.1B; **HARD RULE: sold VPS/VDS hamesha KVM VM, kabhi LXC nahi** |
 | 5.3 | Bot templates (eggs): Discord.js, Discord.py, Node, Python, n8n; auto-restart, GitHub deploy | Master §1.1B |
-| 5.4 | LXD-ready badge + quickstart box (VPS/VDS ke andar LXD, optional) | Master §1.1A |
+| 5.4 | ✅ LXD-ready badge + quickstart box (VM detail, built-in templates) | Master §1.1A; customer khud run karta hai |
 | 5.5 | Port-forward manager (visual, bulk ranges) | Master §6 |
 | 5.6 | rDNS / PTR editor | Master §6 |
 | 5.7 | Per-VM firewall UI (nftables) | Master §6 |
@@ -227,7 +249,7 @@ Multi-node cluster + node agent + circuit breaker + live migration + auto-placem
 
 ## 11. Known issues / limits (abhi)
 
-1. Edit route 200 deta hai, bhale cloud-init seed na bane (Batch 1 pending #7).
+1. ~~Edit route 200 deta hai, bhale cloud-init seed na bane~~ ✅ fix ho gaya (warning dikhta hai).
 2. Sandbox mein: `/dev/kvm` nahi, QEMU nahi, `genisoimage` nahi, template download network par depend karta hai. Ye sab user ke Codespaces / real server par test hoga.
 3. Server restart par session memory store reset ho jata hai (login dobara karna padega). Batch 3 mein persistent session store.
 4. Default admin `admin/admin` (installer Enter par) — security risk hai (D-14). User ne ye rakhne ko kaha hai; baad mein badal sakte hain.
@@ -240,16 +262,20 @@ Multi-node cluster + node agent + circuit breaker + live migration + auto-placem
 ```bash
 git clone -b arena/1bed8e0c-starcloud-vm https://github.com/kingslayer76/StarCloud-VM.git
 cd StarCloud-VM
-sudo bash install.sh
+sudo bash installer.sh
 ```
 
-Installer terminal par sirf StarCloud logo aur step ka status dikhayega (raw output `logs/install.log` mein jayega; `--verbose` se sab screen par). Last mein summary box mein Panel URL aayega (Codespaces mein `https://<codespace>-8080.app.github.dev/login`). Ports tab mein port 8080 ko Public karein agar browser se khulna band ho.
+Installer ka menu: `1` install, `2` uninstall, `3` upgrade, `4` start, `5` stop, `6` restart (flags: `--start`, `--stop`, `--restart`, `--status`). Options ke saath (jaise `--yes`) menu nahi aata. Upgrade: `git pull` (fast-forward) + packages + restart; admin account, database, VMs aur OS images nahi chhedta. Uninstall: panel band karke service hatata hai; database/.env aur VM disks sirf tab hatate hain jab aap `y` likhein.
+
+Panel control (install ke baad): `sudo bash installer.sh --status` (chal raha hai ya nahi), `sudo bash installer.sh --start`, `sudo bash installer.sh --stop`. Server restart ke baad panel phir se chalane ke liye `sudo bash installer.sh --start`. Panel log: `logs/panel.log`.
+
+OS images (17) install ke baad background mein download hoti hain (`logs/os-images.log` mein progress; installer wait nahi karta). Installer terminal par sirf StarCloud logo aur step ka status dikhayega (raw output `logs/install.log` mein jayega; `--verbose` se sab screen par). Last mein summary box mein Panel URL aayega (Codespaces mein `https://<codespace>-8080.app.github.dev/login`). Ports tab mein port 8080 ko Public karein agar browser se khulna band ho.
 
 Installer admin username/password puchega. Enter dabane par `admin` / `admin` rahega (test ke liye). Phir:
 
 1. Browser mein panel kholen, login karein.
 2. **Admin → Operations** page: KVM status dikhna chahiye (Codespaces par aksar KVM nahi hota).
-3. **Create VM**: KVM On / Off aur Nested KVM On / Off locked dikhne chahiye. Ek click par warning, teesri click par permanent-block notice.
+3. **Create VM**: ek hi switch **KVM On / Off** dikhna chahiye (state text On/Off). Host par KVM na ho to switch locked OFF: ek click par warning, teesri click par permanent-block notice.
 4. **Maintenance mode**, **Audit log** (CSV download), **File manager** (koi VM ho to) check karein.
 5. Feedback mein batayein: kaun sa step fail hua, screenshot ke saath.
 

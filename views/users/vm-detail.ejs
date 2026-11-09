@@ -53,7 +53,7 @@
 </svg>
 
 <div class="admin-wrapper">
-  <%- include('../partials/users/sidebar') %>
+  <%- include(user && user.role === 'admin' ? '../partials/admin/sidebar' : '../partials/users/sidebar') %>
 
   <div class="admin-main">
     <%- include('../partials/admin/header') %>
@@ -217,6 +217,11 @@ async function loadVM() {
     vmData = await vmRes.json();
     const stats = statsRes && statsRes.ok ? await statsRes.json() : null;
     
+    // Show the CPU's full name (e.g. AMD EPYC 7313) instead of its internal key.
+    try {
+      const cr = await fetch('/api/cpu-models?all=1');
+      if (cr.ok) { const cm = await cr.json(); if (cm[vmData.cpu_model]) vmData.cpu_model_name = cm[vmData.cpu_model].name; }
+    } catch (e) { /* keep the key */ }
     renderPage(vmData, stats);
     setTimeout(() => loadISOStatus(), 400);
   } catch(e) {
@@ -234,7 +239,7 @@ function renderPage(vm, stats) {
   const statusCls = vm.status === 'running' ? 'badge-running' : vm.status === 'error' ? 'badge-error' : 'badge-stopped';
   const isRunning = vm.status === 'running';
   const icon = vm.template_icon;
-  const displayIcon = (icon && icon.startsWith('http')) ? icon : 'https://i.imgur.com/wu0Ob6B.png';
+  const displayIcon = osIconSrc(icon);
   
   document.getElementById('pageContent').innerHTML = `
     <!-- Page Header -->
@@ -269,6 +274,7 @@ function renderPage(vm, stats) {
           : `<button class="btn btn-success btn-sm" onclick="doAction('start')">${svg('i-play', 12)} Start</button>`
         }
         <a href="/vm/${vmId}/console" class="btn btn-outline btn-sm">${svg('i-terminal', 13)} Console</a>
+        <a href="/vm/${vmId}/bootlog" class="btn btn-outline btn-sm">${svg('i-terminal', 13)} Boot log</a>
         <a href="/vm/${vmId}/ssh" class="btn btn-outline btn-sm" title="SSH Terminal">${svg('i-ssh', 13)} SSH</a>
         <a href="/vm/${vmId}/files" class="btn btn-outline btn-sm" title="Browse, edit and upload files inside the VM">Files</a>
       </div>
@@ -398,7 +404,7 @@ function renderPage(vm, stats) {
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
             <div>
               <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #EC4899; margin-bottom: 12px; display:inline-flex; align-items:center; gap:6px;">${svg('i-cpu', 12)} CPU Configuration</div>
-              ${renderInfoRow('CPU Model', vm.cpu_model || 'host')}
+              ${renderInfoRow('CPU Model', vm.cpu_model_name || vm.cpu_model || 'intel-xeon-gold-6248')}
               ${renderInfoRow('Custom CPU', vm.custom_cpu_name || '—')}
               ${renderInfoRow('Sockets', vm.cpu_sockets || '1')}
               ${renderInfoRow('Cores', vm.cpu_cores || '2')}
@@ -446,6 +452,8 @@ function renderPage(vm, stats) {
       </div>
     </div>
 
+    ${renderLxdCard(vm)}
+
     <!-- Danger Zone -->
     <div class="card" style="margin-top: 20px; border-color: rgba(239, 68, 68, 0.25);">
       <div class="card-header">
@@ -485,6 +493,33 @@ function renderStatusIcon(enabled, label) {
   return enabled
     ? `<span style="display:inline-flex;align-items:center;gap:5px;color:#10B981;font-weight:600;">${svg('i-check-circle', 12)} ${label}</span>`
     : `<span style="display:inline-flex;align-items:center;gap:5px;color:#EF4444;font-weight:600;">${svg('i-x-circle', 12)} ${label}</span>`;
+}
+
+// ===== LXD support card (VMs created from built-in cloud-init OS templates) =====
+const LXD_TEMPLATE_KEYS = <%- JSON.stringify(lxdTemplateKeys || []) %>;
+function renderLxdCard(vm) {
+  if (!vm || !LXD_TEMPLATE_KEYS.includes(vm.template_type)) return '';
+  const cmd = (txt) => '<div style="font-family: monospace; font-size: 13px; background: rgba(0,0,0,0.35); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; margin: 6px 0; white-space: pre-wrap; word-break: break-all;">' + txt + '</div>';
+  return `
+    <div class="card" style="margin-top: 20px;" id="lxdCard">
+      <div class="card-header">
+        <div class="card-title" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          LXD Containers
+          <span style="font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: rgba(34,197,94,0.15); color: #4ade80; border: 1px solid rgba(34,197,94,0.35);">✅ LXD ready</span>
+        </div>
+      </div>
+      <div class="card-body">
+        <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 8px;">
+          This VM can run LXD containers. LXD is <b>not installed by default</b>. Connect over SSH (or the console) and run these commands once:
+        </p>
+        ${cmd('sudo snap install lxd\nsudo lxd init --auto\nsudo usermod -aG lxd $USER   # then log out and log in again')}
+        <p style="font-size: 13px; color: var(--text-secondary); margin: 10px 0 8px;">Test with a container:</p>
+        ${cmd('lxc launch ubuntu:24.04 test\nlxc list')}
+        <p style="font-size: 12px; color: var(--text-muted); margin: 10px 0 0;">
+          Recommended: at least <b>2 GB RAM</b> and <b>20 GB disk</b> for this VM. Debian/other distros: run <code>sudo apt install -y snapd</code> first, then install LXD the same way.
+        </p>
+      </div>
+    </div>`;
 }
 
 function renderInfoRow(label, value, mono = false, bold = false) {

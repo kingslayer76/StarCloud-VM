@@ -198,13 +198,13 @@
                 <div class="form-group">
                   <label class="form-label">Password <span class="required">*</span></label>
                   <div style="position: relative;">
-                    <input type="password" class="form-control" id="custom_password" name="custom_password" placeholder="Minimum 8 characters (required)" minlength="8" required style="padding-right: 40px;">
+                    <input type="password" class="form-control" id="custom_password" name="custom_password" placeholder="Enter a VM password (required)" required style="padding-right: 40px;">
                     <button type="button" onclick="togglePw('custom_password', this)" style="position:absolute; right:10px; top:50%; transform:translateY(-50%); background:none; border:none; color:var(--text-muted); cursor:pointer; display:inline-flex;">
                       <svg width="16" height="16"><use href="#i-eye"/></svg>
                     </button>
                   </div>
                   <div class="form-hint" style="color: var(--text-muted); font-size: 12px; margin-top: 6px;">
-                    Required. Minimum 8 characters. Used for the VM's cloud-init login.
+                    Required. Used for the VM's login and SSH access.
                   </div>
                 </div>
               </div>
@@ -263,71 +263,24 @@
               </div>
             </div>
             <div class="card-body">
-              <div class="form-row">
-                <div class="form-group">
-                  <label class="form-label">CPU Sockets</label>
-                  <input type="number" class="form-control" name="cpu_sockets" id="cpu_sockets" value="1" min="1" onchange="updateTotalCPU()">
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Cores per Socket</label>
-                  <input type="number" class="form-control" name="cpu_cores" id="cpu_cores" value="2" min="1" onchange="updateTotalCPU()">
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Threads per Core</label>
-                  <input type="number" class="form-control" name="cpu_threads" id="cpu_threads" value="1" min="1" onchange="updateTotalCPU()" placeholder="e.g., 1, 2, 4, 8">
-                  <div class="form-hint" style="font-size: 11px;">Custom value supported - enter any number</div>
-                </div>
-              </div>
-              
-              <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: rgba(99, 102, 241, 0.06); border-radius: 8px; margin: 8px 0 16px; border: 1px solid rgba(99, 102, 241, 0.15);">
-                <span style="width:36px;height:36px;border-radius:8px;background:rgba(99,102,241,0.15);color:#6366F1;display:inline-flex;align-items:center;justify-content:center;"><svg width="18" height="18"><use href="#i-cpu"/></svg></span>
-                <div style="flex:1;">
-                  <div style="font-size: 11px; color: var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Total vCPUs</div>
-                  <div style="font-size: 22px; font-weight: 700; color: var(--accent-primary);" id="totalCPUDisplay">2</div>
-                </div>
-                <input type="hidden" name="custom_cpus" id="custom_cpus" value="2">
+              <div class="form-group">
+                <label class="form-label" for="custom_cpus">vCPUs (virtual CPU cores) <span class="required">*</span></label>
+                <input type="number" class="form-control" name="custom_cpus" id="custom_cpus" value="2" min="1" oninput="updatePreview()" onchange="updatePreview()">
+                <div class="form-hint">Total virtual CPU cores for this VM. Example: 2 vCPU for a small VPS.</div>
               </div>
 
               <div class="form-group" style="margin-bottom: 0;">
                 <label class="form-label">CPU Model</label>
-                <select class="form-control" name="cpu_model" id="cpu_model">
-                  <!-- Loaded dynamically -->
+                <input type="search" class="form-control" id="cpu_search" placeholder="Search CPU (e.g. Xeon, EPYC, Milan)" oninput="filterCpuOptions()" autocomplete="off" style="margin-bottom: 8px;">
+                <select class="form-control" name="cpu_model" id="cpu_model" size="6" style="height: auto; max-height: 220px;">
+                  <!-- Loaded dynamically: scroll the list or type to search -->
                 </select>
-                <div class="form-hint">Use 'host' for best performance on physical hardware</div>
+                <div class="form-hint" id="cpuSearchCount"></div>
+                <div class="form-hint">This is the CPU name the guest sees. Pick the family your customers expect.</div>
               </div>
 
-              <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-subtle);">
-                <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
-                  <input type="checkbox" class="form-check-input" id="enable_custom_cpu_name" name="enable_custom_cpu_name" onchange="toggleCustomCPUName()" style="cursor: pointer; width: 20px; height: 20px;">
-                  <label for="enable_custom_cpu_name" class="form-label" style="margin: 0; cursor: pointer; flex: 1;">
-                    <span style="display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: #6366F1;">
-                      <svg width="14" height="14"><use href="#i-cpu"/></svg>
-                      <span>Use Custom CPU Name</span>
-                      <span style="font-size: 11px; color: var(--text-muted); font-weight: normal; background: rgba(99, 102, 241, 0.1); padding: 2px 8px; border-radius: 4px;">Optional</span>
-                    </span>
-                  </label>
-                </div>
-                <div id="custom_cpu_name_section" style="display: none; padding: 14px; background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(99, 102, 241, 0.03) 100%); border-radius: 8px; border: 1.5px solid rgba(99, 102, 241, 0.2);">
-                  <div class="form-group" style="margin-bottom: 0;">
-                    <label class="form-label" style="display: inline-flex; align-items: center; gap: 6px;">
-                      <span style="color:#6366F1;display:inline-flex;"><svg width="13" height="13"><use href="#i-pen"/></svg></span>
-                      Custom CPU Model Name
-                    </label>
-                    <input type="text" class="form-control" name="custom_cpu_name" id="custom_cpu_name" placeholder="e.g., Intel-Xeon-E5-2680v4, AMD-EPYC-7002" oninput="validateCustomCPUName()" style="margin-top: 8px;">
-                    <div style="display: flex; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--text-muted); align-items:center;">
-                      <span id="cpuNameValid" style="color: #10B981; opacity: 0; display:inline-flex;"><svg width="13" height="13"><use href="#i-check-circle"/></svg></span>
-                      <span>Any characters accepted</span>
-                    </div>
-                    <div class="form-hint" style="margin-top: 8px; display: flex; align-items: flex-start; gap: 8px;">
-                      <span style="color:#F59E0B; margin-top: 2px; flex-shrink: 0; display:inline-flex;"><svg width="13" height="13"><use href="#i-bulb"/></svg></span>
-                      <span>
-                        <strong>Examples:</strong> Intel Xeon, AMD EPYC 7003, ThreadRipper PRO, Custom Lab CPU
-                        <br><strong>Tips:</strong> Use any format you want - spaces, special characters all allowed
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <input type="hidden" name="cpu_sockets" value="1">
+              <input type="hidden" name="cpu_threads" value="1">
             </div>
           </div>
 
@@ -454,8 +407,11 @@
                 <div class="form-row">
                   <div class="form-group">
                     <label class="form-label">SSH Port</label>
-                    <input type="number" class="form-control" name="ssh_port" id="ssh_port" placeholder="2222" min="1024">
-                    <div class="form-hint">Host port for SSH forwarding</div>
+                    <div class="form-control" style="display:flex; align-items:center; gap:8px; color: var(--text-secondary);">
+                      <i class="fas fa-magic" style="color:#6366F1;"></i>
+                      <span>Automatic: the next free port (starts at 2022)</span>
+                    </div>
+                    <div class="form-hint">No typing needed. A deleted VM's port is reused.</div>
                   </div>
                 </div>
               </div>
@@ -616,25 +572,13 @@
               <div class="card-body">
                 <div class="form-group">
                   <label class="form-label">Machine Type</label>
-                  <select class="form-control" name="machine_type">
-                    <optgroup label="x86-64 / i386">
-                      <option value="pc" selected>PC (i440fx - Standard, Legacy)</option>
-                      <option value="q35">Q35 (ICH9 - Modern, Recommended)</option>
-                      <option value="microvm">MicroVM (Minimal, Fast Boot)</option>
-                    </optgroup>
-                    <optgroup label="ARM">
-                      <option value="virt">Virtual (ARM Generic Platform)</option>
-                      <option value="versatilepb">Versatile Platform Baseboard</option>
-                      <option value="raspi2">Raspberry Pi 2</option>
-                      <option value="raspi3">Raspberry Pi 3</option>
-                    </optgroup>
-                    <optgroup label="Enterprise">
-                      <option value="pseries">POWER Series (PowerPC)</option>
-                      <option value="s390-ccw-virtio">IBM System Z (s390x)</option>
-                    </optgroup>
+                  <select class="form-control" name="machine_type" id="machine_type">
+                    <option value="q35" selected>[VPS] [VDS] Q35: modern, recommended</option>
+                    <option value="pc">[Legacy] i440fx: old OS only</option>
                   </select>
-                  <div class="form-hint" style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">
-                    <strong>x86-64:</strong> PC for legacy OS, Q35 for modern OS, MicroVM for minimal overhead
+                  <div class="form-hint" style="font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.6;">
+                    <strong>Q35</strong> works with almost every modern OS (Ubuntu, Debian, Rocky, Windows 10/11, Windows Server). Use it unless you know the OS needs old hardware.<br>
+                    <strong>i440fx</strong> is only for very old OS that do not boot on Q35.
                   </div>
                 </div>
                 
@@ -649,17 +593,8 @@
                     <input type="checkbox" class="toggle-input" name="enable_kvm" id="enable_kvm" value="1" checked>
                     <div class="toggle-track"><div class="toggle-thumb"></div></div>
                     <div style="flex: 1;">
-                      <div class="toggle-label" style="font-size: 13px; color: var(--text-primary);">KVM On / Off</div>
-                      <div id="kvmHint" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">KVM = hardware virtualization for fast VMs. Checking this host...</div>
-                    </div>
-                  </label>
-
-                  <label class="toggle-switch">
-                    <input type="checkbox" class="toggle-input" name="nested_kvm" id="enable_nested" value="1">
-                    <div class="toggle-track"><div class="toggle-thumb"></div></div>
-                    <div style="flex: 1;">
-                      <div class="toggle-label" style="font-size: 13px; color: var(--text-primary);">Nested KVM On / Off</div>
-                      <div id="nestedHint" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Lets software inside this VM run its own VMs. Needs host KVM and KVM On.</div>
+                      <div class="toggle-label" style="font-size: 13px; color: var(--text-primary);">KVM</div>
+                      <div id="kvmHint" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Hardware virtualization for fast VMs. Checking this host...</div>
                     </div>
                   </label>
                   <div id="kvmHostBanner" style="display: none; font-size: 12px; padding: 10px; border-radius: 8px; background: rgba(234,179,8,.12); border: 1px solid rgba(234,179,8,.4);"></div>
@@ -667,21 +602,6 @@
               </div>
             </div>
 
-            <div class="card">
-              <div class="card-header">
-                <div class="card-title">
-                  <span style="color:#10B981;display:inline-flex;"><svg width="18" height="18"><use href="#i-note"/></svg></span>
-                  Extra Arguments
-                </div>
-              </div>
-              <div class="card-body">
-                <div class="form-group" style="margin-bottom: 0;">
-                  <label class="form-label">Additional QEMU Args</label>
-                  <textarea class="form-control" name="extra_args" id="extra_args" placeholder="-device virtio-balloon-pci,id=balloon0" rows="3" style="font-family: monospace; font-size: 12px;"></textarea>
-                  <div class="form-hint">Advanced: Additional QEMU command-line arguments</div>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -784,8 +704,7 @@ async function loadTemplates() {
     if (!grid) return;
     
     grid.innerHTML = Object.entries(osTemplates).map(([key, tmpl]) => {
-      const iconUrl = tmpl.icon && tmpl.icon.startsWith('http') ? tmpl.icon : 'https://i.imgur.com/wu0Ob6B.png';
-      const iconHtml = `<img src="${iconUrl}" style="width: 48px; height: 48px; object-fit: contain; border-radius: 8px; padding:4px; background:rgba(99,102,241,0.05);" onerror="this.src='https://i.imgur.com/wu0Ob6B.png';" alt="${tmpl.name}">`;
+      const iconHtml = `<img src="${osIconSrc(tmpl.icon)}" alt="" style="width: 48px; height: 48px; object-fit: contain; border-radius: 8px;">`;
       return `
       <label class="template-card">
         <input type="radio" name="_template" value="${key}" onchange="selectTemplate('${key}')">
@@ -835,17 +754,31 @@ function handleIsoSelect() {
   updatePreview();
 }
 
+let cpuModelCache = {};
 async function loadCPUModels() {
   try {
     const res = await fetch('/api/cpu-models');
     if (!res.ok) return;
-    const models = await res.json();
-    const sel = document.getElementById('cpu_model');
-    if (!sel) return;
-    sel.innerHTML = Object.entries(models).map(([key, m]) =>
-      `<option value="${key}" ${key === 'host' ? 'selected' : ''}>${m.name} — ${m.description}</option>`
-    ).join('');
+    cpuModelCache = await res.json();
+    filterCpuOptions();
   } catch(e) {}
+}
+// Search box: filters the CPU list by name, family, description or QEMU model name.
+function filterCpuOptions() {
+  const sel = document.getElementById('cpu_model');
+  if (!sel) return;
+  const q = (document.getElementById('cpu_search')?.value || '').trim().toLowerCase();
+  const previous = sel.value || 'intel-xeon-gold-6248';
+  const all = Object.entries(cpuModelCache);
+  const matches = all.filter(([key, m]) => !q || `${key} ${m.name} ${m.features}`.toLowerCase().includes(q));
+  const count = document.getElementById('cpuSearchCount');
+  if (!matches.length) {
+    // Keep the current options so a search with no hits never clears the selection.
+    if (count) count.textContent = 'No CPU model matches this search';
+    return;
+  }
+  sel.innerHTML = matches.map(([key, m]) => `<option value="${key}" title="${m.description}" ${key === previous ? 'selected' : ''}>${m.name}</option>`).join('');
+  if (count) count.textContent = `Showing ${matches.length} of ${all.length} CPU models`;
 }
 
 async function loadNetworkTypes() {
@@ -915,14 +848,6 @@ async function loadUsers() {
 }
 
 function updateTotalCPU() {
-  const s = parseInt(document.getElementById('cpu_sockets')?.value) || 1;
-  const c = parseInt(document.getElementById('cpu_cores')?.value) || 1;
-  const t = parseInt(document.getElementById('cpu_threads')?.value) || 1;
-  const total = s * c * t;
-  const el = document.getElementById('totalCPUDisplay');
-  const hidden = document.getElementById('custom_cpus');
-  if (el) el.textContent = total;
-  if (hidden) hidden.value = total;
   updatePreview();
 }
 
@@ -934,36 +859,6 @@ function updateDiskSize() {
   updatePreview();
 }
 
-function toggleCustomCPUName() {
-  const checkbox = document.getElementById('enable_custom_cpu_name');
-  const section = document.getElementById('custom_cpu_name_section');
-  const input = document.getElementById('custom_cpu_name');
-  
-  if (checkbox.checked) {
-    section.style.display = 'block';
-    input.required = true;
-    setTimeout(() => input.focus(), 100);
-  } else {
-    section.style.display = 'none';
-    input.required = false;
-    input.value = '';
-    document.getElementById('cpuNameValid').style.opacity = '0';
-  }
-  updatePreview();
-}
-
-function validateCustomCPUName() {
-  const input = document.getElementById('custom_cpu_name');
-  const validIcon = document.getElementById('cpuNameValid');
-  const value = input.value.trim();
-  if (value.length > 0) {
-    validIcon.style.opacity = '1';
-    input.style.borderColor = '#10B981';
-  } else {
-    validIcon.style.opacity = '0';
-    input.style.borderColor = '';
-  }
-}
 
 function validateUsername() {
   const input = document.getElementById('custom_username');
@@ -1106,9 +1001,7 @@ function buildReview() {
         <div>
           <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color:#EC4899; margin-bottom: 10px; display:inline-flex; align-items:center; gap:6px;">${svg('i-cpu', 12)} Hardware</div>
           ${reviewRow('vCPUs', data.custom_cpus + ' vCPUs')}
-          ${reviewRow('CPU Layout', data.cpu_sockets + 'S × ' + data.cpu_cores + 'C × ' + data.cpu_threads + 'T')}
-          ${reviewRow('CPU Model', data.cpu_model || 'host')}
-          ${reviewRow('Custom CPU', data.custom_cpu_name ? '<span style="color:#6366F1; font-weight:600;">' + data.custom_cpu_name + '</span>' : 'Default (host)')}
+          ${reviewRow('CPU Model', data.cpu_model || 'xeon-cascadelake')}
           ${reviewRow('Memory', data.custom_memory + ' MB')}
           ${reviewRow('Disk Size', data.disk_size)}
         </div>
@@ -1124,7 +1017,7 @@ function buildReview() {
           ${reviewRow('Manufacturer', data.smbios_manufacturer)}
           ${reviewRow('Product', data.smbios_product)}
           ${reviewRow('ACPI', data.enable_acpi ? 'Enabled' : 'Disabled')}
-          ${reviewRow('Nested KVM', data.nested_kvm ? 'On' : 'Off')}
+          ${reviewRow('KVM On / Off', data.enable_kvm ? 'On' : 'Off')}
         </div>
       </div>`;
   }
@@ -1146,8 +1039,8 @@ function getOwnerName(ownerId) {
 
 // KVM lock: host without KVM keeps the KVM options OFF and warns on each click (see /js/kvm-lock.js)
 KvmLock.init({
-  kvmId: 'enable_kvm', nestedId: 'enable_nested',
-  kvmHintId: 'kvmHint', nestedHintId: 'nestedHint', bannerId: 'kvmHostBanner'
+  kvmId: 'enable_kvm',
+  kvmHintId: 'kvmHint', bannerId: 'kvmHostBanner'
 });
 
 function collectFormData() {
@@ -1160,22 +1053,13 @@ function collectFormData() {
   if (osTemplateInput && osTemplateInput.value) data.os_template = osTemplateInput.value;
   
   data.enable_kvm = document.getElementById('enable_kvm')?.checked ? 1 : 0;
-  data.nested_kvm = document.getElementById('enable_nested')?.checked ? 1 : 0;
   data.enable_acpi = document.getElementById('enable_acpi')?.checked ? 1 : 0;
   
-  if (!data.custom_password || String(data.custom_password).length < 8) {
-    return { __error: 'VM password is required and must be at least 8 characters' };
+  if (!data.custom_password) {
+    return { __error: 'VM password is required' };
   }
   
-  const customCPUCheckbox = document.getElementById('enable_custom_cpu_name');
-  const customCPUInput = document.getElementById('custom_cpu_name');
-  if (customCPUCheckbox && customCPUCheckbox.checked && customCPUInput) {
-    const cpuName = customCPUInput.value.trim();
-    if (!cpuName) return null;
-    data.custom_cpu_name = cpuName;
-  } else {
-    data.custom_cpu_name = null;
-  }
+  data.custom_cpu_name = null; // custom CPU names are not offered
   
   const manufacturerSelect = document.getElementById('smbios_manufacturer');
   if (manufacturerSelect && manufacturerSelect.value === 'custom') {
@@ -1198,60 +1082,80 @@ async function submitCreate() {
   const progress = document.getElementById('createProgress');
   const progressBar = document.getElementById('createProgressBar');
   const progressText = document.getElementById('createProgressText');
-  
+
   btn.disabled = true;
   btn.innerHTML = `<span class="spinner spinner-sm" style="margin-right:8px;"></span> Creating...`;
-  
+
   alert.style.display = 'none';
   progress.style.display = 'block';
   progressText.textContent = 'Initializing...';
   progressBar.style.width = '10%';
-  
+
+  const showError = (msg) => {
+    progress.style.display = 'none';
+    alert.className = 'alert alert-error';
+    alert.innerHTML = `<span class="alert-icon" style="color:#EF4444; display:inline-flex;">${svg('i-x', 16)}</span><span>${escHtml(msg)}</span>`;
+    alert.style.display = 'flex';
+    btn.disabled = false;
+    btn.innerHTML = `${svg('i-refresh', 14)} Try Again`;
+    showToast('Failed: ' + msg, 'error');
+  };
+
   try {
     const data = collectFormData();
     if (data === null) throw new Error('Please fill in the custom CPU name field');
     if (data.__error) throw new Error(data.__error);
     if (!data.os_template && !data.iso_file) throw new Error('Please select an OS template or ISO file');
-    
+
     progressText.textContent = 'Creating VM...';
     progressBar.style.width = '30%';
-    
+
+    // The server answers at once (202) and prepares the disk in the background.
     const res = await fetch('/api/vms', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    
-    progressBar.style.width = '70%';
-    progressText.textContent = 'Configuring...';
-    
-    const result = await res.json();
-    
-    if (res.ok && result.success) {
-      progressBar.style.width = '100%';
-      progressBar.classList.add('green');
-      progressText.textContent = 'VM created successfully!';
-      
-      alert.className = 'alert alert-success';
-      alert.innerHTML = `<span class="alert-icon" style="color:#10B981; display:inline-flex;">${svg('i-check-circle', 16)}</span><span>VM "${data.vm_name}" created successfully! (ID: ${result.vm_id})</span>`;
-      alert.style.display = 'flex';
-      
-      btn.innerHTML = `${svg('i-check', 14)} VM Created!`;
-      showToast('VM created successfully!', 'success');
-      
-      setTimeout(() => { window.location.href = `/admin/vm/${result.vm_id}`; }, 1800);
-    } else {
-      throw new Error(result.error || 'VM creation failed');
+    let result = {};
+    try { result = await res.json(); } catch (e) { /* non-JSON error page */ }
+    if (!res.ok || !result.success || !result.vm_id) {
+      throw new Error(result.error || `VM creation failed (HTTP ${res.status})`);
     }
-  } catch(e) {
-    progress.style.display = 'none';
-    alert.className = 'alert alert-error';
-    alert.innerHTML = `<span class="alert-icon" style="color:#EF4444; display:inline-flex;">${svg('i-x', 16)}</span><span>${escHtml(e.message)}</span>`;
+
+    const vmId = result.vm_id;
+    progressText.textContent = 'Preparing the OS image and disk (this can take a few minutes)...';
+    progressBar.style.width = '50%';
+
+    // Poll until the background job finishes.
+    const startedAt = Date.now();
+    while (true) {
+      await new Promise(r => setTimeout(r, 2000));
+      let st;
+      try {
+        const sr = await fetch(`/api/vms/${vmId}/create-status`, { credentials: 'same-origin' });
+        st = await sr.json();
+      } catch (e) {
+        continue; // network blip: keep polling
+      }
+      if (st.state === 'ready') break;
+      if (st.state === 'failed') throw new Error(st.error || 'VM creation failed');
+      const mins = Math.floor((Date.now() - startedAt) / 60000);
+      if (mins >= 1) progressText.textContent = `Still preparing (${mins} min). Please keep this page open...`;
+    }
+
+    progressBar.style.width = '100%';
+    progressBar.classList.add('green');
+    progressText.textContent = 'VM created successfully!';
+
+    alert.className = 'alert alert-success';
+    alert.innerHTML = `<span class="alert-icon" style="color:#10B981; display:inline-flex;">${svg('i-check-circle', 16)}</span><span>VM "${escHtml(data.vm_name)}" created successfully! (ID: ${vmId})</span>`;
     alert.style.display = 'flex';
-    
-    btn.disabled = false;
-    btn.innerHTML = `${svg('i-refresh', 14)} Try Again`;
-    showToast('Failed: ' + e.message, 'error');
+
+    btn.innerHTML = `${svg('i-check', 14)} VM Created!`;
+    showToast('VM created successfully!', 'success');
+    setTimeout(() => { window.location.href = `/admin/vm/${vmId}`; }, 1800);
+  } catch (e) {
+    showError(e.message);
   }
 }
 
@@ -1276,7 +1180,7 @@ function updatePreview() {
   const osLogoBox = document.getElementById('osLogoBox');
   if (osLogoBox && template && osTemplates[template]) {
     const tmpl = osTemplates[template];
-    const iconUrl = tmpl.icon && tmpl.icon.startsWith('http') ? tmpl.icon : 'https://i.imgur.com/wu0Ob6B.png';
+    const iconUrl = osIconSrc(tmpl.icon);
     osLogoBox.innerHTML = `<img src="${iconUrl}" style="width: 48px; height: 48px; object-fit: contain; border-radius: 8px; padding: 4px; background: white;" onerror="this.src='https://i.imgur.com/wu0Ob6B.png';" alt="${tmpl.name}">`;
   } else if (osLogoBox) {
     osLogoBox.innerHTML = '<svg width="30" height="30" style="color: #6366F1;"><use href="#i-server"/></svg>';

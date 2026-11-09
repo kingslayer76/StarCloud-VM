@@ -7,7 +7,7 @@
         </div>
         <div class="sidebar-brand-text">
             <div class="sidebar-brand-name" id="userSidebarName"><%= siteName %></div>
-            <div class="sidebar-brand-version"><%= panelVersion %> User</div>
+            <div class="sidebar-brand-version"><% if (typeof showPanelVersion !== 'undefined' && showPanelVersion) { %><%= panelVersion %> <% } %>User</div>
         </div>
     </a>
     

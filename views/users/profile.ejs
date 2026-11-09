@@ -12,7 +12,7 @@
 <body>
 <div class="admin-wrapper">
 
-  <%- include('../partials/users/sidebar') %>
+  <%- include(user && user.role === 'admin' ? '../partials/admin/sidebar' : '../partials/users/sidebar') %>
 
   <div class="admin-main">
     <%- include('../partials/admin/header') %>

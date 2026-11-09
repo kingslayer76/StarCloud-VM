@@ -779,6 +779,7 @@
 
     <div class="admin-content">
 
+      <%- include('../partials/welcome-banner') %>
       <!-- Enhanced Header -->
       <div class="page-header-enhanced">
         <div style="position: relative; z-index: 1;">
@@ -921,10 +922,12 @@
               <span class="status-label">Memory Usage</span>
               <span class="status-value" id="statusMemory">—</span>
             </div>
+            <% if (showPanelVersion) { %>
             <div class="status-item">
               <span class="status-label">Panel Version</span>
               <span class="status-value"><%= panelVersion || 'V1.0' %></span>
             </div>
+            <% } %>
           </div>
         </div>
       </div>
@@ -1072,7 +1075,7 @@ function animateNumber(id, target) {
 // ============ RENDER VM CARD (Admin) ============
 function renderVMCard(vm) {
   const icon = vm.template_icon;
-  const displayIcon = (icon && icon.startsWith('http')) ? icon : 'https://i.imgur.com/wu0Ob6B.png';
+  const displayIcon = osIconSrc(icon);
   const status = vm.status || 'stopped';
   const ownerName = vm.owner_username || 'Unassigned';
   
@@ -1081,7 +1084,7 @@ function renderVMCard(vm) {
       <div class="vm-card-header">
         <div class="vm-title-block">
           <div class="vm-os-icon">
-            <img src="${displayIcon}" alt="${escHtml(vm.template_name || 'OS')}" onerror="this.src='https://i.imgur.com/wu0Ob6B.png'">
+            <img src="${displayIcon}" alt="${escHtml(vm.template_name || 'OS')}" onerror="this.style.visibility='hidden'">
           </div>
           <div style="min-width: 0; flex: 1;">
             <div class="vm-name-enhanced">${escHtml(vm.vm_name)}</div>
@@ -1292,5 +1295,93 @@ loadSystemStatus();
 setInterval(loadAdminData, 30000);
 setInterval(loadSystemStatus, 60000);
 </script>
+<% if (typeof showWelcome !== 'undefined' && showWelcome) { %>
+<!-- One-time welcome popup after admin login -->
+<div id="welcomeOverlay" class="wc-overlay" role="dialog" aria-modal="true" aria-labelledby="wcTitle">
+  <div class="wc-card">
+    <div class="wc-spark wc-s1"></div><div class="wc-spark wc-s2"></div><div class="wc-spark wc-s3"></div>
+    <div class="wc-spark wc-s4"></div><div class="wc-spark wc-s5"></div><div class="wc-spark wc-s6"></div>
+    <img class="wc-logo" src="<%= siteLogo %>" alt="">
+    <h2 id="wcTitle" class="wc-title">Welcome to StarCloud Panel</h2>
+    <p class="wc-line">Manage your virtual machines in one place.</p>
+    <div class="wc-credit">
+      <div>Made by KingSlayer</div>
+      <div>Inspired by HopingBoyz</div>
+    </div>
+    <button type="button" class="wc-btn" onclick="closeWelcome()">Let's go</button>
+  </div>
+</div>
+<style>
+  .wc-overlay {
+    position: fixed; inset: 0; z-index: 10000;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px; background: rgba(2, 6, 18, 0.7);
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+    animation: wcFade 0.45s ease-out both;
+  }
+  .wc-overlay.wc-out { animation: wcFadeOut 0.35s ease-in both; }
+  .wc-card {
+    position: relative; overflow: hidden; width: 100%; max-width: 420px;
+    padding: 34px 28px 28px; text-align: center; border-radius: 20px;
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    background: linear-gradient(160deg, rgba(30, 27, 75, 0.95), rgba(8, 12, 28, 0.97));
+    box-shadow: 0 24px 80px rgba(99, 102, 241, 0.35);
+    animation: wcPop 0.6s cubic-bezier(.2, 1.4, .4, 1) both;
+  }
+  .wc-logo { width: 72px; height: 72px; object-fit: contain; border-radius: 16px; animation: wcFloat 3s ease-in-out infinite; }
+  .wc-title {
+    margin: 16px 0 8px; font-size: 22px; font-weight: 800; letter-spacing: 0.2px;
+    background: linear-gradient(90deg, #a5b4fc, #6ee7b7, #a5b4fc);
+    background-size: 200% auto; -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: wcShine 3.2s linear infinite;
+  }
+  .wc-line { margin: 0 0 18px; font-size: 14px; color: #cbd5e1; }
+  .wc-credit {
+    display: inline-block; padding: 10px 16px; border-radius: 12px; margin-bottom: 20px;
+    background: rgba(99, 102, 241, 0.12); border: 1px solid rgba(99, 102, 241, 0.25);
+    font-size: 13px; color: #c7d2fe; line-height: 1.7;
+  }
+  .wc-btn {
+    padding: 11px 26px; border: 0; border-radius: 999px; cursor: pointer;
+    font-size: 14px; font-weight: 700; color: #fff;
+    background: linear-gradient(90deg, #6366f1, #10b981);
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.45);
+    animation: wcPulse 2s ease-in-out infinite;
+  }
+  .wc-btn:hover { filter: brightness(1.1); }
+  .wc-spark {
+    position: absolute; width: 8px; height: 8px; border-radius: 50%;
+    background: #a5b4fc; opacity: 0; animation: wcSpark 2.6s ease-in-out infinite;
+  }
+  .wc-s1 { top: 14%; left: 12%; animation-delay: 0s; }
+  .wc-s2 { top: 22%; right: 14%; background: #6ee7b7; animation-delay: 0.4s; }
+  .wc-s3 { top: 46%; left: 6%; width: 5px; height: 5px; animation-delay: 0.9s; }
+  .wc-s4 { top: 52%; right: 8%; width: 6px; height: 6px; background: #6ee7b7; animation-delay: 1.3s; }
+  .wc-s5 { bottom: 20%; left: 18%; width: 5px; height: 5px; animation-delay: 1.8s; }
+  .wc-s6 { bottom: 14%; right: 20%; animation-delay: 2.2s; }
+  @keyframes wcFade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes wcFadeOut { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes wcPop { from { opacity: 0; transform: translateY(24px) scale(0.92); } to { opacity: 1; transform: none; } }
+  @keyframes wcFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+  @keyframes wcShine { to { background-position: 200% center; } }
+  @keyframes wcPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+  @keyframes wcSpark { 0%, 100% { opacity: 0; transform: scale(0.4); } 50% { opacity: 0.9; transform: scale(1.2); } }
+  @media (prefers-reduced-motion: reduce) {
+    .wc-overlay, .wc-card, .wc-logo, .wc-title, .wc-btn, .wc-spark { animation: none !important; }
+  }
+</style>
+<script>
+  function closeWelcome() {
+    var o = document.getElementById('welcomeOverlay');
+    if (!o) return;
+    o.classList.add('wc-out');
+    setTimeout(function () { o.remove(); }, 350);
+  }
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeWelcome(); });
+  document.getElementById('welcomeOverlay').addEventListener('click', function (e) {
+    if (e.target === this) closeWelcome();
+  });
+</script>
+<% } %>
 </body>
 </html>

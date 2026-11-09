@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <link rel="icon" href="<%= siteLogo %>" type="image/png">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="/css/admin.css">
+  <style>
+    .bl-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
+    .bl-state { font-size:12px; padding:3px 10px; border-radius:999px; border:1px solid var(--border-subtle); }
+    .bl-state.on { color:#86efac; border-color:rgba(34,197,94,.45); }
+    .bl-state.off { color:#fca5a5; border-color:rgba(239,68,68,.45); }
+    .bl-msg { font-size:13px; color: var(--text-muted); margin-left:auto; }
+    .bl-box { background:#05050a; color:#e2e8f0; border:1px solid var(--border-subtle); border-radius:10px;
+              padding:12px; height:60vh; min-height:260px; overflow:auto; font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+              white-space:pre-wrap; word-break:break-word; }
+    .bl-box.empty { color: var(--text-muted); }
+  </style>
+</head>
+<body>
+<div class="admin-wrapper">
+  <% if (isAdmin) { %><%- include('partials/admin/sidebar') %><% } else { %><%- include('partials/users/sidebar') %><% } %>
+
+  <div class="admin-main">
+    <%- include('partials/admin/header') %>
+
+    <div class="admin-content">
+      <div class="page-header">
+        <div class="page-title-section">
+          <h1 class="page-title">Boot log</h1>
+          <p class="page-subtitle">VM <strong>#<%= vm.vm_id %></strong> — <%= vm.vm_name %>. Latest lines from the VM's start-up log. Refreshes every 5 seconds.</p>
+        </div>
+        <div class="page-actions">
+          <a href="<%= backUrl %>" class="btn btn-outline">Back to VM</a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="bl-toolbar">
+          <span class="bl-state <%= initialRunning ? 'on' : 'off' %>" id="blState"><%= initialRunning ? 'RUNNING' : 'STOPPED' %></span>
+          <button class="btn btn-outline btn-sm" id="blPause" type="button">Pause</button>
+          <button class="btn btn-outline btn-sm" id="blNow" type="button">Refresh now</button>
+          <span class="bl-msg" id="blMsg"></span>
+        </div>
+        <div class="bl-box<%= initialLog ? '' : ' empty' %>" id="blBox"><%= initialLog || 'No boot log yet. It appears after the VM is started.' %></div>
+      </div>
+    </div>
+    <%- include('partials/admin/footer') %>
+  </div>
+</div>
+
+<script>
+(function () {
+  const API = <%- JSON.stringify(apiUrl) %>;
+  const box = document.getElementById('blBox');
+  const state = document.getElementById('blState');
+  const msg = document.getElementById('blMsg');
+  const pauseBtn = document.getElementById('blPause');
+  let paused = false;
+  let timer = null;
+
+  function atBottom() { return box.scrollTop + box.clientHeight >= box.scrollHeight - 40; }
+
+  async function load() {
+    try {
+      const res = await fetch(API, { credentials: 'same-origin', cache: 'no-store' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || ('Request failed (' + res.status + ')'));
+      const stick = atBottom();
+      const text = data.log || '';
+      box.textContent = text || 'No boot log yet. It appears after the VM is started.';
+      box.classList.toggle('empty', !text);
+      state.textContent = data.running ? 'RUNNING' : 'STOPPED';
+      state.className = 'bl-state ' + (data.running ? 'on' : 'off');
+      if (stick) box.scrollTop = box.scrollHeight;
+      msg.textContent = 'Updated ' + new Date().toLocaleTimeString();
+    } catch (e) {
+      msg.textContent = e.message;
+    }
+  }
+
+  function schedule() {
+    clearInterval(timer);
+    if (!paused) timer = setInterval(load, 5000);
+  }
+  pauseBtn.onclick = () => {
+    paused = !paused;
+    pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+    schedule();
+  };
+  document.getElementById('blNow').onclick = load;
+  box.scrollTop = box.scrollHeight;
+  schedule();
+  load();
+})();
+</script>
+</body>
+</html>

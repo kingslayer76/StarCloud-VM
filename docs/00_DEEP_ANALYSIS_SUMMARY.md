@@ -306,7 +306,7 @@ Ye sab LXC par hai; StarCloud me KVM/QEMU ke liye alag implementation hogi (`-cp
 | OS icons / font upload / sidebar icons | ❌ 🆕 |
 | Command palette (Ctrl+K), global search | ❌ |
 | Branding (logo/banner/name/favicon) | 🔧 (aaj asli logo/banner lagaye) |
-| Installer (`install.sh` + systemd + KVM check) | ❌ |
+| Installer (`installer.sh` + systemd + KVM check) | ❌ |
 | Docker + compose, CI, tests, `.env.example` | 🔧 (`.env.example` aaj bana; CI/test abhi nahi) |
 
 ### J. Premium look (HKVM theme)
@@ -511,7 +511,7 @@ unzip -l Analyse-File/*.zip              → 12 archives; HVM-1.rar = ZIP magic
 | `routes/ops.js` | Operations APIs: host report, maintenance ON/OFF, emergency stop-all / reboot-all (typed confirm), audit list + CSV. Page `/admin/operations`. |
 | `views/vm-files.ejs` | File manager UI (browse, open, edit text, upload, download, rename, permissions, delete). |
 | `views/admin/operations.ejs` | Operations UI (KVM report, maintenance, emergency, audit). |
-| `install.sh` | Installer: KVM check, nested KVM config (modprobe), packages, Node 20, admin account prompt, `.env` (mode 600), npm, systemd service. |
+| `installer.sh` | Installer: KVM check, nested KVM config (modprobe), packages, Node 20, admin account prompt, `.env` (mode 600), npm, systemd service. |
 
 ### 15.2 Badli hui purani files
 - `app.js`: KVM forced OFF agar host par KVM nahi; nested KVM flag (`+vmx`/`+svm`) QEMU command mein; `nested_kvm` column (migration); create form mein KVM + nested save; capacity guard; stop logic `stopVmProcess()` mein refactor; maintenance gate (503 page / JSON); first-run admin `STARCLOUD_ADMIN_USER` / `STARCLOUD_ADMIN_PASSWORD` se; install ke baad plain password `.env` se hata diya jata hai.
@@ -530,7 +530,7 @@ unzip -l Analyse-File/*.zip              → 12 archives; HVM-1.rar = ZIP magic
 - File manager (SFTP test server asyncssh chroot ke saath): list, read, write, mkdir, rename, chmod, download, upload (disk par bytes verify), delete (root refuse), relative path 400, binary read 415, upload bina Content-Length 411, customer ko dusre ka VM 404, apna stopped VM 409, anon 401.
 - Pages: admin operations 200, admin file manager 200, customer file manager 200, customer admin page 302. Inline JS `node --check` clean.
 - Installer: temp copy mein `--skip-system --admin-user ... --admin-pass ...` chala; `.env` mode 600, admin keys likhe gaye.
-- NOT tested: real QEMU VM boot, nested KVM guest, browser click-through (UI sirf compile + JS syntax check), `install.sh` ka apt/systemd part (root + Debian chahiye).
+- NOT tested: real QEMU VM boot, nested KVM guest, browser click-through (UI sirf compile + JS syntax check), `installer.sh` ka apt/systemd part (root + Debian chahiye).
 
 ### 15.4 Abhi baaki (next batches)
 - Batch 1 bache: per-VM security scan, webhook field (Discord), LICENSE file (MIT ke liye), CPU model select ko VPS/VDS dono ke liye HKVM-style animation ke saath (abhi ek hi create form hai, usme CPU select pehle se hai).

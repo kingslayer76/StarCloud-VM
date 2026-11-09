@@ -13,7 +13,7 @@
     </div>
     <div class="sidebar-brand-text">
       <div class="sidebar-brand-name"><%= siteName %></div>
-      <div class="sidebar-brand-version"><%= panelVersion %>  StarCloud PANEL</div>
+      <div class="sidebar-brand-version">Admin Panel</div>
     </div>
   </a>
 
@@ -34,17 +34,32 @@
           </svg>
         </span>
         <span class="nav-text">Dashboard</span>
-        <span class="nav-badge" id="runningBadge" style="display:none">0</span>
       </a>
       
-      <a href="/dashboard" class="nav-item nav-item-highlight">
+    </div>
+
+    <!-- My account (admin's own VMs and profile) -->
+    <div class="nav-section">
+      <div class="nav-section-label">My Account</div>
+
+      <a href="/vms" class="nav-item <%= cp === 'my-vms' ? 'active' : '' %>">
         <span class="nav-icon">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M19 12H5"></path>
-            <path d="M12 19l-7-7 7-7"></path>
+            <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+            <path d="M8 21h8M12 17v4"></path>
           </svg>
         </span>
-        <span class="nav-text">Back to User Panel</span>
+        <span class="nav-text">My Virtual Machines</span>
+      </a>
+
+      <a href="/profile" class="nav-item <%= cp === 'my-profile' ? 'active' : '' %>">
+        <span class="nav-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="8" r="4"></circle>
+            <path d="M4 21c0-4 4-6 8-6s8 2 8 6"></path>
+          </svg>
+        </span>
+        <span class="nav-text">My Profile</span>
       </a>
     </div>
 
@@ -62,7 +77,6 @@
           </svg>
         </span>
         <span class="nav-text">All VMs</span>
-        <span class="nav-badge" id="vmCountBadge" style="display:none">0</span>
       </a>
 
       <% if (u.role === 'admin') { %>
@@ -96,14 +110,6 @@
         <span class="nav-text">Users</span>
       </a>
 
-      <a href="/admin/operations" class="nav-item <%= cp === 'operations' ? 'active' : '' %>">
-        <span class="nav-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-          </svg>
-        </span>
-        <span class="nav-text">Operations</span>
-      </a>
 
       <a href="/admin/settings" class="nav-item <%= cp === 'settings' ? 'active' : '' %>">
         <span class="nav-icon">
@@ -141,7 +147,7 @@
         <span class="nav-text">Quick Actions</span>
       </div>
 
-      <div class="nav-item" onclick="openSystemInfo()">
+      <a href="/admin/system-info" class="nav-item <%= cp === 'system-info' ? 'active' : '' %>">
         <span class="nav-icon">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"></circle>
@@ -150,7 +156,7 @@
           </svg>
         </span>
         <span class="nav-text">System Info</span>
-      </div>
+      </a>
     </div>
 
   </nav>
@@ -263,53 +269,6 @@
   </div>
 </div>
 
-<!-- System Info Modal -->
-<div class="modal-overlay" id="systemInfoModal">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-title">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 8px;">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="16" x2="12" y2="12"></line>
-          <line x1="12" y1="8" x2="12.01" y2="8"></line>
-        </svg>
-        System Information
-      </div>
-      <button class="modal-close" onclick="closeModal('systemInfoModal')">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </button>
-    </div>
-    <div class="modal-body">
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;" id="systemInfoGrid">
-        <div class="card" style="padding: 14px;">
-          <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px;">Panel Version</div>
-          <div style="font-size: 16px; font-weight: 700; color: var(--accent-primary);">v<%= panelVersion %></div>
-        </div>
-        <div class="card" style="padding: 14px;">
-          <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px;">Status</div>
-          <div style="font-size: 16px; font-weight: 700; color: var(--accent-green); display: flex; align-items: center;">
-            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; margin-right: 6px;"></span>
-            Online
-          </div>
-        </div>
-        <div class="card" style="padding: 14px;">
-          <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px;">Platform</div>
-          <div style="font-size: 14px; font-weight: 600; color: var(--text-primary);">QEMU/KVM</div>
-        </div>
-        <div class="card" style="padding: 14px;">
-          <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px;">Engine</div>
-          <div style="font-size: 14px; font-weight: 600; color: var(--text-primary);">Express + EJS</div>
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('systemInfoModal')">Close</button>
-    </div>
-  </div>
-</div>
 
 <script>
 // Load Discord profile picture if available
@@ -401,7 +360,6 @@ function closeModal(id) {
 }
 
 function openQuickActions() { openModal('quickActionsModal'); }
-function openSystemInfo() { openModal('systemInfoModal'); }
 
 // Close modal on overlay click
 document.addEventListener('click', (e) => {
@@ -416,35 +374,12 @@ document.addEventListener('click', (e) => {
 // Load sidebar stats
 async function loadSidebarStats() {
   try {
-    const [vmsRes, settingsRes] = await Promise.all([
-      fetch('/api/vms'),
-      fetch('/api/settings')
-    ]);
-    
-    if (vmsRes.ok) {
-      const vms = await vmsRes.json();
-      const runningCount = vms.filter(vm => vm.status === 'running').length;
-      const vmCountBadge = document.getElementById('vmCountBadge');
-      const runningBadge = document.getElementById('runningBadge');
-      
-      if (vmCountBadge) {
-        vmCountBadge.textContent = vms.length;
-        vmCountBadge.style.display = 'inline-flex';
-      }
-      
-      if (runningBadge) {
-        runningBadge.textContent = runningCount;
-        runningBadge.style.display = runningCount > 0 ? 'inline-flex' : 'none';
-      }
-    }
-    
+    const settingsRes = await fetch('/api/settings');
     if (settingsRes.ok) {
       const settings = await settingsRes.json();
       const siteName = settings['site_name'] || '<%= siteName %>';
       const nameEl = document.getElementById('sidebarName');
-      if (nameEl) {
-        nameEl.textContent = siteName;
-      }
+      if (nameEl) nameEl.textContent = siteName;
     }
   } catch(e) {
     console.error('Failed to load sidebar data:', e);
