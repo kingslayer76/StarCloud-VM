@@ -612,8 +612,8 @@
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
 
     <script>
-        const isBuiltin = <%- JSON.stringify(isBuiltin || false) %>;
-        const templateData = <%- JSON.stringify(template || {}) %>;
+        const isBuiltin = <%- JSON.stringify(isBuiltin || false).replace(/</g, '\\u003c') %>;
+        const templateData = <%- JSON.stringify(template || {}).replace(/</g, '\\u003c') %>;
 
         function updateIconPreview() {
             const value = document.getElementById('templateIcon').value.trim();

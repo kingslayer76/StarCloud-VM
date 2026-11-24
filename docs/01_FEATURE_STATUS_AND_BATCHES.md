@@ -1,9 +1,9 @@
 # StarCloud — Feature Status aur Batch Plan
 
-> Tarikh: 29 October 2026 (Asia/Calcutta). Branch: `arena/1bed8e0c-starcloud-vm`.
-> Latest pushed commit: `276759e` (KVM lock). Is doc ke saath `LICENSE` (MIT) add hua hai.
-> Short forms ka poora matlab `docs/00_DEEP_ANALYSIS_SUMMARY.md` ke Section 0 (Shabdkosh) mein hai.
-> Faisle (D-1 se D-26) `docs/00_DEEP_ANALYSIS_SUMMARY.md` Section 7 aur Section 17 mein hain. Yahan wahi faisle lagu hain.
+> Tarikh: 26 October 2026. Ye file hi single source hai: kya bana, kya baaki hai.
+> Faisle (D-list) aur round-3 faisle neeche **Appendix** mein hain (purani analysis docs hata di gayi hain).
+> Reference zips (`Analyse-File/`) aur analysis dumps repo se hata diye gaye; purane commits mein milenge.
+> Master spec: `All VM Maker PROMPT/StarCloud VM MAKER WEBSITE MASTER-PROMPT.txt`.
 
 ## 0. Legend
 
@@ -27,7 +27,7 @@ Test ka level:
 |---|---|---|---|
 | 0 | Base aur foundation | ✅ | Security fixes, branding, `.env.example`, Discord account pages |
 | 1 | Host safety + security | 🟡 | KVM detect + lock, nested KVM, capacity guard, maintenance, emergency, audit log, installer, file manager, nested KVM toggle, CPU model (pehle 3 deep features: 1 poora, 2 partial). Neeche pending list dekho |
-| 2 | VM lifecycle + monitoring + promo | ⬜ | Boot log, expiry/renew/suspend, coupons, giveaway, shared IPv4 + auto port block, snapshots, backup/restore, status page, referral, flash sale |
+| 2 | VM lifecycle + monitoring + promo | ⬜ | Boot log, expiry/renew/suspend, giveaway (coupons 🚫 Batch 4 mein drop), shared IPv4 + auto port block, snapshots, backup/restore, status page, referral, flash sale |
 | 3 | Auth, accounts, guest agent | ⬜ | 2FA, lockout, password reset, sessions, owner tier, API keys, sub-users, impersonation, guest agent, sshx, noVNC |
 | 4 | Commerce + support | ⬜ | Plans/add-ons, UPI manual confirm, email verify, invoices (pending) |
 | 5 | Product lines + networking + API | ⬜ | VDS (CPU pinning, guaranteed RAM), LXD Bot Hosting (Linux only), port-forward manager, rDNS, firewall, bandwidth, public API + CLI |
@@ -128,7 +128,7 @@ Pehle 3 deep features ka status:
 | 2.2 | VM expiry, renew, expiring list | Master §9 |
 | 2.3 | Suspend / unsuspend with reason | Master §3 |
 | 2.4 | Bulk power ops UI (server endpoint, Batch 1 ke emergency ke saath) | Master §3 |
-| 2.5 | Coupons (percent / fixed / 100% free, expiry, usage count; **order table nahi**) | D-7, D-6 |
+| 2.5 | 🚫 Coupons: turn 6 mein Batch 4 ke saath drop (commerce scope) | — |
 | 2.6 | Giveaway codes (N codes, one-time claim) | D-7 |
 | 2.7 | Single public IPv4 + har VM ko automatic alag port block | D-9, D-18 |
 | 2.8 | IP pool page (basic: add IP/CIDR, free/assigned/reserved) | Master §6.1 |
@@ -169,7 +169,10 @@ Note: Batch 1 pending #7 (edit 200 par seed fail) bhi yahin fix hoga.
 
 ---
 
-## 6. Batch 4 — Commerce + support (⬜)
+## 6. Batch 4 — Commerce + support (🚫 OUT OF SCOPE, turn 6)
+
+> **Turn 6 faisla:** Batch 4 poora drop. Invoices, GST, coupons, support tickets aur payments implement nahi honge. Panel customers ko becha jayega aur owner ki income panel bechne + 25–30 VPS chalane se hogi, isliye expiry / suspend / recreate flows zaroori hain (Batch 2 mein). Billing later phase mein (unchanged).
+> Neeche ke 4.1–4.5 sirf reference ke liye hain, ab kaam nahi honge.
 
 | # | Feature | Faisla |
 |---|---|---|
@@ -288,3 +291,106 @@ Installer admin username/password puchega. Enter dabane par `admin` / `admin` ra
 | Q1 | Invoices / GST chahiye? | Master spec §9 | **Abhi nahi.** Invoice page skip. Baad mein (Phase 7 ke saath) decide. Note: GST invoice ke liye sale record chahiye, jo "order record table NAHI" rule se takrata hai. Woh tab decide hoga. |
 | Q2 | Bot Hosting product mein ready templates (Discord.py, Discord.js, Node.js, Python)? | Ye panel ka Discord bot nahi. Customer ke apne bot ka environment hai. | **Koi template nahi.** Customer khud setup karega. |
 | Q3 | Bot Hosting (LXD containers) ka poora product build karna hai? | Master spec §1.1B, scope confirm nahi tha | **Baad mein.** Pehle VPS/VDS poora karein. Bot Hosting scope abhi pending list mein rahega. |
+
+---
+
+## 14. Bug round (26 Oct 2026) — kya theek hua
+
+| # | Bug | Fix | Test |
+|---|---|---|---|
+| B-1 | `POST /api/login` mein password object/array ya missing ho to request hang ho jati thi (bcrypt callback mein throw) | Sirf string accept; missing par 400 | Live: missing 400, object 400 (pehle 000/hang) |
+| B-2 | Login par brute force limit nahi tha | 10 galat password / IP+username / 15 min → 429 | Live: 11th attempt 429; doosra user 401 |
+| B-3 | Password change mein object input se hang | String check | Live: 400 |
+| B-4 | Admin user create mein koi validation nahi (weak password, free-text role) | Signup jaise username rule, password ≥ 6, role sirf user/admin | Live: 400 cases; 200 valid |
+| B-5 | Default admin (id 1) disable ho sakta tha → admin lockout | 400 | Live: 400 |
+| B-6 | Admin khud ko demote/disable kar sakta tha → lockout | 400 | Live: 400 |
+| B-7 | Admin apna account delete kar sakta tha | 400 | Live: 400 |
+| B-8 | User delete par uske VMs orphan ho jaate the | Agar user ke VM hain to 409, pehle VM move/delete karein | Live: 409 with VM; 200 without |
+| B-9 | Custom template URL `file://` ya kuch bhi ho sakta tha | Sirf http(s) | Live: 400 |
+| B-10 | Views mein `<%- JSON.stringify() %>` script ke andar: `</script>` inject ho sakta tha | `<` ko `\u003c` se escape (9 jagah) | EJS compile 31/31; VM console/ssh/files/bootlog pages 200 |
+
+Admin UI check: 34 passed, 0 failed. Route smoke: admin pages 200, no FATAL.
+
+## 15. Abhi kitna baaki hai (honest count)
+
+| Batch | Done | Baaki | Note |
+|---|---|---|---|
+| 0 | poora | 0 | |
+| 1 | 30 items ✅ + 4 🟡 | ~6 (3.2 list) + 4 partial | Real KVM host par test baaki |
+| 2 | 2 (boot log, /health + /metrics) | 14 | |
+| 3 | 0 | 15 | 2FA, API keys, guest agent, noVNC, sshx … |
+| 4 | 0 | 4 | Invoice/GST skip (sales < threshold, CA se confirm) |
+| 5 | 1 (LXD badge) | 11 | VDS, bot hosting, API, webhooks, cron |
+| 6 | 0 | 15 | AI assistant, site, i18n, PWA, Docker |
+| Later | 0 | ~10 | Multi-node cluster, storage VPS, … |
+
+Approx: lagbhag 33 done, lagbhag 80 baaki (Batch 1 ke 4 partial + Later ke sath). Ye ek hi turn mein poora nahi ho sakta; har batch ko alag, testable round mein karna hoga.
+
+Real hardware par verify baaki: real VM boot (KVM), cloud-init SSH login, OS image download, installer systemd par real VPS, Cloudflare tunnel.
+
+## 15b. Turn 6 — kya bana aur kya test hua (honest)
+
+**Code mein aaya aur API level par test hua (54 checks, fresh DB, sab pass):**
+- Login: 400 / 401 / 429 edge cases; 2FA on hone par password ke baad `need_2fa`; TOTP aur backup code login; backup code ek hi baar chalta hai.
+- 2FA setup / enable / disable, sessions list aur revoke, admin revoke-sessions.
+- API keys (`sc_` + 48 hex, sirf hash store) aur `/api/v1/vms` (Bearer). Customer ko sirf apni VMs dikhti hain.
+- Expiry set / clear, suspend (reason zaroori), suspended VM start par 403, unsuspend, bulk (suspend / unsuspend / unknown action).
+- Webhook: HMAC signed test delivery receiver par pahunchi. Bad URL 400. Schedule validation.
+- `/api/status`, `/status`, `/security`, `/admin/lifecycle` 200. Cross-site POST (Origin mismatch) 403.
+- `scripts/check-admin-user-ui.sh`: 34 pass, 0 fail.
+- Coupons code poora hata diya gaya (Batch 4 scope).
+
+**Code mein hai, lekin test NAHI hua (agle step mein):**
+- Expiry job ka auto-suspend (5 min tick), watchdog (desired_state=running wali VM restart), status sampling loop, host alerts (RAM/disk threshold).
+- Webhook retries (0/5/30 s), schedule ka actual run.
+- Snapshot create / restore / delete real qcow2 par (sandbox mein `qemu-img` nahi hai, isliye create 500 "spawn qemu-img ENOENT" deta hai, jo clean error hai).
+- Backup (offline copy) aur restore.
+- Browser par naye pages (`/security`, `/status`, `/admin/lifecycle`) ka UI behaviour.
+- Login page ka 2FA second field browser mein.
+
+**Batch 1 (qemu-img):** `resizeDisk`, `createCloudInitSeed` aur reinstall ka resize ab async `execFilePromise` use karte hain. `probeQemuCpuNames` (boot par ek baar, 8 s timeout) abhi sync hai.
+
+**Batch 3 baaki:** CSRF origin guard (basic, done), admin reset link, impersonation check, guest agent, noVNC, sshx, TOTP ka admin reset.
+**Batch 5 baaki:** VDS, bot hosting, public `/api/v1` expansion.
+**Batch 6 baaki:** AI assistant, site, i18n, PWA, Docker.
+
+## Appendix A — Faisle (D-list, purani docs se preserve)
+
+| # | Faisla |
+|---|---|
+| D-1 | Saari features ek hi install me; P0/P1/MVP ka split nahi |
+| D-3 | RDP / Windows / Linux XRDP — sab scope se bahar (D-26 me XRDP bhi confirm hata) |
+| D-4 | tmate hatao, **sshx** rakho |
+| D-5 | "Custom price per order" hatao |
+| D-6 | "Order record" table hatao; Discord ticket hi record |
+| D-7 | Coupons aur giveaway codes **VM management** section me |
+| D-8 | HKVM → **StarCloud**, "hopingboyz" → **KingSlayer** |
+| D-9 | Single public IPv4 + har VM ko alag port block |
+| D-10 | AI assistant website me built-in |
+| D-11 | Custom CPU model har VPS/VDS create form me (same HKVM style/animation) |
+| D-12 | Nested KVM: host par KVM ho to default ON + toggle; KVM na ho to VPS create block (round 3 me single KVM switch bana) |
+| D-13 | Installer KVM auto-detect karega |
+| D-14 | Default admin `admin/admin` accept (baad me badlenge) — security risk hai |
+| D-15 | VM ka password admin khud dale; template default nahi |
+| D-16 | Webhook ek setting, default khali |
+| D-17 | File manager ADD |
+| D-18 | IPv4 shared, port automatic allocate |
+| D-19 | AI do tier: owner/admin poora website; customer sirf support + apna VM start/stop (confirm ke saath) |
+| D-20 | AI provider = Google AI Studio ka free Gemini key, sirf `.env` me |
+| D-21 | Customer passwords/secrets AI ko kabhi nahi |
+| D-22 | `public-apis/public-apis` repo AI ka knowledge |
+| D-23 | "Pi S" drop; owner remote support + telemetry bhi nahi |
+| D-24 | VM password minimum 8 (baad mein hata diya: sirf required) |
+| D-26 | XRDP / Linux desktop remote bhi hatao |
+
+Standing rules: har jawab detail me; `Analyse-File/` me kabhi change nahi (ab hata diya gaya hai, git history mein hai); code packs se sirf ideas (license safe); koi hidden backdoor / magic password / license-bypass nahi.
+
+## Appendix B — Round 3 faisle (KVM lock aur sidebar)
+
+- "VPS" = wo server jispar panel install hai. Installer KVM check karta hai aur `data/install-kvm-report.json` likhta hai.
+- KVM nahi to lock: KVM On/Off aur Nested KVM On/Off dono OFF, click par warning. Teesri click par PERMANENT BLOCK notice.
+- KVM ya nested ON maangne par server 409 `KVM_BLOCKED` (create aur edit). KVM OFF wali VM bani rehti hai.
+- Lock tab hatega jab `/dev/kvm` aur VT-x/AMD-V available hon.
+- Sidebar: "Create VM" default; VPS/VDS alag options nahi. "Create RDP" cancel (RDP scope se bahar).
+- Installer `STARCLOUD_DATA_DIR=./data` `.env` mein likhta hai (agar set nahi).
+- Code: `public/js/kvm-lock.js`, `services/capabilities.js`, `app.js` (create/edit 409), `views/admin/vm-create.ejs`, `views/admin/vm-edit.ejs`.

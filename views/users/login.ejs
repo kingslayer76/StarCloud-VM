@@ -322,6 +322,12 @@
           </div>
         </div>
 
+        <!-- 2FA code: shown only when the account has two-factor on -->
+        <div class="form-group" id="totpGroup" style="display:none;">
+          <label class="form-label" for="totpCode">Authenticator code</label>
+          <input type="text" id="totpCode" class="form-control" placeholder="6-digit code or backup code" autocomplete="one-time-code" inputmode="text" maxlength="16">
+        </div>
+
         <!-- Remember + Options -->
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 8px;">
           <label class="toggle-switch" style="cursor:pointer;">
@@ -411,10 +417,20 @@ async function handleLogin(e) {
     const res = await fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username, password, totp_code: (document.getElementById('totpCode').value || '').trim() || undefined })
     });
     
     const data = await res.json();
+
+    if (res.status === 200 && data.need_2fa) {
+      document.getElementById('totpGroup').style.display = '';
+      document.getElementById('totpCode').focus();
+      showAlert('Enter the code from your authenticator app (or a backup code).', 'error');
+      btn.classList.remove('loading');
+      btn.disabled = false;
+      btn.innerHTML = 'Sign In';
+      return;
+    }
     
     if (res.ok && data.success) {
       btn.innerHTML = '✅ Success! Redirecting...';

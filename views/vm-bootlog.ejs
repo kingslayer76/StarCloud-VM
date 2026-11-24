@@ -53,7 +53,7 @@
 
 <script>
 (function () {
-  const API = <%- JSON.stringify(apiUrl) %>;
+  const API = <%- JSON.stringify(apiUrl).replace(/</g, '\\u003c') %>;
   const box = document.getElementById('blBox');
   const state = document.getElementById('blState');
   const msg = document.getElementById('blMsg');

@@ -16,3 +16,4 @@ backups/
 logs/
 data/panel.pid
 data/install-kvm-report.json
+data/cloudflared.pid

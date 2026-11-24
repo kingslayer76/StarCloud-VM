@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VM lifecycle - StarCloud Panel</title>
+<style>
+body{margin:0;background:#0b0f17;color:#e6edf7;font-family:system-ui,Segoe UI,Roboto,sans-serif;font-size:14px}
+header{padding:14px 22px;border-bottom:1px solid #1d2636;display:flex;justify-content:space-between;align-items:center}
+header a{color:#5ab0ff;text-decoration:none}
+main{padding:18px 22px;display:grid;gap:16px}
+section{background:#121a27;border:1px solid #1d2636;border-radius:12px;padding:14px}
+h2{margin:0 0 10px;font-size:16px;color:#8ec5ff}
+button{background:#0087ff;color:#fff;border:0;border-radius:6px;padding:6px 10px;cursor:pointer;margin:2px}
+button.danger{background:#b3261e}button.ghost{background:#263247}
+input,select{background:#0b0f17;color:#e6edf7;border:1px solid #2a3850;border-radius:6px;padding:6px;margin:2px}
+table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:6px;border-bottom:1px solid #1d2636;vertical-align:top}
+.muted{color:#8a98ad;font-size:12px}.warn{color:#ffcc66}.bad{color:#ff8a80}.good{color:#58d68d}
+.msg{padding:6px 8px;border-radius:6px;background:#0e2a1b;color:#9ff0bd;display:none;margin:6px 0}.msg.err{background:#341616;color:#ffb4ab}
+code{background:#0b0f17;padding:2px 4px;border-radius:4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+</style></head>
+<body>
+<header><strong>VM lifecycle</strong><a href="/admin/dashboard">← Admin dashboard</a></header>
+<main>
+<section><h2>Host alerts</h2><div id="alerts" class="muted">Loading…</div></section>
+
+<section><h2>Expiring within 7 days (and already expired)</h2><div id="expiring" class="muted">Loading…</div></section>
+
+<section>
+  <h2>VMs</h2>
+  <div class="muted">Tick VMs, then use the bulk bar. Renew adds days on top of the current expiry (or from today if it already passed). Suspended VMs cannot start until unsuspended.</div>
+  <div style="margin:8px 0">
+    <select id="bulk-action">
+      <option value="start">Start</option><option value="stop">Stop</option><option value="restart">Restart</option>
+      <option value="suspend">Suspend</option><option value="unsuspend">Unsuspend</option>
+    </select>
+    <input id="bulk-reason" placeholder="Reason (for suspend)" size="28">
+    <button id="bulk-run">Run on ticked VMs</button>
+    <span class="muted" id="bulk-out"></span>
+  </div>
+  <table><thead><tr><th></th><th>VM</th><th>Owner</th><th>Status</th><th>Expires (UTC)</th><th>Suspended</th><th>Actions</th></tr></thead>
+  <tbody id="vm-body"></tbody></table>
+  <div class="msg" id="vm-msg"></div>
+  <div id="backups-box" style="display:none;margin-top:10px"></div>
+</section>
+
+<div class="grid2">
+<section>
+  <h2>Schedules (daily, server time)</h2>
+  <div><select id="sch-vm"></select>
+  <select id="sch-action"><option value="start">start</option><option value="stop">stop</option><option value="restart">restart</option></select>
+  <input id="sch-time" type="time" value="02:00"><button id="sch-add">Add</button></div>
+  <table><thead><tr><th>VM</th><th>Action</th><th>Time</th><th></th></tr></thead><tbody id="sch-body"></tbody></table>
+  <div class="msg" id="sch-msg"></div>
+</section>
+<section>
+  <h2>Webhooks (signed)</h2>
+  <div><input id="wh-url" placeholder="https://example.com/hook" size="30">
+  <input id="wh-events" value="*" size="14" title="* or comma list: vm.suspended,vm.unsuspended,vm.autostart,host.alert">
+  <button id="wh-add">Add</button></div>
+  <div class="muted">Each request has <code>X-StarCloud-Signature: sha256=HMAC(secret, timestamp.body)</code>. 3 attempts.</div>
+  <table><thead><tr><th>URL</th><th>Events</th><th>Secret</th><th></th></tr></thead><tbody id="wh-body"></tbody></table>
+  <div class="msg" id="wh-msg"></div>
+  <h2 style="margin-top:10px">Recent deliveries</h2>
+  <table><thead><tr><th>When</th><th>Event</th><th>Result</th><th>Tries</th></tr></thead><tbody id="wh-log"></tbody></table>
+</section>
+</div>
+
+<div class="grid2">
+<section>
+  <h2>Giveaway codes</h2>
+  <div><input id="gw-count" type="number" value="10" size="5"><input id="gw-prefix" value="SC" size="8"><button id="gw-make">Generate</button></div>
+  <textarea id="gw-out" rows="4" style="width:100%;display:none;background:#0b0f17;color:#e6edf7"></textarea>
+  <table><thead><tr><th>Code</th><th>Batch</th><th>Claimed by</th></tr></thead><tbody id="gw-body"></tbody></table>
+</section>
+</div>
+</main>
+<script src="/js/lifecycle.js"></script>
+</body></html>
