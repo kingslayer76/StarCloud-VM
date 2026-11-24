@@ -1,5 +1,17 @@
 # Panel open karna (phone aur bahar se): Cloudflare Tunnel
 
+## Install command (sahi tarika)
+```
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/kingslayer76/StarCloud-VM/refs/heads/StarCloud-VM/installer.sh)"
+```
+Ya do step:
+```
+curl -fsSL https://raw.githubusercontent.com/kingslayer76/StarCloud-VM/refs/heads/StarCloud-VM/installer.sh -o installer.sh
+sudo bash installer.sh
+```
+**`sudo bash <(curl ...)` mat chalayein.** sudo `<(...)` wali file band kar deta hai, isliye error aata hai:
+`bash: /dev/fd/63: No such file or directory`.
+
 ## Pehle samajhiye
 - `10.0.2.x` address ek VM ke andar ka NAT address hai. Phone ya kisi dusre device se ye nahi khulega (isliye "took too long to respond" aata hai).
 - Panel port `8080` par chalta hai. Dusre device se khulne ke liye do raste hain:

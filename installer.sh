@@ -2,6 +2,11 @@
 # =============================================================================
 #   StarCloud VM installer (Debian / Ubuntu)
 # -----------------------------------------------------------------------------
+#   HOW TO RUN (copy one):
+#     sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/kingslayer76/StarCloud-VM/refs/heads/StarCloud-VM/installer.sh)"
+#     curl -fsSL https://raw.githubusercontent.com/kingslayer76/StarCloud-VM/refs/heads/StarCloud-VM/installer.sh -o installer.sh && sudo bash installer.sh
+#   Do NOT use "sudo bash <(curl ...)": sudo closes the <(...) file, so bash says "/dev/fd/63: No such file".
+#
 #   sudo bash installer.sh            menu: 1) install   2) uninstall   3) upgrade
 #   sudo bash installer.sh --install  install (or repair) and start the panel
 #   sudo bash installer.sh --uninstall
@@ -53,7 +58,7 @@ if [ -z "$_self_dir" ] || [ ! -f "$_self_dir/app.js" ]; then
   fi
   if [ -d "$_target/.git" ]; then
     echo "[INFO]    Updating the existing copy in $_target"
-    git -C "$_target" pull --ff-only -q >/dev/null 2>&1 || echo "[WARNING] Could not update $_target (local changes?). Using the copy that is there."
+    git -c safe.directory="$_target" -C "$_target" pull --ff-only -q >/dev/null 2>&1 || echo "[WARNING] Could not update $_target (local changes?). Using the copy that is there."
   elif [ -e "$_target" ] && [ -n "$(ls -A "$_target" 2>/dev/null)" ]; then
     echo "[ERROR]   $_target exists and is not a StarCloud-VM checkout. Move it away, or set STARCLOUD_DIR=<other folder>."
     exit 1
@@ -67,7 +72,8 @@ if [ -z "$_self_dir" ] || [ ! -f "$_self_dir/app.js" ]; then
     fi
   fi
   [ -f "$_target/app.js" ] || { echo "[ERROR]   $_target has no app.js. Check STARCLOUD_BRANCH (it must be a StarCloud-VM branch)."; exit 1; }
-  # Piped runs (curl | bash) read their questions from the terminal, not from the script text
+  # Piped runs (curl | bash) read their questions from the terminal, not from the script text.
+  # (sudo bash <(...) never reaches this line: sudo closes the /dev/fd file before bash starts.)
   if [ ! -t 0 ] && (exec </dev/tty) 2>/dev/null; then exec bash "$_target/installer.sh" "$@" </dev/tty; fi
   exec bash "$_target/installer.sh" "$@"
 fi
