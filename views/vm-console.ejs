@@ -59,7 +59,7 @@
 <script src="/vendor/xterm/xterm-addon-fit.js"></script>
 <script>
 (function () {
-  const vmId = <%- JSON.stringify(String(vmId)) %>;
+  const vmId = <%- JSON.stringify(String(vmId)).replace(/</g, '\\u003c') %>;
   const box = document.getElementById('termBox');
   const statusEl = document.getElementById('termStatus');
   const pill = document.getElementById('vmStatePill');

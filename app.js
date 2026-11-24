@@ -755,8 +755,34 @@ function checkAdmin(req, res, next) {
 
 // ============= AUTH ROUTES =============
 
+// Failed-login limiter: 10 wrong passwords per IP + username per 15 minutes.
+// (Key is per IP and username so one user's lockout does not block everyone else.)
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILURES = 10;
+const loginFailures = new Map(); // key -> { count, resetAt }
+
+function loginLocked(key) {
+  const e = loginFailures.get(key);
+  return !!e && e.resetAt > Date.now() && e.count >= LOGIN_MAX_FAILURES;
+}
+function noteLoginFailure(key) {
+  const now = Date.now();
+  const e = loginFailures.get(key);
+  if (!e || e.resetAt < now) loginFailures.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+  else e.count += 1;
+}
+
 app.post('/api/login', (req, res) => {
-  const { username, password } = req.body;
+  // Only strings are accepted. A JSON object/array here used to throw inside the DB callback and leave the request hanging.
+  const username = typeof req.body?.username === 'string' ? req.body.username : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+  const loginKey = `${req.ip}|${username.toLowerCase()}`;
+  if (loginLocked(loginKey)) {
+    return res.status(429).json({ error: 'Too many failed login attempts. Try again after 15 minutes.' });
+  }
   console.log(`[Auth] Login attempt for username: ${username}`);
   
   db.get(`SELECT * FROM users WHERE username = ? AND is_active = 1`, [username], (err, user) => {
@@ -766,6 +792,7 @@ app.post('/api/login', (req, res) => {
     }
     
     if (!user || !bcrypt.compareSync(password, user.password)) {
+      noteLoginFailure(loginKey);
       console.warn(`[Auth Error] Invalid credentials for username: ${username}`);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
@@ -775,6 +802,7 @@ app.post('/api/login', (req, res) => {
       if (err) console.error('[DB Error] Failed to update last_login:', err);
     });
     
+    loginFailures.delete(loginKey);
     req.session.userId = user.id;
     req.session.username = user.username;
     req.session.role = user.role;
@@ -1331,6 +1359,9 @@ app.get('/api/admin/templates', checkAuth, checkAdmin, (req, res) => {
 // Create custom template
 app.post('/api/admin/templates', checkAuth, checkAdmin, async (req, res) => {
   const { template_key, template_name, template_type, icon, description, disk_size, memory, cpus, download_url, username, password } = req.body;
+  if (download_url && !/^https?:\/\//i.test(String(download_url))) {
+    return res.status(400).json({ error: 'Download URL must start with http:// or https://' });
+  }
 
   if (!template_key || !template_name) {
     return res.status(400).json({ error: 'Template key and name are required' });
@@ -2102,16 +2133,32 @@ app.get('/api/admin/users/:id/discord-info', checkAuth, checkAdmin, (req, res) =
 });
 
 app.post('/api/admin/users', checkAuth, checkAdmin, (req, res) => {
-  const { username, password, email, full_name, role } = req.body;
-  
+  const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+  const full_name = typeof req.body?.full_name === 'string' ? req.body.full_name.trim() : '';
+  const role = req.body?.role === undefined || req.body?.role === '' ? 'user' : req.body.role;
+
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password are required' });
   }
-  
+  if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(username)) {
+    return res.status(400).json({ error: 'Username must be 3–32 characters: letters, numbers, _ . - only.' });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+  if (email && (email.length > 120 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) {
+    return res.status(400).json({ error: 'Please enter a valid email address or leave it empty.' });
+  }
+  if (role !== 'user' && role !== 'admin') {
+    return res.status(400).json({ error: 'Role must be user or admin' });
+  }
+
   const hashedPassword = bcrypt.hashSync(password, 10);
   db.run(
     `INSERT INTO users (username, password, email, full_name, role, is_active) VALUES (?, ?, ?, ?, ?, 1)`,
-    [username, hashedPassword, email || null, full_name || null, role || 'user'],
+    [username, hashedPassword, email || null, full_name || null, role],
     function(err) {
       if (err) {
         if (err.message.includes('UNIQUE constraint failed')) {
@@ -2128,6 +2175,18 @@ app.post('/api/admin/users', checkAuth, checkAdmin, (req, res) => {
 app.put('/api/admin/users/:id', checkAuth, checkAdmin, (req, res) => {
   const userId = parseInt(req.params.id);
   const { email, full_name, password, role, is_active } = req.body;
+  if (!Number.isInteger(userId)) return res.status(400).json({ error: 'Invalid user id' });
+  if (role !== undefined && role !== 'user' && role !== 'admin') {
+    return res.status(400).json({ error: 'Role must be user or admin' });
+  }
+  // 0 / false / '0' mean disabled; anything else means active
+  const activeFlag = is_active === undefined ? undefined : (is_active === 0 || is_active === false || is_active === '0' ? 0 : 1);
+  if (userId === 1 && activeFlag === 0) {
+    return res.status(400).json({ error: 'The default admin cannot be disabled' });
+  }
+  if (userId === req.session.userId && ((role !== undefined && role !== 'admin') || activeFlag === 0)) {
+    return res.status(400).json({ error: 'You cannot remove your own admin access or disable your own account' });
+  }
   
   if (userId === 1 && role && role !== 'admin') {
     return res.status(400).json({ error: 'Default admin must remain an admin' });
@@ -2161,7 +2220,7 @@ app.put('/api/admin/users/:id', checkAuth, checkAdmin, (req, res) => {
   
   if (is_active !== undefined) {
     query += 'is_active = ?, ';
-    values.push(is_active ? 1 : 0);
+    values.push(activeFlag);
   }
   
   query = query.slice(0, -2); // Remove trailing comma and space
@@ -2180,12 +2239,19 @@ app.put('/api/admin/users/:id', checkAuth, checkAdmin, (req, res) => {
 });
 
 app.delete('/api/admin/users/:id', checkAuth, checkAdmin, (req, res) => {
-  if (req.params.id === '1') {
-    return res.status(400).json({ error: 'Cannot delete default admin' });
-  }
-  db.run(`DELETE FROM users WHERE id = ?`, [req.params.id], (err) => {
+  const userId = parseInt(req.params.id, 10);
+  if (!Number.isInteger(userId)) return res.status(400).json({ error: 'Invalid user id' });
+  if (userId === 1) return res.status(400).json({ error: 'Cannot delete default admin' });
+  if (userId === req.session.userId) return res.status(400).json({ error: 'You cannot delete the account you are logged in with' });
+  db.get(`SELECT COUNT(*) AS n FROM vms WHERE owner_id = ?`, [userId], (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json({ success: true });
+    if (row && row.n > 0) {
+      return res.status(409).json({ error: `This user owns ${row.n} VM(s). Move or delete those VMs first.` });
+    }
+    db.run(`DELETE FROM users WHERE id = ?`, [userId], (err2) => {
+      if (err2) return res.status(500).json({ error: err2.message });
+      res.json({ success: true });
+    });
   });
 });
 
@@ -4820,7 +4886,7 @@ app.put('/api/user/profile', checkAuth, (req, res) => {
 app.put('/api/user/password', checkAuth, (req, res) => {
   const { current_password, new_password } = req.body;
   
-  if (!current_password || !new_password) {
+  if (typeof current_password !== 'string' || typeof new_password !== 'string' || !current_password || !new_password) {
     return res.status(400).json({ error: 'All password fields are required' });
   }
   

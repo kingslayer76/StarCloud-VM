@@ -497,7 +497,7 @@ function renderStatusIcon(enabled, label) {
 }
 
 // ===== LXD support card (VMs created from built-in cloud-init OS templates) =====
-const LXD_TEMPLATE_KEYS = <%- JSON.stringify(lxdTemplateKeys || []) %>;
+const LXD_TEMPLATE_KEYS = <%- JSON.stringify(lxdTemplateKeys || []).replace(/</g, '\\u003c') %>;
 function renderLxdCard(vm) {
   if (!vm || !LXD_TEMPLATE_KEYS.includes(vm.template_type)) return '';
   const cmd = (txt) => '<div style="font-family: monospace; font-size: 13px; background: rgba(0,0,0,0.35); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px 12px; margin: 6px 0; white-space: pre-wrap; word-break: break-all;">' + txt + '</div>';

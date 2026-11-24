@@ -106,7 +106,7 @@
 </div>
 
 <script>
-const VM_ID = <%- JSON.stringify(vm.vm_id) %>;
+const VM_ID = <%- JSON.stringify(vm.vm_id).replace(/</g, '\\u003c') %>;
 const DEFAULT_PATH = <%- JSON.stringify(defaultPath).replace(/</g, '\\u003c') %>;
 const API = `/api/vms/${VM_ID}/files`;
 let currentPath = DEFAULT_PATH;
