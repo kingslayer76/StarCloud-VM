@@ -21,11 +21,57 @@
 #     --os-images MODE    OS cloud images for VM creation: all | none | ask (default all).
 #                         "all" downloads in the background after the install; see logs/os-images.log
 #     --all-os            same as --os-images all (kept for compatibility)
+#     --cloudflare        free public HTTPS link for the panel (Cloudflare Tunnel). With a token
+#                         (CF_TUNNEL_TOKEN or typed when asked) it uses your named tunnel; without one
+#                         it starts a quick tunnel with a random *.trycloudflare.com link.
 #     --verbose           show the raw output of every command (default: only the logo and steps)
 #     -h, --help          show this help
 #
 #   Every command's raw output is written to logs/install.log.
 # =============================================================================
+# ---------------------------------------------------------------- bootstrap ---
+# The installer needs the app files (app.js, views/, ...) next to it. When it is started as
+#   bash <(curl -fsSL https://raw.githubusercontent.com/.../installer.sh)     or     curl -fsSL ... | sudo bash
+# there is no folder next to it, so the script first clones the repository and runs the copy inside it.
+#   STARCLOUD_BRANCH=<branch>  clone this branch (default: the repository's default branch)
+#   STARCLOUD_DIR=<folder>     where to clone (default: /opt/StarCloud-VM as root, ~/StarCloud-VM otherwise)
+#   STARCLOUD_REPO=<url>       repository to clone (default: kingslayer76/StarCloud-VM)
+_self="${BASH_SOURCE[0]:-}"
+_self_dir=""
+if [ -n "$_self" ] && [ -f "$_self" ]; then _self_dir="$(cd "$(dirname "$_self")" && pwd)"; fi
+if [ -z "$_self_dir" ] || [ ! -f "$_self_dir/app.js" ]; then
+  _repo="${STARCLOUD_REPO:-https://github.com/kingslayer76/StarCloud-VM.git}"
+  if [ "$(id -u)" -eq 0 ]; then _target="${STARCLOUD_DIR:-/opt/StarCloud-VM}"; else _target="${STARCLOUD_DIR:-$HOME/StarCloud-VM}"; fi
+  echo "[INFO]    The installer is not inside a StarCloud-VM folder. Using: $_target"
+  if ! command -v git >/dev/null 2>&1; then
+    if [ "$(id -u)" -eq 0 ] && command -v apt-get >/dev/null 2>&1; then
+      echo "[INFO]    Installing git first (apt)"
+      DEBIAN_FRONTEND=noninteractive apt-get update -qq >/dev/null 2>&1 || true
+      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git ca-certificates >/dev/null 2>&1 || true
+    fi
+    command -v git >/dev/null 2>&1 || { echo "[ERROR]   git is missing. Run: sudo apt-get install -y git   then run the command again."; exit 1; }
+  fi
+  if [ -d "$_target/.git" ]; then
+    echo "[INFO]    Updating the existing copy in $_target"
+    git -C "$_target" pull --ff-only -q >/dev/null 2>&1 || echo "[WARNING] Could not update $_target (local changes?). Using the copy that is there."
+  elif [ -e "$_target" ] && [ -n "$(ls -A "$_target" 2>/dev/null)" ]; then
+    echo "[ERROR]   $_target exists and is not a StarCloud-VM checkout. Move it away, or set STARCLOUD_DIR=<other folder>."
+    exit 1
+  else
+    mkdir -p "$(dirname "$_target")"
+    echo "[INFO]    Cloning $_repo ${STARCLOUD_BRANCH:+(branch $STARCLOUD_BRANCH) }..."
+    if [ -n "${STARCLOUD_BRANCH:-}" ]; then
+      git clone -q --branch "$STARCLOUD_BRANCH" "$_repo" "$_target" || { echo "[ERROR]   git clone failed. Check the internet connection and STARCLOUD_BRANCH."; exit 1; }
+    else
+      git clone -q "$_repo" "$_target" || { echo "[ERROR]   git clone failed. Check the internet connection."; exit 1; }
+    fi
+  fi
+  [ -f "$_target/app.js" ] || { echo "[ERROR]   $_target has no app.js. Check STARCLOUD_BRANCH (it must be a StarCloud-VM branch)."; exit 1; }
+  # Piped runs (curl | bash) read their questions from the terminal, not from the script text
+  if [ ! -t 0 ] && (exec </dev/tty) 2>/dev/null; then exec bash "$_target/installer.sh" "$@" </dev/tty; fi
+  exec bash "$_target/installer.sh" "$@"
+fi
+
 set -Eeuo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -323,6 +369,126 @@ run_step() {
   exit "$rc"
 }
 
+# ---------------------------------------------------------------- cloudflare --
+# A public HTTPS link without opening any port on the server: Cloudflare Tunnel. cloudflared runs on
+# this machine and connects OUT to Cloudflare, so the panel is reachable from a phone or anywhere.
+#   quick tunnel  (no token)  random https://<name>.trycloudflare.com link; changes on every restart
+#   named tunnel  (token)     your own domain; set it up once in the Cloudflare dashboard
+CF_PID_FILE="$APP_DIR/data/cloudflared.pid"
+CF_LOG="$LOG_DIR/cloudflared.log"
+
+cloudflared_arch() {
+  case "$(dpkg --print-architecture 2>/dev/null || uname -m)" in
+    amd64|x86_64)   echo amd64 ;;
+    arm64|aarch64)  echo arm64 ;;
+    armhf|arm|armv7l) echo arm ;;
+    i386|i686)      echo 386 ;;
+    *) return 1 ;;
+  esac
+}
+
+install_cloudflared() {
+  if command -v cloudflared >/dev/null 2>&1; then
+    ui_ok "cloudflared is installed ($(cloudflared --version 2>/dev/null | head -n 1))"
+    return 0
+  fi
+  local arch tmp base
+  arch="$(cloudflared_arch)" || die "This CPU type has no cloudflared build in this installer. Install cloudflared by hand."
+  base="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${arch}"
+  tmp="$(mktemp -d)"
+  ui_info "Downloading cloudflared (linux-${arch}) from GitHub"
+  # Preferred: the .deb package (apt handles it). Fallback: the plain binary.
+  if curl -4 -fsSL --retry 3 --connect-timeout 15 -o "$tmp/cloudflared.deb" "${base}.deb" \
+     && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$tmp/cloudflared.deb" >>"$LOG_FILE" 2>&1; then
+    :
+  elif curl -4 -fsSL --retry 3 --connect-timeout 15 -o "$tmp/cloudflared" "$base" \
+       && install -m 0755 "$tmp/cloudflared" /usr/local/bin/cloudflared; then
+    :
+  else
+    rm -rf "$tmp"
+    die "Could not download cloudflared (check the internet connection). Log: $LOG_FILE"
+  fi
+  rm -rf "$tmp"
+  command -v cloudflared >/dev/null 2>&1 || die "cloudflared was not found after the install. Log: $LOG_FILE"
+  ui_ok "cloudflared installed ($(cloudflared --version 2>/dev/null | head -n 1))"
+}
+
+cloudflare_stop_quick() {
+  local pid
+  if [ -f "$CF_PID_FILE" ]; then
+    pid="$(cat "$CF_PID_FILE" 2>/dev/null || true)"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then kill "$pid" 2>/dev/null || true; fi
+    rm -f "$CF_PID_FILE"
+  fi
+}
+
+do_cloudflare() {
+  section "Public link (Cloudflare Tunnel)"
+  if ! panel_answers; then
+    ui_warn "The panel is not answering on port ${PANEL_PORT}. Start it first:  sudo bash installer.sh --start"
+  fi
+  local token="${CF_TUNNEL_TOKEN:-}"
+  if [ -z "$token" ] && [ -t 0 ]; then
+    ui_info "Named tunnel (own domain, permanent link): paste the tunnel token from the Cloudflare dashboard."
+    ui_info "Press Enter without a token for a quick link (random *.trycloudflare.com, no account needed)."
+    ask -r -s -p "  Tunnel token (hidden, Enter = quick link): " token || token=""
+    echo ""
+  fi
+  install_cloudflared
+
+  if [ -n "$token" ]; then
+    [[ "$token" =~ ^[A-Za-z0-9._=+/-]{20,}$ ]] || die "That does not look like a Cloudflare tunnel token."
+    cloudflare_stop_quick
+    if systemd_usable; then
+      cloudflared service uninstall >>"$LOG_FILE" 2>&1 || true
+      cloudflared service install "$token" >>"$LOG_FILE" 2>&1 || die "cloudflared service install failed. Log: $LOG_FILE"
+      systemctl daemon-reload 2>/dev/null || true
+      systemctl enable cloudflared >/dev/null 2>&1 || true
+      systemctl restart cloudflared >/dev/null 2>&1 || true
+      sleep 4
+      if systemctl is-active --quiet cloudflared; then
+        ui_ok "Tunnel service 'cloudflared' is running (starts on boot)"
+      else
+        ui_warn "Tunnel service is not active yet. Check:  sudo journalctl -u cloudflared -n 40"
+      fi
+    else
+      : > "$CF_LOG"
+      TUNNEL_TOKEN="$token" setsid nohup cloudflared tunnel --no-autoupdate run >>"$CF_LOG" 2>&1 < /dev/null &
+      echo $! > "$CF_PID_FILE"
+      ui_ok "Tunnel started in the background (no systemd here)"
+    fi
+    ui_info "Cloudflare dashboard > your tunnel > Public Hostname > Add:"
+    ui_grey "Service type: HTTP     URL: localhost:${PANEL_PORT}     (domain/subdomain: your choice)"
+    ui_grey "Then open https://<your-hostname>/login"
+    return 0
+  fi
+
+  # Quick tunnel: random public link. Lasts while this process runs (not after a reboot).
+  cloudflare_stop_quick
+  : > "$CF_LOG"
+  if command -v setsid >/dev/null 2>&1; then
+    setsid nohup cloudflared tunnel --no-autoupdate --url "http://localhost:${PANEL_PORT}" >>"$CF_LOG" 2>&1 < /dev/null &
+  else
+    nohup cloudflared tunnel --no-autoupdate --url "http://localhost:${PANEL_PORT}" >>"$CF_LOG" 2>&1 < /dev/null &
+  fi
+  echo $! > "$CF_PID_FILE"
+  ui_info "Starting the quick tunnel (up to 40 seconds)..."
+  local i url=""
+  for i in $(seq 1 40); do
+    url="$(grep -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' "$CF_LOG" 2>/dev/null | head -n 1 || true)"
+    [ -n "$url" ] && break
+    sleep 1
+  done
+  if [ -n "$url" ]; then
+    ui_ok "Public link: ${url}/login"
+    ui_grey "It works while this tunnel runs. Run this command again to get a new link after a reboot."
+    ui_grey "For a permanent link with your own domain, create a tunnel in the Cloudflare dashboard and run:"
+    ui_grey "  sudo CF_TUNNEL_TOKEN=<token> bash installer.sh --cloudflare"
+  else
+    ui_warn "No link yet. Read $CF_LOG (the network may block Cloudflare: try again later)."
+  fi
+}
+
 # ---------------------------------------------------------------- panel -------
 # The panel runs in its own session (setsid), so closing the terminal does not stop it.
 # On a server with systemd the service is used; otherwise the process is tracked in data/panel.pid.
@@ -591,6 +757,7 @@ do_uninstall() {
     systemctl daemon-reload 2>/dev/null || true
     ui_ok "Service '${SERVICE_NAME}' stopped and removed"
   fi
+  cloudflare_stop_quick
   stop_panel_background >/dev/null 2>&1 || true
   ui_info "Panel process: stopped (or it was not running)"
   if [ -f "$OS_PID_FILE" ]; then
@@ -650,6 +817,7 @@ while [ $# -gt 0 ]; do
     --stop)        MODE="stop"; EXPLICIT_MODE=true; shift ;;
     --restart)     MODE="restart"; EXPLICIT_MODE=true; shift ;;
     --status)      MODE="status"; EXPLICIT_MODE=true; shift ;;
+    --cloudflare)  MODE="cloudflare"; EXPLICIT_MODE=true; shift ;;
     --os-worker)   MODE="os-worker"; shift ;;
     -h|--help)     usage; exit 0 ;;
     *) echo "Unknown option: $1 (see: bash installer.sh --help)" >&2; exit 1 ;;
@@ -677,6 +845,11 @@ log "===== StarCloud Panel installer started ($(date)) args: $* ====="
 
 PANEL_PORT="${PANEL_PORT:-$(read_env_value PORT 8080)}"
 [[ "$PANEL_PORT" =~ ^[0-9]+$ ]] && [ "$PANEL_PORT" -ge 1 ] && [ "$PANEL_PORT" -le 65535 ] || die "Port must be a number from 1 to 65535."
+if [ "$MODE" = "cloudflare" ]; then
+  [ -t 1 ] && show_logo
+  do_cloudflare
+  exit 0
+fi
 
 show_logo
 # Menu: only when started by hand on a terminal with no options. Any option = no menu.
@@ -1071,7 +1244,7 @@ if [ "$SKIP_SYSTEM" = false ]; then
   else
     skip_step "Starting the panel (--no-service)"
   fi
-  run_step "Health check" step_health
+  run_step "Checking that the panel answers" step_health
 else
   skip_step "Firewall, service and health check (--skip-system)" 3
 fi
@@ -1085,12 +1258,25 @@ elif [ -n "$(panel_pid || true)" ]; then
   SERVICE_KIND="background"
 fi
 
+URL_LINES=()
 if [ -n "${CODESPACE_NAME:-}" ]; then
   PANEL_URL="https://${CODESPACE_NAME}-${PANEL_PORT}.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}"
+  URL_LINES+=("anywhere|${PANEL_URL}/login")
 else
   PUBLIC_IP="$(curl -4 -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
-  [ -n "$PUBLIC_IP" ] || PUBLIC_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
-  PANEL_URL="http://${PUBLIC_IP:-YOUR_SERVER_IP}:${PANEL_PORT}"
+  LAN_IPS="$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -E '^[0-9]+(\.[0-9]+){3}$' | grep -vE '^(127|169\.254)\.' | head -n 3 || true)"
+  URL_LINES+=("this machine|http://localhost:${PANEL_PORT}/login")
+  for ip in $LAN_IPS; do
+    if [[ "$ip" == 10.0.2.* ]]; then
+      URL_LINES+=("inside this VM|http://${ip}:${PANEL_PORT}/login   (10.0.2.x is a private VM address: other devices cannot open it)")
+    else
+      URL_LINES+=("same network|http://${ip}:${PANEL_PORT}/login")
+    fi
+  done
+  if [ -n "$PUBLIC_IP" ]; then
+    URL_LINES+=("internet (VPS)|http://${PUBLIC_IP}:${PANEL_PORT}/login   (port ${PANEL_PORT} must be open at your VPS provider's firewall)")
+  fi
+  PANEL_URL="http://${PUBLIC_IP:-localhost}:${PANEL_PORT}"
 fi
 
 if panel_answers; then
@@ -1105,7 +1291,13 @@ printf '\n%s%s%s\n' "$C_LINE" "$(printf '=%.0s' $(seq 1 64))" "$C_RESET"
 printf '  %s%s%s\n' "$C_BOLD$C_ACCENT" "StarCloud Panel is installed" "$C_RESET"
 printf '%s%s%s\n' "$C_LINE" "$(printf '=%.0s' $(seq 1 64))" "$C_RESET"
 printf '   %-16s %b\n' "Status"     "$STATUS"
-printf '   %-16s %s\n' "Panel URL"  "$PANEL_URL/login"
+printf '   %-16s\n' "Open the panel"
+for _line in "${URL_LINES[@]}"; do
+  printf '     %-22s %s\n' "${_line%%|*}" "${_line#*|}"
+done
+if [ -z "${CODESPACE_NAME:-}" ]; then
+  printf '     %-22s %s\n' "from a phone / outside" "sudo bash ${APP_DIR}/installer.sh --cloudflare  (free https link)"
+fi
 printf '   %-16s %s\n' "Admin user" "$ADMIN_USER  (password: the one you chose; 'admin' if you pressed Enter)"
 if [ "$STATUS_TEXT" = "NOT STARTED" ]; then SERVICE_SHOW="not started"; else SERVICE_SHOW="$SERVICE_KIND"; fi
 printf '   %-16s %s\n' "Service"    "$SERVICE_SHOW"
