@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Security - StarCloud Panel</title>
+<style>
+body{margin:0;background:#0b0f17;color:#e6edf7;font-family:system-ui,Segoe UI,Roboto,sans-serif}
+header{padding:16px 24px;border-bottom:1px solid #1d2636;display:flex;justify-content:space-between;align-items:center}
+header a{color:#5ab0ff;text-decoration:none}
+main{max-width:860px;margin:24px auto;padding:0 16px;display:grid;gap:18px}
+section{background:#121a27;border:1px solid #1d2636;border-radius:12px;padding:18px}
+h2{margin:0 0 10px;font-size:18px;color:#8ec5ff}
+button{background:#0087ff;color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer;margin:4px 4px 4px 0}
+button.danger{background:#b3261e}
+button.ghost{background:#263247}
+input,select{background:#0b0f17;color:#e6edf7;border:1px solid #2a3850;border-radius:8px;padding:8px;margin:4px 4px 4px 0}
+table{width:100%;border-collapse:collapse;font-size:14px}
+td,th{text-align:left;padding:8px;border-bottom:1px solid #1d2636}
+.muted{color:#8a98ad;font-size:13px}
+.msg{margin:8px 0;padding:8px 10px;border-radius:8px;background:#0e2a1b;color:#9ff0bd;display:none}
+.msg.err{background:#341616;color:#ffb4ab}
+code.key{display:block;background:#0b0f17;border:1px dashed #2a3850;padding:10px;border-radius:8px;word-break:break-all;margin:8px 0}
+img.qr{background:#fff;padding:8px;border-radius:8px}
+</style></head>
+<body>
+<header><strong>Security</strong><a href="/dashboard" id="back">← Back to panel</a></header>
+<main>
+<section>
+  <h2>Two-factor login (authenticator app)</h2>
+  <p class="muted" id="fa-state">Checking…</p>
+  <div id="fa-off">
+    <button id="fa-start">Set up 2FA</button>
+    <div id="fa-setup" style="display:none">
+      <p class="muted">Scan the QR code in Google Authenticator, Authy or Microsoft Authenticator. Or enter the key by hand.</p>
+      <img class="qr" id="fa-qr" alt="QR code">
+      <p>Key: <code id="fa-secret"></code></p>
+      <input id="fa-code" placeholder="6-digit code" inputmode="numeric" maxlength="6">
+      <button id="fa-enable">Turn on 2FA</button>
+    </div>
+    <div id="fa-codes" style="display:none">
+      <p><strong>Backup codes</strong> (each works once). Save them now; they are not shown again.</p>
+      <code class="key" id="fa-codes-list"></code>
+    </div>
+  </div>
+  <div id="fa-on" style="display:none">
+    <p class="muted">Login asks for a code from your app. Turning it off needs your password and a current code.</p>
+    <input id="fa-dis-pass" type="password" placeholder="Current password">
+    <input id="fa-dis-code" placeholder="6-digit code" inputmode="numeric" maxlength="6">
+    <button class="danger" id="fa-disable">Turn off 2FA</button>
+  </div>
+  <div class="msg" id="fa-msg"></div>
+</section>
+
+<section>
+  <h2>Signed-in devices</h2>
+  <p class="muted">Each row is a browser session. Revoke one to sign that device out.</p>
+  <table><thead><tr><th>Session</th><th>Expires</th><th></th></tr></thead><tbody id="ses-body"></tbody></table>
+  <button class="ghost" id="ses-others">Sign out all other devices</button>
+  <div class="msg" id="ses-msg"></div>
+</section>
+
+<section>
+  <h2>API keys (for /api/v1)</h2>
+  <p class="muted">Send a key as <code>Authorization: Bearer sc_…</code>. Read keys can only GET. Write keys can also start, stop and restart your VMs.</p>
+  <input id="key-name" placeholder="Name, e.g. my-script" maxlength="40">
+  <select id="key-scope"><option value="read">read only</option><option value="write">read + power</option></select>
+  <button id="key-create">Create key</button>
+  <code class="key" id="key-new" style="display:none"></code>
+  <table><thead><tr><th>Name</th><th>Key</th><th>Scope</th><th>Last used</th><th></th></tr></thead><tbody id="key-body"></tbody></table>
+  <div class="msg" id="key-msg"></div>
+</section>
+</main>
+<script src="/js/security.js"></script>
+</body></html>

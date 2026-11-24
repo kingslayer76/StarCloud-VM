@@ -28,6 +28,7 @@ const { attachTerminals } = require('./services/vm-terminal');
 const { canAccessVm } = require('./services/vm-access');
 require('dotenv').config();
 const licenses = require("./licenses");
+const { checkSecondFactor } = require("./services/totp");
 
 // ============= PLATFORM DETECTION =============
 const isWindows = process.platform === 'win32';
@@ -399,6 +400,21 @@ const sessionMiddleware = session({
 });
 app.use(sessionMiddleware);
 
+// CSRF guard: a browser request that changes something must come from this same site.
+// Requests with no Origin header (scripts, curl) and API-key calls (Authorization: Bearer) are not cookie-based and pass.
+app.use((req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+  if (req.headers.authorization && /^Bearer /i.test(req.headers.authorization)) return next();
+  const origin = req.headers.origin;
+  if (!origin) return next();
+  let originHost = '';
+  try { originHost = new URL(origin).host; } catch (e) { originHost = ''; }
+  if (!originHost || originHost !== req.headers.host) {
+    return res.status(403).json({ error: 'Cross-site request blocked' });
+  }
+  next();
+});
+
 // ---- Maintenance mode (admins keep full access; everyone else sees a notice) ----
 let maintenanceState = { enabled: false, message: '' };
 const getMaintenance = () => ({ ...maintenanceState });
@@ -494,6 +510,12 @@ function initializeDatabase() {
           if (err) console.log('[DB] full_name column already exists or error:', err.message);
         });
       }
+      ['totp_secret TEXT', 'totp_enabled INTEGER DEFAULT 0', 'totp_backup TEXT'].forEach((def) => {
+        const name = def.split(' ')[0];
+        if (!columnNames.includes(name)) {
+          db.run(`ALTER TABLE users ADD COLUMN ${def}`, (err) => { if (err) console.log(`[DB] ${name}:`, err.message); });
+        }
+      });
       if (!columnNames.includes('last_login')) {
         db.run(`ALTER TABLE users ADD COLUMN last_login DATETIME`, (err) => {
           if (err) console.log('[DB] last_login column already exists or error:', err.message);
@@ -567,7 +589,12 @@ function initializeDatabase() {
       { name: 'iso_attached', def: 'TEXT' },
       { name: 'boot_from_iso', def: 'BOOLEAN DEFAULT 0' },
       { name: 'bridge_device', def: "TEXT DEFAULT 'vmbr0'" },
-      { name: 'nested_kvm', def: 'BOOLEAN DEFAULT 0' }
+      { name: 'nested_kvm', def: 'BOOLEAN DEFAULT 0' },
+      { name: 'expires_at', def: 'DATETIME' },
+      { name: 'suspended', def: 'INTEGER DEFAULT 0' },
+      { name: 'suspend_reason', def: 'TEXT' },
+      { name: 'suspended_at', def: 'DATETIME' },
+      { name: 'desired_state', def: "TEXT DEFAULT 'stopped'" }
     ];
 
     missingColumns.forEach(col => {
@@ -797,6 +824,14 @@ app.post('/api/login', (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     
+    if (user.totp_enabled) {
+      const code = typeof req.body.totp_code === 'string' ? req.body.totp_code.trim() : '';
+      if (!code) return res.json({ need_2fa: true });
+      if (!checkSecondFactor(db, user, code)) {
+        noteLoginFailure(loginKey);
+        return res.status(401).json({ error: 'Invalid 2FA code' });
+      }
+    }
     // Update last login
     db.run(`UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?`, [user.id], (err) => {
       if (err) console.error('[DB Error] Failed to update last_login:', err);
@@ -2388,10 +2423,10 @@ app.get('/api/vms/:vm_id/edit', checkAuth, (req, res) => {
 
 // Resize disk qcow2 file (expand or shrink)
 async function resizeDisk(vm_id, diskFilePath, newSize) {
-  return new Promise((resolve, reject) => {
+  return (async () => {
     try {
       if (!fs.existsSync(diskFilePath)) {
-        return reject(new Error('Disk file not found'));
+        throw new Error('Disk file not found');
       }
 
       // Parse size to bytes (handle G, GB, T, TB)
@@ -2413,13 +2448,13 @@ async function resizeDisk(vm_id, diskFilePath, newSize) {
 
       const newSizeBytes = parseSize(newSize);
       if (!newSizeBytes) {
-        return reject(new Error('Invalid size format. Use: 20G, 100GB, 1T, etc.'));
+        throw new Error('Invalid size format. Use: 20G, 100GB, 1T, etc.');
       }
 
       // Get current disk size from qemu-img (not file size, but virtual size)
       let currentSize;
       try {
-        const infoOutput = execFileSync('qemu-img', ['info', diskFilePath, '--output=json'], { stdio: 'pipe', encoding: 'utf8' });
+        const infoOutput = (await execFilePromise('qemu-img', ['info', diskFilePath, '--output=json'], { encoding: 'utf8' })).stdout;
         const imageInfo = JSON.parse(infoOutput);
         currentSize = imageInfo['virtual-size'] || imageInfo['VirtualSize'] || 0;
         console.log(`[DISK-${vm_id}] Detected via qemu-img: Virtual size = ${(currentSize / (1024**3)).toFixed(2)}GB`);
@@ -2432,7 +2467,7 @@ async function resizeDisk(vm_id, diskFilePath, newSize) {
       console.log(`[DISK-${vm_id}] Current: ${(currentSize / (1024**3)).toFixed(2)}GB, Target: ${(newSizeBytes / (1024**3)).toFixed(2)}GB`);
 
       if (newSizeBytes === currentSize) {
-        return resolve({ message: 'size unchanged' });
+        return { message: 'size unchanged' };
       }
 
       // Determine if we're expanding or shrinking
@@ -2449,7 +2484,7 @@ async function resizeDisk(vm_id, diskFilePath, newSize) {
       // Execute and capture both stdout and stderr (argv array, no shell)
       let output;
       try {
-        output = execFileSync('qemu-img', resizeArgs, { stdio: 'pipe', encoding: 'utf8' });
+        output = (await execFilePromise('qemu-img', resizeArgs, { encoding: 'utf8' })).stdout;
         console.log(`[DISK-${vm_id}] Command output: ${output}`);
       } catch (execErr) {
         // Check if it's just a warning
@@ -2465,11 +2500,11 @@ async function resizeDisk(vm_id, diskFilePath, newSize) {
       }
 
       console.log(`[DISK-${vm_id}] Disk ${operation}ed to ${newSize}`);
-      resolve({ message: `${operation}ed to ${newSize}` });
+      return { message: `${operation}ed to ${newSize}` };
     } catch (err) {
-      reject(err);
+      throw err;
     }
-  });
+  })();
 }
 
 // Regenerate cloud-init seed for a VM
@@ -2889,7 +2924,7 @@ app.post('/api/vms/:vm_id/reinstall', checkAuth, async (req, res) => {
                       console.log(`[VM-${vm_id}] ✓ Disk file created`);
 
                       // Resize disk to specified size
-                      execFileSync('qemu-img', ['resize', updatedVm.disk_file, diskSizeVal], { stdio: 'pipe' });
+                      await execFilePromise('qemu-img', ['resize', updatedVm.disk_file, diskSizeVal]);
                       console.log(`[VM-${vm_id}] ✓ Disk resized to ${diskSizeVal}`);
 
                       // Create new cloud-init seed
@@ -3392,6 +3427,16 @@ app.post('/api/vms', checkAuth, checkAdmin, async (req, res) => {
 });
 
 // VM START (Using VM ID)
+// Suspended VMs (admin suspend or expiry) cannot be started or restarted
+app.post(['/api/vms/:vm_id/start', '/api/vms/:vm_id/restart'], checkAuth, (req, res, next) => {
+  db.get(`SELECT suspended, suspend_reason FROM vms WHERE vm_id = ?`, [req.params.vm_id], (err, row) => {
+    if (row && row.suspended) {
+      return res.status(403).json({ error: `This VM is suspended: ${row.suspend_reason || 'no reason given'}` });
+    }
+    next();
+  });
+});
+
 app.post('/api/vms/:vm_id/start', checkAuth, async (req, res) => {
   try {
     const userId = req.session.userId;
@@ -3420,7 +3465,7 @@ app.post('/api/vms/:vm_id/start', checkAuth, async (req, res) => {
         const result = await startQemuVM(vm);
         if (result.success) {
           vmProcesses.set(vm.vm_id, result.pid);
-          db.run(`UPDATE vms SET status = 'running', uptime = 0 WHERE vm_id = ?`, [vm.vm_id]);
+          db.run(`UPDATE vms SET status = 'running', desired_state = 'running', uptime = 0 WHERE vm_id = ?`, [vm.vm_id]);
           logVMAction(vm.vm_id, 'start', 'running', `VM started successfully`);
           console.log(`[API Success] VM ${vm.vm_id} started successfully`);
           res.json({ success: true, message: `VM ${vm.vm_name} (ID:${vm.vm_id}) started`, vm_id: vm.vm_id });
@@ -3498,7 +3543,7 @@ app.post('/api/vms/:vm_id/restart', checkAuth, async (req, res) => {
         const result = await startQemuVM(vm);
         if (result.success) {
           vmProcesses.set(vm.vm_id, result.pid);
-          db.run(`UPDATE vms SET status = 'running' WHERE vm_id = ?`, [vm.vm_id]);
+          db.run(`UPDATE vms SET status = 'running', desired_state = 'running' WHERE vm_id = ?`, [vm.vm_id]);
           logVMAction(vm.vm_id, 'restart', 'running', `VM restarted successfully`);
           res.json({ success: true, message: `VM ${vm.vm_name} (ID:${vm.vm_id}) restarted` });
         } else {
@@ -3700,26 +3745,37 @@ app.get('/api/vms/:vm_id/iso/status', checkAuth, async (req, res) => {
 
 app.post('/api/vms/:vm_id/snapshots', checkAuth, (req, res) => {
   const userId = req.session.userId;
-  const { snapshot_name, description } = req.body;
-  
+  const name = String((req.body && req.body.snapshot_name) || '').trim();
+  const description = String((req.body && req.body.description) || '').slice(0, 300);
+  if (!/^[a-zA-Z0-9_.-]{1,64}$/.test(name)) {
+    return res.status(400).json({ error: 'Snapshot name: 1-64 letters, numbers, _ . - only' });
+  }
+
   let query = `SELECT * FROM vms WHERE vm_id = ?`;
   let params = [req.params.vm_id];
-  
   // Normal users can only create snapshots for their own VMs
   if (req.session.role !== 'admin') {
     query += ` AND owner_id = ?`;
     params.push(userId);
   }
-  
-  db.get(query, params, (err, vm) => {
+
+  db.get(query, params, async (err, vm) => {
     if (err || !vm) return res.status(404).json({ error: 'VM not found or access denied' });
-    
+    if (vm.status === 'running') {
+      return res.status(409).json({ error: 'Stop the VM first. A disk snapshot is taken only while the VM is off.' });
+    }
+    if (!vm.disk_file) return res.status(400).json({ error: 'VM has no disk file' });
+    try {
+      await execFilePromise('qemu-img', ['snapshot', '-c', name, vm.disk_file]);
+    } catch (e) {
+      return res.status(500).json({ error: 'Snapshot failed: ' + String(e.stderr || e.message).slice(0, 300) });
+    }
     db.run(
       `INSERT INTO vm_snapshots (vm_id, snapshot_name, size_gb, description) VALUES (?, ?, 0, ?)`,
-      [req.params.vm_id, snapshot_name, description],
-      function(err) {
-        if (err) return res.status(500).json({ error: err.message });
-        logVMAction(req.params.vm_id, 'snapshot', 'completed', `Snapshot ${snapshot_name} created`);
+      [vm.vm_id, name, description],
+      function (err2) {
+        if (err2) return res.status(500).json({ error: err2.message });
+        logVMAction(vm.vm_id, 'snapshot', 'completed', `Snapshot ${name} created`);
         res.json({ success: true, snapshot_id: this.lastID });
       }
     );
@@ -3748,7 +3804,7 @@ app.get('/api/admin/dashboard', checkAuth, checkAdmin, (req, res) => {
 async function stopVmProcess(vm) {
   const stopped = await runtime.stop(vm.vm_id);
   vmProcesses.delete(vm.vm_id);
-  db.run(`UPDATE vms SET status = 'stopped' WHERE vm_id = ?`, [vm.vm_id]);
+  db.run(`UPDATE vms SET status = 'stopped', desired_state = 'stopped' WHERE vm_id = ?`, [vm.vm_id]);
   logVMAction(vm.vm_id, 'stop', stopped ? 'stopped' : 'warning', stopped ? 'VM stopped' : 'VM did not stop cleanly; process was killed');
   return stopped;
 }
@@ -3757,7 +3813,7 @@ async function stopVmProcess(vm) {
 async function startVmForOps(vm) {
   const result = await startQemuVM(vm);
   if (result && result.success === false) throw new Error(result.error || 'VM failed to start');
-  db.run(`UPDATE vms SET status = 'running', uptime = 0 WHERE vm_id = ?`, [vm.vm_id]);
+  db.run(`UPDATE vms SET status = 'running', desired_state = 'running', uptime = 0 WHERE vm_id = ?`, [vm.vm_id]);
   return true;
 }
 
@@ -4237,14 +4293,14 @@ function validateStaticIPv4Config(vm) {
  * Validates YAML syntax before creating ISO
  */
 async function createCloudInitSeed(vm_id, vm) {
-  return new Promise((resolve, reject) => {
+  return (async () => {
     try {
       // Validate static IPv4 configuration if applicable
       if (vm.network_type === 'static_public') {
         const validation = validateStaticIPv4Config(vm);
         if (!validation.valid) {
           console.error(`[CLOUDINIT-${vm_id}] ✗ Validation Error: ${validation.error}`);
-          return reject(new Error(`Static IPv4 validation failed: ${validation.error}`));
+          throw new Error(`Static IPv4 validation failed: ${validation.error}`);
         }
         console.log(`[CLOUDINIT-${vm_id}] ✓ Static IPv4 configuration validated`);
       }
@@ -4337,7 +4393,7 @@ local-hostname: ${vm.hostname}
         let isoCreated = false;
         for (const tool of isoTools) {
           try {
-            execFileSync(tool, seedArgs, { stdio: 'pipe' });
+            await execFilePromise(tool, seedArgs);
             isoCreated = true;
             break;
           } catch (e) { /* try the next available tool */ }
@@ -4362,7 +4418,7 @@ local-hostname: ${vm.hostname}
             console.warn(`[CLOUDINIT-${vm_id}] ⚠ Could not clean seed directory`);
           }
           
-          resolve(true);
+          return true;
         } else {
           throw new Error('ISO file not created');
         }
@@ -4370,14 +4426,14 @@ local-hostname: ${vm.hostname}
         console.error(`[CLOUDINIT-${vm_id}] ✗ ISO creation failed: ${isoError.message}`);
         console.error(`[CLOUDINIT-${vm_id}] Please install: genisoimage, mkisofs, or cloud-utils`);
         logError('CLOUDINIT', vm_id, 'ISO creation', isoError);
-        reject(new Error('ISO creation tool not available - install genisoimage, mkisofs, or cloud-utils'));
+        throw new Error('ISO creation tool not available - install genisoimage, mkisofs, or cloud-utils');
       }
     } catch (error) {
       console.error(`[CLOUDINIT-${vm_id}] Error: ${error.message}`);
       console.error(`[CLOUDINIT-${vm_id}] Stack: ${error.stack}`);
-      reject(error);
+      throw error;
     }
-  });
+  })();
 }
 
 async function startQemuVM(vm) {
@@ -4931,6 +4987,18 @@ require('./routes/ops')(app, {
   stopVmProcess, startVm: startVmForOps,
   getMaintenance, setMaintenance
 });
+
+// ---- Feature modules: lifecycle (batch 2), security (batch 3), integrations + API v1 (batch 5) ----
+const createPower = require('./services/power');
+const power = createPower({ db, startVmForOps, stopVmProcess });
+const integrations = require('./routes/integrations')(app, { db, checkAuth, checkAdmin, power });
+const lifecycle = require('./routes/lifecycle')(app, {
+  db, checkAuth, checkAdmin, power, emit: integrations.emit,
+  backupDir: path.join(__dirname, 'backups'), logVMAction
+});
+require('./routes/security')(app, { db, checkAuth, checkAdmin, power });
+integrations.startSchedulerJob();
+lifecycle.startBackgroundJobs();
 
 app.use((req, res) => {
   res.status(404).render('users/404', {

@@ -27,7 +27,7 @@ Test ka level:
 |---|---|---|---|
 | 0 | Base aur foundation | ✅ | Security fixes, branding, `.env.example`, Discord account pages |
 | 1 | Host safety + security | 🟡 | KVM detect + lock, nested KVM, capacity guard, maintenance, emergency, audit log, installer, file manager, nested KVM toggle, CPU model (pehle 3 deep features: 1 poora, 2 partial). Neeche pending list dekho |
-| 2 | VM lifecycle + monitoring + promo | ⬜ | Boot log, expiry/renew/suspend, coupons, giveaway, shared IPv4 + auto port block, snapshots, backup/restore, status page, referral, flash sale |
+| 2 | VM lifecycle + monitoring + promo | ⬜ | Boot log, expiry/renew/suspend, giveaway (coupons 🚫 Batch 4 mein drop), shared IPv4 + auto port block, snapshots, backup/restore, status page, referral, flash sale |
 | 3 | Auth, accounts, guest agent | ⬜ | 2FA, lockout, password reset, sessions, owner tier, API keys, sub-users, impersonation, guest agent, sshx, noVNC |
 | 4 | Commerce + support | ⬜ | Plans/add-ons, UPI manual confirm, email verify, invoices (pending) |
 | 5 | Product lines + networking + API | ⬜ | VDS (CPU pinning, guaranteed RAM), LXD Bot Hosting (Linux only), port-forward manager, rDNS, firewall, bandwidth, public API + CLI |
@@ -128,7 +128,7 @@ Pehle 3 deep features ka status:
 | 2.2 | VM expiry, renew, expiring list | Master §9 |
 | 2.3 | Suspend / unsuspend with reason | Master §3 |
 | 2.4 | Bulk power ops UI (server endpoint, Batch 1 ke emergency ke saath) | Master §3 |
-| 2.5 | Coupons (percent / fixed / 100% free, expiry, usage count; **order table nahi**) | D-7, D-6 |
+| 2.5 | 🚫 Coupons: turn 6 mein Batch 4 ke saath drop (commerce scope) | — |
 | 2.6 | Giveaway codes (N codes, one-time claim) | D-7 |
 | 2.7 | Single public IPv4 + har VM ko automatic alag port block | D-9, D-18 |
 | 2.8 | IP pool page (basic: add IP/CIDR, free/assigned/reserved) | Master §6.1 |
@@ -169,7 +169,10 @@ Note: Batch 1 pending #7 (edit 200 par seed fail) bhi yahin fix hoga.
 
 ---
 
-## 6. Batch 4 — Commerce + support (⬜)
+## 6. Batch 4 — Commerce + support (🚫 OUT OF SCOPE, turn 6)
+
+> **Turn 6 faisla:** Batch 4 poora drop. Invoices, GST, coupons, support tickets aur payments implement nahi honge. Panel customers ko becha jayega aur owner ki income panel bechne + 25–30 VPS chalane se hogi, isliye expiry / suspend / recreate flows zaroori hain (Batch 2 mein). Billing later phase mein (unchanged).
+> Neeche ke 4.1–4.5 sirf reference ke liye hain, ab kaam nahi honge.
 
 | # | Feature | Faisla |
 |---|---|---|
@@ -324,6 +327,32 @@ Admin UI check: 34 passed, 0 failed. Route smoke: admin pages 200, no FATAL.
 Approx: lagbhag 33 done, lagbhag 80 baaki (Batch 1 ke 4 partial + Later ke sath). Ye ek hi turn mein poora nahi ho sakta; har batch ko alag, testable round mein karna hoga.
 
 Real hardware par verify baaki: real VM boot (KVM), cloud-init SSH login, OS image download, installer systemd par real VPS, Cloudflare tunnel.
+
+## 15b. Turn 6 — kya bana aur kya test hua (honest)
+
+**Code mein aaya aur API level par test hua (54 checks, fresh DB, sab pass):**
+- Login: 400 / 401 / 429 edge cases; 2FA on hone par password ke baad `need_2fa`; TOTP aur backup code login; backup code ek hi baar chalta hai.
+- 2FA setup / enable / disable, sessions list aur revoke, admin revoke-sessions.
+- API keys (`sc_` + 48 hex, sirf hash store) aur `/api/v1/vms` (Bearer). Customer ko sirf apni VMs dikhti hain.
+- Expiry set / clear, suspend (reason zaroori), suspended VM start par 403, unsuspend, bulk (suspend / unsuspend / unknown action).
+- Webhook: HMAC signed test delivery receiver par pahunchi. Bad URL 400. Schedule validation.
+- `/api/status`, `/status`, `/security`, `/admin/lifecycle` 200. Cross-site POST (Origin mismatch) 403.
+- `scripts/check-admin-user-ui.sh`: 34 pass, 0 fail.
+- Coupons code poora hata diya gaya (Batch 4 scope).
+
+**Code mein hai, lekin test NAHI hua (agle step mein):**
+- Expiry job ka auto-suspend (5 min tick), watchdog (desired_state=running wali VM restart), status sampling loop, host alerts (RAM/disk threshold).
+- Webhook retries (0/5/30 s), schedule ka actual run.
+- Snapshot create / restore / delete real qcow2 par (sandbox mein `qemu-img` nahi hai, isliye create 500 "spawn qemu-img ENOENT" deta hai, jo clean error hai).
+- Backup (offline copy) aur restore.
+- Browser par naye pages (`/security`, `/status`, `/admin/lifecycle`) ka UI behaviour.
+- Login page ka 2FA second field browser mein.
+
+**Batch 1 (qemu-img):** `resizeDisk`, `createCloudInitSeed` aur reinstall ka resize ab async `execFilePromise` use karte hain. `probeQemuCpuNames` (boot par ek baar, 8 s timeout) abhi sync hai.
+
+**Batch 3 baaki:** CSRF origin guard (basic, done), admin reset link, impersonation check, guest agent, noVNC, sshx, TOTP ka admin reset.
+**Batch 5 baaki:** VDS, bot hosting, public `/api/v1` expansion.
+**Batch 6 baaki:** AI assistant, site, i18n, PWA, Docker.
 
 ## Appendix A — Faisle (D-list, purani docs se preserve)
 

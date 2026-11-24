@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Status - StarCloud Panel</title>
+<style>
+body{margin:0;background:#0b0f17;color:#e6edf7;font-family:system-ui,Segoe UI,Roboto,sans-serif}
+main{max-width:720px;margin:40px auto;padding:0 16px}
+.card{background:#121a27;border:1px solid #1d2636;border-radius:12px;padding:18px;margin-bottom:14px}
+.big{font-size:26px;font-weight:600}
+.ok{color:#58d68d}.muted{color:#8a98ad;font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:14px}td,th{text-align:left;padding:6px;border-bottom:1px solid #1d2636}
+</style></head>
+<body><main>
+<h1>Service status</h1>
+<div class="card"><div class="big ok" id="panel">Checking…</div><div class="muted" id="checked"></div></div>
+<div class="card"><div>VMs running: <strong id="running">-</strong> of <strong id="total">-</strong></div>
+<div>Uptime (last 24 hours): <strong id="uptime">-</strong></div></div>
+<div class="card"><strong>Last 7 days</strong>
+<table><thead><tr><th>Day (UTC)</th><th>Uptime</th></tr></thead><tbody id="hist"></tbody></table></div>
+</main>
+<script src="/js/status.js"></script>
+</body></html>
